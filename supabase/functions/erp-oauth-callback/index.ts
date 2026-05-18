@@ -2,7 +2,7 @@
 // Exchanges code for tokens, stores in integration_configs, redirects user back to app.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
-const PROJECT_REF = "dfvxwhcifycqqxmxiwjy";
+const PROJECT_REF = Deno.env.get("SUPABASE_PROJECT_REF") ?? "dwujokxscygkfmnvqfy";
 const CALLBACK_URL = `https://${PROJECT_REF}.supabase.co/functions/v1/erp-oauth-callback`;
 const APP_FALLBACK = "https://routeaceglyde.app/dept/erp-integrations";
 

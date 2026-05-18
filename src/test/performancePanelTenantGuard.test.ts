@@ -15,7 +15,7 @@ import { readdirSync, readFileSync } from "fs";
 import { resolve } from "path";
 import { createClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = "https://dfvxwhcifycqqxmxiwjy.supabase.co";
+const SUPABASE_URL = "https://dwujokxscygkfmnvqfy.supabase.co";
 const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmdnh3aGNpZnljcXF4bXhpd2p5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc1MjQyMjksImV4cCI6MjA4MzEwMDIyOX0.z-D85kMgImWUukvT48qSEOlHOJ7A1m-ckA8XujNcVJs";
 

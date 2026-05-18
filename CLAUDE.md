@@ -12,8 +12,8 @@ This file is the single source of truth for how this codebase is structured, wha
 | Full Name | RouteAce Distribution Intelligence Platform |
 | Operator | Glyde Systems |
 | Production Domain | routeaceglyde.app |
-| Supabase Project ID | dfvxwhcifycqqxmxiwjy |
-| Supabase URL | https://dfvxwhcifycqqxmxiwjy.supabase.co |
+| Supabase Project ID | dwujokxscygkfmnvqfy |
+| Supabase URL | https://dwujokxscygkfmnvqfy.supabase.co |
 
 ---
 
@@ -54,9 +54,9 @@ The frontend is a **pure SPA** (no SSR). Every route is protected by `<Protected
 ### Frontend (Vite — must be prefixed `VITE_`)
 
 ```
-VITE_SUPABASE_URL=https://dfvxwhcifycqqxmxiwjy.supabase.co
+VITE_SUPABASE_URL=https://dwujokxscygkfmnvqfy.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=<anon key>
-VITE_SUPABASE_PROJECT_ID=dfvxwhcifycqqxmxiwjy
+VITE_SUPABASE_PROJECT_ID=dwujokxscygkfmnvqfy
 ```
 
 ### Supabase Edge Function Secrets (set in Supabase dashboard)
@@ -71,7 +71,7 @@ ALLOWED_ORIGIN          CORS origin, e.g. https://routeaceglyde.app
 ### GitHub Actions Secrets (repo settings)
 
 ```
-SUPABASE_PROJECT_REF      dfvxwhcifycqqxmxiwjy
+SUPABASE_PROJECT_REF      dwujokxscygkfmnvqfy
 SUPABASE_SERVICE_ROLE_KEY  service role key (CI-only)
 ```
 
@@ -125,7 +125,7 @@ x-routeace-signature: HMAC_SHA256(WEBHOOK_SECRET, "<timestamp>.<raw-body>") as h
 **To register/re-register the hook in Supabase:**
 1. Deploy the function: `supabase functions deploy auth-email-hook`
 2. In Supabase Dashboard → Authentication → Hooks → "Send Email"
-3. Set the hook URL to: `https://dfvxwhcifycqqxmxiwjy.supabase.co/functions/v1/auth-email-hook`
+3. Set the hook URL to: `https://dwujokxscygkfmnvqfy.supabase.co/functions/v1/auth-email-hook`
 4. Set the signing secret to the same value as `WEBHOOK_SECRET` in your Supabase secrets
 
 **Note:** The old `LOVABLE_API_KEY` env var is no longer used. Rename it to `WEBHOOK_SECRET` in Supabase secrets. The signature headers changed from `x-lovable-signature`/`x-lovable-timestamp` to `x-routeace-signature`/`x-routeace-timestamp`. If you have an existing Lovable-configured hook, you must re-configure it in Supabase to use the new header names and secret name.
