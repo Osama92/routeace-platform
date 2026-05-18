@@ -4,7 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 import { buildCors } from "../_shared/cors.ts";
 let corsHeaders: Record<string, string> = buildCors();
-const PROJECT_REF = Deno.env.get("SUPABASE_PROJECT_REF") ?? "dwujokxscygkfmnvqfy";
+const PROJECT_REF = Deno.env.get("SUPABASE_PROJECT_REF") ?? "mbybrzggrpyhvcnxhlua";
 const CALLBACK_URL = `https://${PROJECT_REF}.supabase.co/functions/v1/erp-oauth-callback`;
 
 Deno.serve(async (req) => {

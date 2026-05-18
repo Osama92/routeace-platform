@@ -12,7 +12,7 @@ on:
 #  - DLQ growth in last 24h > 10
 #
 # Requires repo secrets:
-#   SUPABASE_PROJECT_REF        (e.g. dwujokxscygkfmnvqfy)
+#   SUPABASE_PROJECT_REF        (e.g. mbybrzggrpyhvcnxhlua)
 #   SUPABASE_SERVICE_ROLE_KEY   (service_role key — used only by CI)
 jobs:
   gate:

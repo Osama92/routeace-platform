@@ -87,7 +87,7 @@ BEGIN
 
   IF _service_key IS NULL THEN RETURN; END IF;
 
-  _url := 'https://dwujokxscygkfmnvqfy.supabase.co/functions/v1/send-transactional-email';
+  _url := 'https://mbybrzggrpyhvcnxhlua.supabase.co/functions/v1/send-transactional-email';
 
   PERFORM net.http_post(
     url := _url,
