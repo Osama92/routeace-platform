@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <script>
+      // No-flicker theme bootstrap: applies the guest's saved preference (or
+      // "dark" by default) before React hydrates so the landing page never
+      // flashes light. Signed-in users get their per-user theme applied a
+      // moment later by <UserThemeSync />.
+      (function () {
+        try {
+          var t = localStorage.getItem('theme:guest') || 'dark';
+          var isDark = t === 'dark' || (t === 'system' &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (isDark) document.documentElement.classList.add('dark');
+          document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+        } catch (e) {
+          document.documentElement.classList.add('dark');
+          document.documentElement.style.colorScheme = 'dark';
+        }
+      })();
+    </script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RouteAce - Distribution Intelligence Platform</title>
+    <meta name="description" content="RouteAce: Distribution Intelligence Platform for African logistics - real-time tracking, intelligent dispatch, and SLA enforcement built for Nigeria and beyond.">
+    <meta name="author" content="RouteAce" />
+    <meta name="google-site-verification" content="L9uLX8X6pZSeRXL7enaakHm9mkL05YqJIIKX1JpVCP4" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#0a0a0a" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="RouteAce" />
+    <link rel="apple-touch-icon" href="/placeholder.svg" />
+
+    <meta property="og:type" content="website" />
+    
+    
+    <meta property="og:url" content="https://routeaceglyde.app/" />
+    <meta property="og:image" content="https://routeaceglyde.app/og-image.png">
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@RouteAce" />
+    
+    
+    <meta name="twitter:image" content="https://routeaceglyde.app/og-image.png">
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "RouteAce",
+        "url": "https://routeaceglyde.app",
+        "logo": "https://routeaceglyde.app/placeholder.svg",
+        "description": "Distribution Intelligence Platform for African logistics operations.",
+        "sameAs": []
+      }
+    </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "RouteAce",
+        "url": "https://routeaceglyde.app"
+      }
+    </script>
+    <meta property="og:title" content="RouteAce - Distribution Intelligence Platform">
+  <meta name="twitter:title" content="RouteAce - Distribution Intelligence Platform">
+  <meta property="og:description" content="RouteAce: Distribution Intelligence Platform for African logistics - real-time tracking, intelligent dispatch, and SLA enforcement built for Nigeria and beyond.">
+  <meta name="twitter:description" content="RouteAce: Distribution Intelligence Platform for African logistics - real-time tracking, intelligent dispatch, and SLA enforcement built for Nigeria and beyond.">
+</head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

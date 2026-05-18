@@ -1,0 +1,2 @@
+ALTER TABLE public.dispatches ADD COLUMN IF NOT EXISTS external_synced_at timestamp with time zone;
+CREATE INDEX IF NOT EXISTS idx_dispatches_external_synced_at ON public.dispatches(organization_id, external_synced_at);

@@ -1,0 +1,44 @@
+name: Pre-deploy Readiness Gate
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Blocks merges/deploys when:
+#  - run_predeploy_readiness_check() returns deployment_blocked = true
+#  - latest tenant-isolation suite has failed > 0
+#  - latest RLS smoke run has failed > 0
+#  - DLQ growth in last 24h > 10
+#
+# Requires repo secrets:
+#   SUPABASE_PROJECT_REF        (e.g. dfvxwhcifycqqxmxiwjy)
+#   SUPABASE_SERVICE_ROLE_KEY   (service_role key — used only by CI)
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run readiness RPC
+        env:
+          REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -e
+          if [ -z "$REF" ] || [ -z "$KEY" ]; then
+            echo "::warning::Missing SUPABASE_PROJECT_REF / SUPABASE_SERVICE_ROLE_KEY — gate skipped."
+            exit 0
+          fi
+          URL="https://${REF}.supabase.co/rest/v1/rpc/run_predeploy_readiness_check"
+          RESP=$(curl -sS -X POST "$URL" \
+            -H "apikey: $KEY" \
+            -H "Authorization: Bearer $KEY" \
+            -H "Content-Type: application/json" \
+            -d '{}')
+          echo "Readiness response: $RESP"
+          BLOCKED=$(echo "$RESP" | python3 -c "import sys,json;print(json.load(sys.stdin).get('deployment_blocked',False))")
+          if [ "$BLOCKED" = "True" ] || [ "$BLOCKED" = "true" ]; then
+            echo "::error::Deployment BLOCKED by pre-deploy readiness check"
+            echo "$RESP" | python3 -m json.tool
+            exit 1
+          fi
+          echo "Readiness OK — deployment may proceed."

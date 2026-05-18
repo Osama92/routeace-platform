@@ -1,0 +1,17 @@
+# RouteAce
+
+> RouteAce is a Distribution Intelligence Platform for African logistics — real-time fleet tracking, intelligent dispatch, SLA enforcement, and revenue-loss prevention for operators in Nigeria and across the continent.
+
+RouteAce, operated by Glyde Systems, helps logistics companies and enterprise distribution teams cut revenue leakage from fraud, route inefficiency, and missed SLAs. The platform spans dispatch, fleet, finance (AR/AP, payroll, tax), driver operations, and AI-powered decision intelligence.
+
+## Pages
+
+- [Home](/): Product overview and value proposition.
+- [Sign in / Sign up](/auth): Authentication for operators, drivers, and admins.
+- [Company signup](/signup/company): Onboard a logistics company or enterprise team.
+- [Privacy Policy](/privacy): How RouteAce collects, uses, and protects data (NDPA 2023).
+
+## Optional
+
+- [Customer portal](/customer-portal): Authenticated portal for customers of RouteAce tenants.
+- [Driver app](/driver-dashboard): Authenticated mobile experience for drivers.

@@ -1,0 +1,2 @@
+ALTER TABLE public.outbound_requests ADD COLUMN IF NOT EXISTS warehouse_id UUID REFERENCES public.warehouses(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_outbound_requests_warehouse_id ON public.outbound_requests(warehouse_id);

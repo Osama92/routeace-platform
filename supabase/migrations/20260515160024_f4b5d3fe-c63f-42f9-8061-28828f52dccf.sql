@@ -1,0 +1,1 @@
+GRANT EXECUTE ON FUNCTION public.assert_no_open_rls_policies() TO anon, authenticated;

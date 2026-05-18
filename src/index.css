@@ -1,0 +1,359 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Light theme */
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 173 80% 35%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 173 80% 35%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 71% 35%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 45%;
+    --warning-foreground: 0 0% 100%;
+
+    --info: 199 89% 45%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 214 32% 88%;
+    --input: 214 32% 88%;
+    --ring: 173 80% 35%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 222 47% 15%;
+    --sidebar-primary: 173 80% 35%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 40% 94%;
+    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-border: 214 32% 88%;
+    --sidebar-ring: 173 80% 35%;
+
+    --infra-blue: 215 70% 22%;
+    --infra-blue-light: 215 65% 35%;
+    --infra-teal: 173 80% 35%;
+    --infra-orange: 24 95% 53%;
+    --infra-orange-light: 32 95% 58%;
+    --infra-purple: 271 91% 55%;
+
+    --gradient-primary: linear-gradient(135deg, hsl(173, 80%, 35%) 0%, hsl(199, 89%, 45%) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(0, 0%, 100%) 0%, hsl(210, 40%, 98%) 100%);
+    --gradient-glow: radial-gradient(ellipse at center, hsl(173, 80%, 35%, 0.10) 0%, transparent 70%);
+    --gradient-infra: linear-gradient(135deg, hsl(215, 70%, 95%) 0%, hsl(0, 0%, 100%) 100%);
+    --gradient-hero: radial-gradient(ellipse at 30% 50%, hsl(173, 80%, 35%, 0.08) 0%, transparent 50%), radial-gradient(ellipse at 70% 30%, hsl(199, 89%, 45%, 0.06) 0%, transparent 50%);
+
+    --signup-owner: 43 96% 56%;
+    --signup-owner-deep: 25 95% 53%;
+    --signup-team: 217 91% 60%;
+    --signup-team-deep: 224 76% 48%;
+    --signup-core: 271 91% 65%;
+    --signup-core-deep: 271 81% 56%;
+
+    --shadow-sm: 0 1px 2px 0 hsl(222, 47%, 11%, 0.06);
+    --shadow-md: 0 4px 6px -1px hsl(222, 47%, 11%, 0.08), 0 2px 4px -2px hsl(222, 47%, 11%, 0.06);
+    --shadow-lg: 0 10px 15px -3px hsl(222, 47%, 11%, 0.10), 0 4px 6px -4px hsl(222, 47%, 11%, 0.08);
+    --shadow-glow: 0 0 30px hsl(173, 80%, 35%, 0.15);
+  }
+
+  .dark {
+    --background: 222 47% 6%;
+    --foreground: 210 40% 98%;
+
+    --card: 222 47% 8%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222 47% 10%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 173 80% 45%;
+    --primary-foreground: 222 47% 6%;
+
+    --secondary: 222 30% 14%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 222 30% 18%;
+    --muted-foreground: 215 20% 55%;
+
+    --accent: 173 80% 45%;
+    --accent-foreground: 222 47% 6%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+
+    --success: 142 76% 36%;
+    --success-foreground: 210 40% 98%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 222 47% 6%;
+
+    --info: 199 89% 48%;
+    --info-foreground: 222 47% 6%;
+
+    --border: 222 30% 16%;
+    --input: 222 30% 16%;
+    --ring: 173 80% 45%;
+
+    --sidebar-background: 222 47% 7%;
+    --sidebar-foreground: 210 40% 90%;
+    --sidebar-primary: 173 80% 45%;
+    --sidebar-primary-foreground: 222 47% 6%;
+    --sidebar-accent: 222 30% 12%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 222 30% 14%;
+    --sidebar-ring: 173 80% 45%;
+
+    --infra-teal: 173 80% 45%;
+    --infra-purple: 271 91% 65%;
+
+    --gradient-primary: linear-gradient(135deg, hsl(173, 80%, 45%) 0%, hsl(199, 89%, 48%) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(222, 47%, 10%) 0%, hsl(222, 47%, 8%) 100%);
+    --gradient-glow: radial-gradient(ellipse at center, hsl(173, 80%, 45%, 0.15) 0%, transparent 70%);
+    --gradient-infra: linear-gradient(135deg, hsl(215, 70%, 22%) 0%, hsl(222, 47%, 8%) 100%);
+    --gradient-hero: radial-gradient(ellipse at 30% 50%, hsl(173, 80%, 45%, 0.12) 0%, transparent 50%), radial-gradient(ellipse at 70% 30%, hsl(199, 89%, 48%, 0.08) 0%, transparent 50%);
+
+    --shadow-sm: 0 1px 2px 0 hsl(222, 47%, 3%, 0.5);
+    --shadow-md: 0 4px 6px -1px hsl(222, 47%, 3%, 0.5), 0 2px 4px -2px hsl(222, 47%, 3%, 0.5);
+    --shadow-lg: 0 10px 15px -3px hsl(222, 47%, 3%, 0.6), 0 4px 6px -4px hsl(222, 47%, 3%, 0.6);
+    --shadow-glow: 0 0 30px hsl(173, 80%, 45%, 0.2);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading font-bold tracking-tight;
+    text-wrap: balance;
+  }
+
+  /* Best-in-class text rendering: prevent overflow without ugly mid-word breaks */
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    text-wrap: pretty;
+    overflow-wrap: break-word;
+    word-break: normal;
+  }
+
+  /* Stop long URLs / unbroken tokens from forcing horizontal scroll */
+  p, li, span, a, label, button, td, th, dd, dt, figcaption, blockquote {
+    overflow-wrap: break-word;
+  }
+
+  /* Never let any page paint a horizontal scrollbar */
+  html, body, #root {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  /* Media stays inside its container by default */
+  img, svg, video, canvas, audio, iframe, embed, object {
+    max-width: 100%;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-card/80 backdrop-blur-xl border border-border/50 rounded-xl;
+    box-shadow: var(--shadow-md);
+  }
+
+  .glow-effect {
+    box-shadow: var(--shadow-glow);
+  }
+
+  .gradient-text {
+    @apply bg-clip-text text-transparent;
+    background-image: var(--gradient-primary);
+  }
+
+  .status-badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium;
+  }
+
+  .status-delivered {
+    @apply bg-success/15 text-success;
+  }
+
+  .status-transit {
+    @apply bg-warning/15 text-warning;
+  }
+
+  .status-pending {
+    @apply bg-info/15 text-info;
+  }
+
+  .status-delayed {
+    @apply bg-destructive/15 text-destructive;
+  }
+
+  .metric-card {
+    @apply glass-card p-6 hover:border-primary/30 transition-all duration-300;
+  }
+
+  .nav-link {
+    @apply flex items-center gap-3 px-4 py-3 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-all duration-200;
+  }
+
+  .nav-link.active {
+    @apply bg-primary/10 text-primary border-l-2 border-primary;
+  }
+
+  .data-table-row {
+    @apply border-b border-border/50 hover:bg-secondary/30 transition-colors;
+  }
+
+  .input-field {
+    @apply bg-secondary/50 border-border/50 focus:border-primary focus:ring-primary/20;
+  }
+}
+
+@layer utilities {
+  /* Fluid typography — scales smoothly between mobile and desktop without
+     ever overflowing its container. Use instead of fixed text-{size} for headlines. */
+  .text-fluid-xs { font-size: clamp(0.75rem, 0.7rem + 0.2vw, 0.875rem); }
+  .text-fluid-sm { font-size: clamp(0.8125rem, 0.75rem + 0.3vw, 0.9375rem); }
+  .text-fluid-base { font-size: clamp(0.9375rem, 0.85rem + 0.4vw, 1.0625rem); }
+  .text-fluid-lg { font-size: clamp(1rem, 0.9rem + 0.6vw, 1.25rem); }
+  .text-fluid-xl { font-size: clamp(1.125rem, 1rem + 0.8vw, 1.5rem); }
+  .text-fluid-2xl { font-size: clamp(1.375rem, 1.1rem + 1.4vw, 1.875rem); line-height: 1.2; }
+  .text-fluid-3xl { font-size: clamp(1.75rem, 1.3rem + 2.2vw, 2.5rem); line-height: 1.15; }
+  .text-fluid-4xl { font-size: clamp(2rem, 1.4rem + 3vw, 3.25rem); line-height: 1.1; }
+  .text-fluid-5xl { font-size: clamp(2.25rem, 1.5rem + 4vw, 4rem); line-height: 1.05; }
+
+  /* Single-line truncate that never overflows its parent — pair with min-w-0 on flex children */
+  .truncate-safe {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Multi-line clamp */
+  .clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Make a flex/grid child shrinkable so its truncating children actually truncate */
+  .min-w-0-safe { min-width: 0; }
+
+  /* Horizontally-scroll a row instead of wrapping (good for tab bars / chip rows) */
+  .scroll-x-safe {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+
+  .animate-pulse-slow {
+    animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+  }
+
+  .animate-slide-up {
+    animation: slideUp 0.5s ease-out;
+  }
+
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted)) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted));
+    border-radius: 3px;
+  }
+
+  /* Signup card styles */
+  .signup-card-owner {
+    background: linear-gradient(180deg, hsl(43, 96%, 56%, 0.08) 0%, hsl(var(--card)) 40%);
+    border-color: hsl(43, 96%, 56%, 0.25);
+  }
+  .signup-card-owner:hover {
+    border-color: hsl(43, 96%, 56%, 0.5);
+    box-shadow: 0 0 40px hsl(43, 96%, 56%, 0.12), 0 8px 32px hsl(222, 47%, 3%, 0.4);
+  }
+  .signup-card-team {
+    background: linear-gradient(180deg, hsl(217, 91%, 60%, 0.08) 0%, hsl(var(--card)) 40%);
+    border-color: hsl(217, 91%, 60%, 0.25);
+  }
+  .signup-card-team:hover {
+    border-color: hsl(217, 91%, 60%, 0.5);
+    box-shadow: 0 0 40px hsl(217, 91%, 60%, 0.12), 0 8px 32px hsl(222, 47%, 3%, 0.4);
+  }
+  .signup-card-core {
+    background: linear-gradient(180deg, hsl(271, 91%, 65%, 0.08) 0%, hsl(var(--card)) 40%);
+    border-color: hsl(271, 91%, 65%, 0.25);
+  }
+  .signup-card-core:hover {
+    border-color: hsl(271, 91%, 65%, 0.5);
+    box-shadow: 0 0 40px hsl(271, 91%, 65%, 0.12), 0 8px 32px hsl(222, 47%, 3%, 0.4);
+  }
+}

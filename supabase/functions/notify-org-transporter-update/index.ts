@@ -1,0 +1,135 @@
+// Notifies the LD organization (ops_manager / org_admin / super_admin) when a
+// 3PL transporter updates a job status (accepted, picked up, in transit, POD,
+// dispute). Keeps the LD org in the loop without exposing them to other tenants.
+import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.89.0";
+import { Resend } from "https://esm.sh/resend@2.0.0";
+
+import { buildCors } from "../_shared/cors.ts";
+let corsHeaders: Record<string, string> = buildCors();
+const STATUS_LABELS: Record<string, string> = {
+  accepted: "Accepted by transporter",
+  pickup_confirmed: "Pickup confirmed",
+  in_transit: "In transit",
+  pod_uploaded: "Delivered - POD uploaded",
+  delivered: "Delivered",
+  disputed: "Dispute raised",
+};
+
+serve(async (req) => {
+  corsHeaders = buildCors(req);
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  try {
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+    const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const RESEND_KEY = Deno.env.get("RESEND_API_KEY");
+
+    const auth = req.headers.get("Authorization") ?? "";
+    const userClient = createClient(SUPABASE_URL, ANON_KEY, {
+      global: { headers: { Authorization: auth } },
+      auth: { persistSession: false },
+    });
+    const { data: u } = await userClient.auth.getUser();
+    if (!u?.user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const { job_id, status, notes } = await req.json();
+    if (!job_id || !status) {
+      return new Response(JSON.stringify({ error: "job_id and status are required" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const svc = createClient(SUPABASE_URL, SERVICE_KEY);
+
+    // Look up job + dispatch + transporter (service role bypasses RLS - required
+    // because the transporter user can't read the LD org's profiles directly)
+    const { data: job } = await svc.from("ld_transporter_jobs")
+      .select("id, organization_id, dispatch_id, transporter_id")
+      .eq("id", job_id).maybeSingle();
+    if (!job?.organization_id) {
+      return new Response(JSON.stringify({ error: "Job not found" }), {
+        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const [{ data: d }, { data: t }] = await Promise.all([
+      svc.from("dispatches")
+        .select("dispatch_number, pickup_address, delivery_address")
+        .eq("id", job.dispatch_id).maybeSingle(),
+      svc.from("ld_transporters")
+        .select("company_name, contact_name").eq("id", job.transporter_id).maybeSingle(),
+    ]);
+
+    // Recipients = active org members with ops/admin roles
+    const { data: members } = await svc
+      .from("organization_members")
+      .select("user_id")
+      .eq("organization_id", job.organization_id)
+      .eq("is_active", true);
+    const userIds = (members ?? []).map((m: any) => m.user_id);
+    if (userIds.length === 0) {
+      return new Response(JSON.stringify({ ok: true, recipients: 0 }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const { data: roles } = await svc.from("user_roles").select("user_id, role").in("user_id", userIds);
+    const allowedRoles = new Set(["super_admin", "admin", "org_admin", "ops_manager", "support"]);
+    const targetUserIds = (roles ?? [])
+      .filter((r: any) => allowedRoles.has(r.role))
+      .map((r: any) => r.user_id);
+    if (targetUserIds.length === 0) {
+      return new Response(JSON.stringify({ ok: true, recipients: 0 }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const { data: profiles } = await svc.from("profiles")
+      .select("email, full_name").in("user_id", targetUserIds);
+    const recipients = (profiles ?? [])
+      .map((p: any) => p.email).filter((e: string) => !!e);
+    if (recipients.length === 0) {
+      return new Response(JSON.stringify({ ok: true, recipients: 0 }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const label = STATUS_LABELS[status] ?? status;
+    const subject = `Dispatch ${d?.dispatch_number ?? ""} - ${label}`;
+    const html = `
+      <h3>Transporter update on Dispatch ${d?.dispatch_number ?? job.dispatch_id}</h3>
+      <p><strong>Status:</strong> ${label}</p>
+      <p><strong>Transporter:</strong> ${t?.company_name ?? "-"}${t?.contact_name ? ` (${t.contact_name})` : ""}</p>
+      <p><strong>Route:</strong> ${d?.pickup_address ?? "-"} → ${d?.delivery_address ?? "-"}</p>
+      ${notes ? `<p><strong>Notes:</strong> ${String(notes).slice(0, 500)}</p>` : ""}
+      <p style="color:#888;font-size:12px;">Auto-generated by RouteAce. The In-Transit Monitor, POD desk, and Sales &amp; Distribution Tracker have been updated.</p>
+    `;
+
+    let sent = false;
+    let error: string | null = null;
+    if (RESEND_KEY) {
+      try {
+        const resend = new Resend(RESEND_KEY);
+        await resend.emails.send({
+          from: "RouteAce <onboarding@resend.dev>",
+          to: recipients,
+          subject, html,
+        });
+        sent = true;
+      } catch (e: any) { error = e?.message ?? "send failed"; }
+    } else {
+      error = "RESEND_API_KEY not configured";
+    }
+
+    return new Response(JSON.stringify({ ok: true, sent, error, recipients: recipients.length }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (e: any) {
+    return new Response(JSON.stringify({ error: e?.message ?? "Unhandled" }), {
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});
