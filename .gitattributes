@@ -1,12 +1,11 @@
 # Normalize line endings for cross-platform consistency
 * text=auto eol=lf
-
 # Binary files — no line-ending conversion
 *.png binary
 *.jpg binary
 *.jpeg binary
 *.ico binary
-*.mp4 binary
+*.mp4 filter=lfs diff=lfs merge=lfs -text
 *.woff binary
 *.woff2 binary
 *.ttf binary
@@ -14,3 +13,5 @@
 *.pdf binary
 *.zip binary
 *.tgz binary
+*.mov filter=lfs diff=lfs merge=lfs -text
+*.webm filter=lfs diff=lfs merge=lfs -text
