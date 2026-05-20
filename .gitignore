@@ -10,6 +10,11 @@
 # Supabase temp files
 supabase/.temp/
 
+# Large video assets — served from Supabase Storage / CDN, not committed to git
+src/assets/**/*.mp4
+src/assets/**/*.mov
+src/assets/**/*.webm
+
 # Logs
 logs
 *.log
