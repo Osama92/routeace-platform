@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS public.customer_invite_tokens (
   customer_id UUID REFERENCES public.customers(id) ON DELETE CASCADE,
   email TEXT NOT NULL,
   full_name TEXT,
-  token TEXT NOT NULL UNIQUE DEFAULT encode(gen_random_bytes(24), 'hex'),
+  token TEXT NOT NULL UNIQUE DEFAULT encode(extensions.gen_random_bytes(24), 'hex'),
   expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + interval '14 days'),
   used_at TIMESTAMPTZ,
   used_by UUID,

@@ -1,0 +1,35 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# Production — master branch → routeaceglyde.app
+[context.production]
+  command = "npm run build"
+  [context.production.environment]
+    NODE_ENV = "production"
+    VITE_SUPABASE_URL = "https://mbybrzggrpyhvcnxhlua.supabase.co"
+    VITE_SUPABASE_PROJECT_ID = "mbybrzggrpyhvcnxhlua"
+    # VITE_SUPABASE_PUBLISHABLE_KEY — set in Netlify dashboard (Site config → Env vars)
+
+# Staging / develop branch → develop--<site>.netlify.app
+[context.develop]
+  command = "npm run build"
+  [context.develop.environment]
+    NODE_ENV = "production"
+    VITE_SUPABASE_URL = "https://sklsqzsjclblrjdgzkhz.supabase.co"
+    VITE_SUPABASE_PROJECT_ID = "sklsqzsjclblrjdgzkhz"
+    # VITE_SUPABASE_PUBLISHABLE_KEY — set in Netlify dashboard under develop branch context
+
+# Branch deploy previews (any other branch)
+[context.branch-deploy]
+  command = "npm run build"
+  [context.branch-deploy.environment]
+    NODE_ENV = "production"
+    VITE_SUPABASE_URL = "https://sklsqzsjclblrjdgzkhz.supabase.co"
+    VITE_SUPABASE_PROJECT_ID = "sklsqzsjclblrjdgzkhz"
+
+# SPA routing — all paths serve index.html
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

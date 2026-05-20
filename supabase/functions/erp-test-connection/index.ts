@@ -3,6 +3,38 @@
 // (b) inline {provider, instance_url, client_id, client_secret} for pre-save testing.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
+// Allowlist of permitted hostname suffixes per provider.
+// instance_url values must match one of these patterns before any fetch is made.
+const ALLOWED_INSTANCE_HOSTS: RegExp[] = [
+  /\.salesforce\.com$/i,
+  /\.force\.com$/i,
+  /\.sap\.com$/i,
+  /\.jaggaer\.com$/i,
+  /\.zoho\.com$/i,
+  /\.zohoapis\.com$/i,
+  /\.oracle\.com$/i,
+  /\.netsuite\.com$/i,
+  /\.dynamics\.com$/i,
+  /\.microsoft\.com$/i,
+  /accounts\.zoho\.(com|eu|com\.au|in)$/i,
+]
+
+function validateInstanceUrl(raw: string): { ok: true; url: URL } | { ok: false; error: string } {
+  let parsed: URL
+  try {
+    parsed = new URL(raw)
+  } catch {
+    return { ok: false, error: 'instance_url is not a valid URL' }
+  }
+  if (parsed.protocol !== 'https:') {
+    return { ok: false, error: 'instance_url must use HTTPS' }
+  }
+  if (!ALLOWED_INSTANCE_HOSTS.some((r) => r.test(parsed.hostname))) {
+    return { ok: false, error: `instance_url hostname '${parsed.hostname}' is not on the permitted ERP domain list` }
+  }
+  return { ok: true, url: parsed }
+}
+
 import { buildCors } from "../_shared/cors.ts";
 let corsHeaders: Record<string, string> = buildCors();
 Deno.serve(async (req) => {
@@ -68,7 +100,9 @@ async function testProvider(
   try {
     if (provider === "jaggaer") {
       if (!c.instance_url) return { ok: false, error: "Instance URL required" };
-      const r = await fetch(`${c.instance_url}/oauth/token`, {
+      const v = validateInstanceUrl(c.instance_url);
+      if (!v.ok) return { ok: false, error: v.error };
+      const r = await fetch(`${v.url.origin}/oauth/token`, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
@@ -104,7 +138,9 @@ async function testProvider(
 
     if (provider === "zoho_books" || provider === "zoho_inventory") {
       if (!c.instance_url) return { ok: false, error: "Region/Instance URL required (e.g. https://accounts.zoho.com)" };
-      const r = await fetch(`${c.instance_url}/oauth/v2/token`, {
+      const v = validateInstanceUrl(c.instance_url);
+      if (!v.ok) return { ok: false, error: v.error };
+      const r = await fetch(`${v.url.origin}/oauth/v2/token`, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
@@ -120,8 +156,10 @@ async function testProvider(
 
     // Generic reachability check
     if (c.instance_url) {
+      const v = validateInstanceUrl(c.instance_url);
+      if (!v.ok) return { ok: false, error: v.error };
       try {
-        const r = await fetch(c.instance_url, { method: "HEAD" });
+        const r = await fetch(v.url.origin, { method: "HEAD" });
         return { ok: r.ok || r.status < 500, details: `Endpoint reachable (HTTP ${r.status}). Provider-specific test not implemented yet.` };
       } catch {
         return { ok: false, error: "Instance URL unreachable" };

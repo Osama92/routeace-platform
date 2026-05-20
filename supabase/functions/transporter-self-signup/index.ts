@@ -1,25 +1,19 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 
-const ALLOWED_ORIGIN_SUFFIXES = [
-  ".lovable.app",
-  ".lovableproject.com",
-  ".lovable.dev",
-];
 const ALLOWED_ORIGINS_EXACT = new Set([
   "https://routeaceglyde.app",
   "https://www.routeaceglyde.app",
-  "https://routeace-platform.lovable.app",
   "http://localhost:5173",
   "http://localhost:3000",
+  "http://localhost:8080",
+  "http://localhost:8081",
 ]);
 
 function pickOrigin(req: Request): string {
   const origin = req.headers.get("origin") ?? "";
   if (ALLOWED_ORIGINS_EXACT.has(origin)) return origin;
-  try {
-    const host = new URL(origin).hostname;
-    if (ALLOWED_ORIGIN_SUFFIXES.some((s) => host.endsWith(s))) return origin;
-  } catch (_) { /* ignore */ }
+  // Allow any localhost port for local development
+  if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return origin;
   return "https://routeaceglyde.app";
 }
 

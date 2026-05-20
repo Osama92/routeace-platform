@@ -7,7 +7,11 @@ ALTER TABLE public.integration_configs
   ADD COLUMN IF NOT EXISTS last_sync_at timestamptz,
   ADD COLUMN IF NOT EXISTS last_sync_status text;
 
-UPDATE public.integration_configs SET provider = integration_type WHERE provider IS NULL AND integration_type IS NOT NULL;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='integration_configs' AND column_name='integration_type') THEN
+    UPDATE public.integration_configs SET provider = integration_type WHERE provider IS NULL AND integration_type IS NOT NULL;
+  END IF;
+END $$;
 
 DO $$ BEGIN
   IF NOT EXISTS (

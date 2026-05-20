@@ -1,0 +1,30 @@
+name: CI — Type check & build
+
+on:
+  pull_request:
+    branches: [master, develop]
+
+jobs:
+  ci:
+    name: Type check & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build (dev config)
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: https://sklsqzsjclblrjdgzkhz.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY_DEV }}
+          VITE_SUPABASE_PROJECT_ID: sklsqzsjclblrjdgzkhz

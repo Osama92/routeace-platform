@@ -3,6 +3,13 @@
 .env.local
 .env.*.local
 
+# Allow committed env files (contain only public/anon keys — no secrets)
+!.env.production
+!.env.development
+
+# Supabase temp files
+supabase/.temp/
+
 # Logs
 logs
 *.log

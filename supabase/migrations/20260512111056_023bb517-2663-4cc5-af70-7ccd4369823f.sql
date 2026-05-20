@@ -135,9 +135,9 @@ CREATE POLICY "integration_configs_admin_only" ON public.integration_configs
 CREATE OR REPLACE VIEW public.integration_configs_public
 WITH (security_invoker = on) AS
 SELECT
-  id, organization_id, integration_type, provider, instance_url,
-  client_id, is_active, last_synced_at, last_sync_at, last_sync_status,
-  auto_sync_enabled, sync_interval_seconds, created_by, created_at, updated_at
+  id, organization_id, provider AS integration_type, provider, instance_url,
+  client_id, is_active, last_sync_at, last_sync_status,
+  created_by, created_at, updated_at
 FROM public.integration_configs;
 GRANT SELECT ON public.integration_configs_public TO authenticated;
 

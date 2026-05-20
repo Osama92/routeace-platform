@@ -50,6 +50,15 @@ async function computeHmacHex(secret: string, message: string): Promise<string> 
     .join('')
 }
 
+function timingSafeEqual(a: string, b: string): boolean {
+  const aBytes = new TextEncoder().encode(a)
+  const bBytes = new TextEncoder().encode(b)
+  if (aBytes.length !== bBytes.length) return false
+  let diff = 0
+  for (let i = 0; i < aBytes.length; i++) diff |= aBytes[i] ^ bBytes[i]
+  return diff === 0
+}
+
 async function verifyWebhookRequest(
   req: Request,
   secret: string
@@ -61,6 +70,10 @@ async function verifyWebhookRequest(
     throw new WebhookError('missing_timestamp', 'Missing x-routeace-timestamp header')
   }
 
+  if (!signature) {
+    throw new WebhookError('missing_signature', 'Missing x-routeace-signature header')
+  }
+
   const ts = parseInt(timestamp, 10)
   if (isNaN(ts) || Math.abs(Date.now() - ts) > 5 * 60 * 1000) {
     throw new WebhookError('stale_timestamp', 'Request timestamp is stale or invalid')
@@ -68,11 +81,9 @@ async function verifyWebhookRequest(
 
   const body = await req.text()
 
-  if (signature) {
-    const expected = await computeHmacHex(secret, `${timestamp}.${body}`)
-    if (signature !== expected) {
-      throw new WebhookError('invalid_signature', 'Webhook signature mismatch')
-    }
+  const expected = await computeHmacHex(secret, `${timestamp}.${body}`)
+  if (!timingSafeEqual(signature, expected)) {
+    throw new WebhookError('invalid_signature', 'Webhook signature mismatch')
   }
 
   let payload: HookPayload
@@ -232,6 +243,7 @@ async function handleWebhook(req: Request): Promise<Response> {
     if (error instanceof WebhookError) {
       switch (error.code) {
         case 'invalid_signature':
+        case 'missing_signature':
         case 'missing_timestamp':
         case 'invalid_timestamp':
         case 'stale_timestamp':

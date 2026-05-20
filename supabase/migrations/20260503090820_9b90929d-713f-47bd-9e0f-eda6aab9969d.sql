@@ -1,4 +1,7 @@
 
+-- Ensure pod_confirmed exists before triggers reference it
+ALTER TABLE public.dispatches ADD COLUMN IF NOT EXISTS pod_confirmed boolean DEFAULT false;
+
 -- 1. Link rate cards to dispatches & invoices
 ALTER TABLE public.dispatches
   ADD COLUMN IF NOT EXISTS vendor_rate_card_id uuid REFERENCES public.vendor_rate_cards(id) ON DELETE SET NULL;

@@ -6,7 +6,7 @@ DO $$ BEGIN ALTER TABLE public.ld_transporters ADD COLUMN self_registered BOOLEA
 CREATE TABLE IF NOT EXISTS public.transporter_invite_tokens (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  token           TEXT NOT NULL UNIQUE DEFAULT substring(encode(gen_random_bytes(9), 'base64'), 1, 12),
+  token           TEXT NOT NULL UNIQUE DEFAULT substring(encode(extensions.gen_random_bytes(9), 'base64'), 1, 12),
   is_active       BOOLEAN NOT NULL DEFAULT true,
   uses_count      INTEGER NOT NULL DEFAULT 0,
   max_uses        INTEGER,

@@ -130,6 +130,7 @@ export async function validateAuth(req: Request): Promise<AuthResult> {
  */
 export function hasPermission(role: AppRole | null, permission: PermissionKey): boolean {
   if (!role) return false;
+  if (role === "super_admin") return true;
   const permissions = ROLE_PERMISSIONS[role];
   return permissions?.includes(permission) || false;
 }

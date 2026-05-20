@@ -5,7 +5,7 @@ ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS tin_number TEXT;
 CREATE TABLE IF NOT EXISTS public.tracking_tokens (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   dispatch_id UUID NOT NULL REFERENCES public.dispatches(id) ON DELETE CASCADE,
-  token TEXT NOT NULL UNIQUE DEFAULT encode(gen_random_bytes(32), 'hex'),
+  token TEXT NOT NULL UNIQUE DEFAULT encode(extensions.gen_random_bytes(32), 'hex'),
   expires_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT (now() + interval '30 days'),
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   UNIQUE(dispatch_id)

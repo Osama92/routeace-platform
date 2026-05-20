@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import DOMPurify from "dompurify";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -198,7 +199,7 @@ export default function EmailTemplatePreview() {
             <CardHeader><CardTitle className="text-base">Live preview · {orgName}</CardTitle></CardHeader>
             <CardContent>
               <div className="border rounded-lg overflow-hidden" style={{ maxHeight: 600, overflowY: "auto" }}>
-                <div dangerouslySetInnerHTML={{ __html: html }} />
+                <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(html) }} />
               </div>
             </CardContent>
           </Card>

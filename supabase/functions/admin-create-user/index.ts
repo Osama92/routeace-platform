@@ -70,6 +70,10 @@ async function seedLeaveBalance(
   }
 }
 
+function escHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+}
+
 async function sendWelcomeEmail(opts: {
   email: string;
   fullName: string;
@@ -81,9 +85,11 @@ async function sendWelcomeEmail(opts: {
     console.warn("[welcome-email] RESEND_API_KEY not set - skipping email to", opts.email);
     return;
   }
-  const siteUrl = Deno.env.get("SITE_URL") ?? "https://routeace-platform.lovable.app";
+  const siteUrl = Deno.env.get("SITE_URL") ?? "https://routeaceglyde.app";
   const loginUrl = `${siteUrl}/auth`;
-  const displayRole = ROLE_LABELS[opts.role] ?? opts.role;
+  const displayRole = escHtml(ROLE_LABELS[opts.role] ?? opts.role);
+  const safeFullName = escHtml(opts.fullName);
+  const safeEmail = escHtml(opts.email);
 
   try {
     const { Resend } = await import("https://esm.sh/resend@2.0.0");
@@ -91,7 +97,7 @@ async function sendWelcomeEmail(opts: {
     const result = await resend.emails.send({
       from: "RouteAce <onboarding@resend.dev>",
       to: [opts.email],
-      subject: `Welcome to RouteAce - Your ${displayRole} account is ready`,
+      subject: `Welcome to RouteAce - Your ${ROLE_LABELS[opts.role] ?? opts.role} account is ready`,
       html: `
         <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;background:#f8fafc">
           <div style="background:#ffffff;border-radius:12px;padding:32px;box-shadow:0 1px 3px rgba(0,0,0,0.06)">
@@ -99,14 +105,14 @@ async function sendWelcomeEmail(opts: {
               <h1 style="color:#0f172a;margin:0 0 8px 0;font-size:22px">Welcome to RouteAce</h1>
               <p style="color:#64748b;margin:0;font-size:14px">Your ${displayRole} account has been created</p>
             </div>
-            <p style="color:#0f172a;font-size:14px">Hi ${opts.fullName},</p>
+            <p style="color:#0f172a;font-size:14px">Hi ${safeFullName},</p>
             <p style="color:#334155;font-size:14px;line-height:1.5">
               Your account on the RouteAce platform has been created. Here are your login details:
             </p>
             <div style="background:#f1f5f9;border-radius:8px;padding:16px;margin:16px 0">
-              <p style="margin:4px 0;color:#0f172a;font-size:14px"><strong>Email:</strong> ${opts.email}</p>
+              <p style="margin:4px 0;color:#0f172a;font-size:14px"><strong>Email:</strong> ${safeEmail}</p>
               ${opts.tempPassword
-                ? `<p style="margin:4px 0;color:#0f172a;font-size:14px"><strong>Temporary Password:</strong> <code style="background:#e2e8f0;padding:2px 6px;border-radius:4px">${opts.tempPassword}</code></p>`
+                ? `<p style="margin:4px 0;color:#0f172a;font-size:14px">A temporary password has been set. Please change it immediately after your first login.</p>`
                 : `<p style="margin:4px 0;color:#0f172a;font-size:14px">A separate email was sent for you to set your password.</p>`}
               <p style="margin:4px 0;color:#0f172a;font-size:14px"><strong>Role:</strong> ${displayRole}</p>
             </div>
@@ -115,7 +121,6 @@ async function sendWelcomeEmail(opts: {
                 <strong>Pending approval:</strong> A Super Admin must approve your account before you can sign in. You'll receive a confirmation once you're approved.
               </p>
             </div>
-            ${opts.tempPassword ? `<p style="color:#b91c1c;font-size:13px"><strong>Please change your password immediately after your first login.</strong></p>` : ""}
             <div style="text-align:center;margin:24px 0">
               <a href="${loginUrl}" style="background:#0f172a;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;display:inline-block;font-weight:600">Sign In to RouteAce</a>
             </div>
@@ -126,7 +131,7 @@ async function sendWelcomeEmail(opts: {
         </div>
       `,
     });
-    console.log("[welcome-email] sent to", opts.email, "result:", JSON.stringify(result));
+    console.log("[welcome-email] sent to", opts.email);
     if ((result as any)?.error) {
       console.error("[welcome-email] Resend REJECTED for", opts.email, "-", (result as any).error);
     }
@@ -453,7 +458,7 @@ Deno.serve(async (req) => {
       email,
       role,
       organization_id: organizationId,
-      temp_password: generatedPassword ? password : undefined,
+      password_emailed: generatedPassword,
     });
   } catch (err: any) {
     console.error("admin-create-user error", err);

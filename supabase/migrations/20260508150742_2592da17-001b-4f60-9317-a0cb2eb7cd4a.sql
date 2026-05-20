@@ -1,5 +1,6 @@
 
 ALTER TABLE public.support_tickets
+  ADD COLUMN IF NOT EXISTS dispatch_id uuid REFERENCES public.dispatches(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS csat_link_expires_at timestamptz,
   ADD COLUMN IF NOT EXISTS csat_link_sent_at timestamptz,
   ADD COLUMN IF NOT EXISTS csat_reminder_sent_at timestamptz,

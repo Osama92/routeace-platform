@@ -129,55 +129,31 @@ export async function checkRateLimit(
   serviceRoleKey: string
 ): Promise<{ allowed: boolean; remaining: number; resetAt: Date }> {
   const supabase = createClient(supabaseUrl, serviceRoleKey);
-  
-  // Get current minute bucket
+
   const now = new Date();
   const bucketWindow = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes());
+  const resetAt = new Date(bucketWindow.getTime() + 60000);
 
-  // Try to increment or insert bucket
-  const { data: existing } = await supabase
-    .from('rate_limit_buckets')
-    .select('request_count')
-    .eq('api_key_id', apiKeyId)
-    .eq('bucket_window', bucketWindow.toISOString())
-    .single();
+  // Atomic upsert: INSERT ... ON CONFLICT DO UPDATE SET request_count = request_count + 1
+  // This eliminates the read-then-write TOCTOU race condition.
+  const { data, error } = await supabase.rpc('increment_rate_limit_bucket', {
+    p_api_key_id: apiKeyId,
+    p_bucket_window: bucketWindow.toISOString(),
+    p_limit: limitPerMinute,
+  });
 
-  if (existing) {
-    if (existing.request_count >= limitPerMinute) {
-      return {
-        allowed: false,
-        remaining: 0,
-        resetAt: new Date(bucketWindow.getTime() + 60000),
-      };
-    }
-
-    await supabase
-      .from('rate_limit_buckets')
-      .update({ request_count: existing.request_count + 1 })
-      .eq('api_key_id', apiKeyId)
-      .eq('bucket_window', bucketWindow.toISOString());
-
-    return {
-      allowed: true,
-      remaining: limitPerMinute - existing.request_count - 1,
-      resetAt: new Date(bucketWindow.getTime() + 60000),
-    };
+  if (error) {
+    // Fail open on DB error to avoid blocking all requests on infrastructure issues
+    console.error('Rate limit check failed', { error });
+    return { allowed: true, remaining: 0, resetAt };
   }
 
-  // Create new bucket
-  await supabase
-    .from('rate_limit_buckets')
-    .insert({
-      api_key_id: apiKeyId,
-      bucket_window: bucketWindow.toISOString(),
-      request_count: 1,
-    });
+  const count: number = data ?? 1;
+  if (count > limitPerMinute) {
+    return { allowed: false, remaining: 0, resetAt };
+  }
 
-  return {
-    allowed: true,
-    remaining: limitPerMinute - 1,
-    resetAt: new Date(bucketWindow.getTime() + 60000),
-  };
+  return { allowed: true, remaining: Math.max(0, limitPerMinute - count), resetAt };
 }
 
 /**

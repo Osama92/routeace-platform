@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS public.organization_invitations (
     email TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'member',
     invited_by UUID NOT NULL,
-    token TEXT UNIQUE NOT NULL DEFAULT encode(gen_random_bytes(32), 'hex'),
+    token TEXT UNIQUE NOT NULL DEFAULT encode(extensions.gen_random_bytes(32), 'hex'),
     expires_at TIMESTAMPTZ NOT NULL DEFAULT (now() + interval '7 days'),
     accepted_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()

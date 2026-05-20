@@ -9,11 +9,11 @@ export function buildCors(req?: Request): Record<string, string> {
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
-  const isLovableApp = /^https:\/\/([a-z0-9-]+\.)*lovable\.app$/i.test(requestOrigin);
   const isRouteAceDomain = /^https:\/\/(www\.)?routeaceglyde\.app$/i.test(requestOrigin);
-  const origin = allowedOrigins.includes(requestOrigin) || isLovableApp || isRouteAceDomain
+  const isLocalhost = /^https?:\/\/localhost(:\d+)?$/.test(requestOrigin);
+  const origin = allowedOrigins.includes(requestOrigin) || isRouteAceDomain || isLocalhost
     ? requestOrigin
-    : allowedOrigins[0] ?? "*";
+    : allowedOrigins[0] ?? "https://routeaceglyde.app";
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Headers":
