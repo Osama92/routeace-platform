@@ -8,7 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { CheckCircle, Package, Loader2, AlertCircle } from "lucide-react";
 
-const PUBLIC_CUSTOMER_PORTAL_ORIGIN = "https://routeaceglyde.app";
+const PUBLIC_CUSTOMER_PORTAL_ORIGIN = "https://routeace.app";
 const isPrivatePreviewHost = (h: string) =>
   h.includes("id-preview--") || h.endsWith(".lovable.app") || h.endsWith(".lovableproject.com");
 

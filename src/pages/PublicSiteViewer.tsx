@@ -347,7 +347,7 @@ const PublicSiteViewer = () => {
 
       <footer className="border-t border-border/40 py-6 px-6 text-center text-xs text-muted-foreground">
         © {new Date().getFullYear()} {site.company_name}. Powered by{" "}
-        <a href="https://routeaceglyde.app" className="text-primary hover:underline">
+        <a href="https://routeace.app" className="text-primary hover:underline">
           RouteAce
         </a>
       </footer>

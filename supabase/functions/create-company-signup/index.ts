@@ -292,7 +292,7 @@ Deno.serve(async (req) => {
     // 10. Send the confirmation email via the auth email hook.
     //     admin.createUser() does NOT trigger this - we must explicitly resend.
     const originHeader = req.headers.get("origin") || req.headers.get("referer") || "";
-    const siteUrl = originHeader ? new URL(originHeader).origin : "https://routeaceglyde.app";
+    const siteUrl = originHeader ? new URL(originHeader).origin : "https://routeace.app";
     try {
       const { error: resendErr } = await admin.auth.resend({
         type: "signup",

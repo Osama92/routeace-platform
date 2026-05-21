@@ -55,7 +55,7 @@ Deno.serve(async (req) => {
     const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
     const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const PAYSTACK_SECRET = Deno.env.get("PAYSTACK_SECRET_KEY");
-    const SITE_URL = Deno.env.get("SITE_URL") ?? "https://routeaceglyde.app";
+    const SITE_URL = Deno.env.get("SITE_URL") ?? "https://routeace.app";
 
     if (!PAYSTACK_SECRET) return jsonRes({ error: "Payment provider not configured" }, 500, cors);
 

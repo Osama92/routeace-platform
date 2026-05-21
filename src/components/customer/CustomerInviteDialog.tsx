@@ -16,7 +16,7 @@ interface Props {
 }
 
 const ALLOWED = ["super_admin", "org_admin", "admin", "ops_manager", "support"];
-const PUBLIC_CUSTOMER_PORTAL_ORIGIN = "https://routeaceglyde.app";
+const PUBLIC_CUSTOMER_PORTAL_ORIGIN = "https://routeace.app";
 
 const isLovableOrLocalHost = (hostname: string) =>
   hostname.includes("id-preview--") ||

@@ -30,7 +30,7 @@ Deno.test("CORS reflects allowed lovable preview origin", async () => {
 
 Deno.test("CORS falls back to production origin for unknown origins", async () => {
   const r = await callValidate("nonexistent_token", "https://evil.example.com");
-  assertEquals(r.cors, "https://routeaceglyde.app");
+  assertEquals(r.cors, "https://routeace.app");
 });
 
 Deno.test("validate_only returns reason=token_not_found for bogus token", async () => {

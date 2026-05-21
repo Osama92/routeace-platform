@@ -31,7 +31,7 @@ export function ResendClientEmailButton({
       if (error) throw error;
       toast.success(
         (data as any)?.email_sent
-          ? "Client email re-sent from routeaceglyde.app"
+          ? "Client email re-sent from routeace.app"
           : "Update logged - no client email on file",
       );
     } catch (e: any) {

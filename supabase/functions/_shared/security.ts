@@ -2,7 +2,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 export const corsHeaders = {
-  'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') ?? Deno.env.get('SUPABASE_URL') ?? 'https://routeaceglyde.app',
+  'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') ?? Deno.env.get('SUPABASE_URL') ?? 'https://routeace.app',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-api-key',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
 };

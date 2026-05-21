@@ -24,7 +24,7 @@ export default function About() {
     <PublicShell
       title="About"
       description="RouteAce is Africa's distribution intelligence infrastructure, operated by Glyde Systems."
-      canonical="https://routeaceglyde.app/about"
+      canonical="https://routeace.app/about"
     >
       <div className="-mx-6 md:-mx-0 space-y-0 animate-in fade-in duration-700">
         {/* Section 1 — Hero with background video */}

@@ -12,12 +12,12 @@ export default function Blog() {
     <PublicShell
       title="Blog"
       description="Operator-grade field notes on African logistics, fleet intelligence, fuel fraud detection, and distribution playbooks."
-      canonical="https://routeaceglyde.app/blog"
+      canonical="https://routeace.app/blog"
       jsonLd={{
         "@context": "https://schema.org",
         "@type": "Blog",
         name: "RouteAce Blog",
-        url: "https://routeaceglyde.app/blog",
+        url: "https://routeace.app/blog",
         description: "Field notes from the team building distribution infrastructure for Africa.",
         blogPost: POSTS.map((p) => ({
           "@type": "BlogPosting",

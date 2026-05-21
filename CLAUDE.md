@@ -11,7 +11,7 @@ This file is the single source of truth for how this codebase is structured, wha
 | Product Name | RouteAce |
 | Full Name | RouteAce Distribution Intelligence Platform |
 | Operator | Glyde Systems |
-| Production Domain | routeaceglyde.app |
+| Production Domain | routeace.app |
 | Supabase Project ID | mbybrzggrpyhvcnxhlua |
 | Supabase URL | https://mbybrzggrpyhvcnxhlua.supabase.co |
 
@@ -65,7 +65,7 @@ VITE_SUPABASE_PROJECT_ID=mbybrzggrpyhvcnxhlua
 WEBHOOK_SECRET          HMAC secret for auth-email-hook (replaces old LOVABLE_API_KEY)
 SUPABASE_SERVICE_ROLE_KEY  Service role key
 SUPABASE_URL            Internal — auto-injected by Supabase runtime
-ALLOWED_ORIGIN          CORS origin, e.g. https://routeaceglyde.app
+ALLOWED_ORIGIN          CORS origin, e.g. https://routeace.app
 ```
 
 ### GitHub Actions Secrets (repo settings)
@@ -142,7 +142,7 @@ The service worker file itself is `public/sw.js`. Web push uses VAPID keys fetch
 
 ## Connecting the Lovable-Purchased Domain
 
-The domain `routeaceglyde.app` was originally purchased through Lovable. It is fully portable — you own the domain and can point it at any host. Below are step-by-step instructions for each deployment target.
+The domain `routeace.app` was originally purchased through Lovable. It is fully portable — you own the domain and can point it at any host. Below are step-by-step instructions for each deployment target.
 
 ### Step 1 — Identify your DNS registrar
 
@@ -150,7 +150,7 @@ Lovable purchases domains via a registrar on your behalf. Check your email inbox
 
 Alternatively, look up the registrar:
 ```
-whois routeaceglyde.app
+whois routeace.app
 ```
 
 ### Step 2 — Build the project
@@ -165,7 +165,7 @@ npm run build
 1. Go to https://app.netlify.com → New site → Deploy manually
 2. Drag and drop the `dist/` folder
 3. Add environment variables in Site Settings → Environment Variables
-4. Go to Site Settings → Domain Management → Add custom domain → enter `routeaceglyde.app`
+4. Go to Site Settings → Domain Management → Add custom domain → enter `routeace.app`
 5. Netlify will show you the DNS records to set:
    - CNAME `www` → `<your-netlify-site>.netlify.app`
    - A record `@` → Netlify's IP (shown in the UI)
@@ -182,14 +182,14 @@ npm run build
 2. Connect your Git repo OR upload `dist/` directly
 3. Set build command: `npm run build`, output directory: `dist`
 4. Add environment variables
-5. Go to the Pages project → Custom domains → Add domain → `routeaceglyde.app`
+5. Go to the Pages project → Custom domains → Add domain → `routeace.app`
 6. If your domain's nameservers are already Cloudflare, the domain auto-connects
 7. If not, update your registrar's nameservers to Cloudflare's (shown in the Cloudflare UI)
 
 ### Step 3C — Deploy to Vercel
 
 1. `npm i -g vercel && vercel --prod`
-2. In Vercel dashboard → Domains → Add `routeaceglyde.app`
+2. In Vercel dashboard → Domains → Add `routeace.app`
 3. Set DNS CNAME record: `@` → `cname.vercel-dns.com`
 4. Add `vercel.json` in the project root for SPA routing:
    ```json
@@ -200,14 +200,14 @@ npm run build
 
 After DNS propagates (usually 5–30 minutes):
 1. Supabase Dashboard → Project Settings → API → Allowed Origins
-2. Ensure `https://routeaceglyde.app` and `https://www.routeaceglyde.app` are listed
+2. Ensure `https://routeace.app` and `https://www.routeace.app` are listed
 3. Update `ALLOWED_ORIGIN` secret in Edge Functions secrets
 
 ### Step 5 — Update Supabase Auth Redirect URLs
 
 1. Supabase Dashboard → Authentication → URL Configuration
-2. Set **Site URL** to `https://routeaceglyde.app`
-3. Add to **Redirect URLs**: `https://routeaceglyde.app/**`
+2. Set **Site URL** to `https://routeace.app`
+3. Add to **Redirect URLs**: `https://routeace.app/**`
 
 ---
 

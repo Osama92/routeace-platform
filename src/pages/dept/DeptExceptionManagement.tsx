@@ -63,7 +63,7 @@ export default function DeptExceptionManagement() {
       if (error) throw error;
       toast.success("Client notified", {
         description: (data as any)?.email_sent
-          ? "Status updated and client emailed from routeaceglyde.app."
+          ? "Status updated and client emailed from routeace.app."
           : "Status updated. No client email on file.",
       });
       setUpdateOpen(false);
@@ -255,7 +255,7 @@ export default function DeptExceptionManagement() {
           <DialogHeader>
             <DialogTitle>Send Client Delivery Update</DialogTitle>
             <DialogDescription>
-              Client will receive a branded email from routeaceglyde.app with a tracking link.
+              Client will receive a branded email from routeace.app with a tracking link.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">

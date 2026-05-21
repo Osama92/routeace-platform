@@ -127,7 +127,7 @@ export const template = {
     vehicleReg: 'LAG-554-XY',
     eta: 'Today, 4:30 PM',
     organizationName: 'RouteAce Logistics',
-    trackingUrl: 'https://routeaceglyde.app/track/DSP-00421',
+    trackingUrl: 'https://routeace.app/track/DSP-00421',
   },
 } satisfies TemplateEntry
 

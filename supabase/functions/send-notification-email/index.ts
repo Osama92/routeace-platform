@@ -101,8 +101,8 @@ serve(async (req) => {
     let errorMessage: string | null = null;
 
     try {
-      const platformFromEmail = Deno.env.get("RESEND_FROM_EMAIL") ?? "noreply@routeaceglyde.app";
-      const siteUrl = Deno.env.get("SITE_URL") ?? "https://routeaceglyde.app";
+      const platformFromEmail = Deno.env.get("RESEND_FROM_EMAIL") ?? "noreply@routeace.app";
+      const siteUrl = Deno.env.get("SITE_URL") ?? "https://routeace.app";
 
       const { data: callerMembership } = await serviceClient
         .from("organization_members")
@@ -134,13 +134,13 @@ serve(async (req) => {
       <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
         <tr><td style="padding:24px 32px;background:#0f172a;color:#ffffff;">
           <div style="font-size:20px;font-weight:700;">${orgName}</div>
-          <div style="font-size:12px;opacity:0.8;margin-top:4px;">Powered by RouteAce · <a href="${siteUrl}" style="color:#93c5fd;text-decoration:none;">routeaceglyde.app</a></div>
+          <div style="font-size:12px;opacity:0.8;margin-top:4px;">Powered by RouteAce · <a href="${siteUrl}" style="color:#93c5fd;text-decoration:none;">routeace.app</a></div>
         </td></tr>
         <tr><td style="padding:32px;font-size:15px;line-height:1.6;color:#1f2937;">
           ${safeBody}
         </td></tr>
         <tr><td style="padding:20px 32px;background:#f9fafb;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;">
-          Sent by ${orgName} via RouteAce · <a href="${siteUrl}" style="color:#2563eb;text-decoration:none;">routeaceglyde.app</a>
+          Sent by ${orgName} via RouteAce · <a href="${siteUrl}" style="color:#2563eb;text-decoration:none;">routeace.app</a>
         </td></tr>
       </table>
     </td></tr>

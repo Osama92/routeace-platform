@@ -20,7 +20,7 @@ const VEHICLE_TYPES = [
 ];
 
 type PageState = "loading" | "ready" | "invalid" | "submitted";
-const PUBLIC_ROUTEACE_ORIGIN = "https://routeaceglyde.app";
+const PUBLIC_ROUTEACE_ORIGIN = "https://routeace.app";
 const normalizeLinkType = (value: string | null): "new" | "access" | "vendor" =>
   value === "new" ? "new" : value === "vendor" ? "vendor" : "access";
 
@@ -343,7 +343,7 @@ export default function TransporterJoinPage() {
             </div>
             <p className="text-xs text-muted-foreground">
               Log in at{" "}
-              <a href="/login" className="text-primary underline">routeaceglyde.app/login</a>
+              <a href="/login" className="text-primary underline">routeace.app/login</a>
               {" "}once approved.
             </p>
           </CardContent>

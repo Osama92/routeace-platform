@@ -35,7 +35,7 @@ async function sendResellerWelcomeEmail(opts: {
 }) {
   const resendApiKey = Deno.env.get("RESEND_API_KEY");
   if (!resendApiKey) return;
-  const siteUrl = Deno.env.get("SITE_URL") ?? "https://routeaceglyde.app";
+  const siteUrl = Deno.env.get("SITE_URL") ?? "https://routeace.app";
   const loginUrl = `${siteUrl}/auth`;
   try {
     const { Resend } = await import("https://esm.sh/resend@2.0.0");

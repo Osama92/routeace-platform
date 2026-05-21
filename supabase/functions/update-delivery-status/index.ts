@@ -189,8 +189,8 @@ const handler = async (req: Request): Promise<Response> => {
         const dispatchNum = (dispatch as any).dispatch_number;
         const pickupAddr = (dispatch as any).pickup_address;
         const delivAddr = (dispatch as any).delivery_address;
-        const siteUrl = Deno.env.get("SITE_URL") ?? "https://routeaceglyde.app";
-        const platformFromEmail = Deno.env.get("RESEND_FROM_EMAIL") ?? "noreply@routeaceglyde.app";
+        const siteUrl = Deno.env.get("SITE_URL") ?? "https://routeace.app";
+        const platformFromEmail = Deno.env.get("RESEND_FROM_EMAIL") ?? "noreply@routeace.app";
         const fromEmail = orgSupportEmail ?? platformFromEmail;
         const fromEmailSource: "org_support" | "platform_default" =
           orgSupportEmail ? "org_support" : "platform_default";
@@ -243,7 +243,7 @@ const handler = async (req: Request): Promise<Response> => {
       <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06);">
         <tr><td style="padding:24px 28px;border-bottom:1px solid #e5e7eb;">
           <div style="font-size:18px;font-weight:700;color:#0f172a;">${esc(orgName)}</div>
-          <div style="font-size:12px;color:#6b7280;margin-top:4px;">Powered by RouteAce · routeaceglyde.app</div>
+          <div style="font-size:12px;color:#6b7280;margin-top:4px;">Powered by RouteAce · routeace.app</div>
         </td></tr>
         <tr><td style="padding:28px;">
           <div style="font-size:13px;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Shipment Update</div>
@@ -263,7 +263,7 @@ const handler = async (req: Request): Promise<Response> => {
         </td></tr>
         <tr><td style="padding:20px 28px;background:#f9fafb;border-top:1px solid #e5e7eb;">
           <p style="font-size:12px;color:#6b7280;line-height:1.5;margin:0 0 8px;">This notification was sent by ${esc(orgName)} via the RouteAce logistics platform. If you have questions about your delivery, reply to this email or contact your logistics provider directly.</p>
-          <p style="font-size:12px;color:#9ca3af;margin:0;">RouteAce · <a href="${esc(siteUrl)}" style="color:#9ca3af;text-decoration:underline;">routeaceglyde.app</a></p>
+          <p style="font-size:12px;color:#9ca3af;margin:0;">RouteAce · <a href="${esc(siteUrl)}" style="color:#9ca3af;text-decoration:underline;">routeace.app</a></p>
         </td></tr>
       </table>
     </td></tr>

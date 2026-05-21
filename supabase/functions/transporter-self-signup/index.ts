@@ -1,8 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 
 const ALLOWED_ORIGINS_EXACT = new Set([
-  "https://routeaceglyde.app",
-  "https://www.routeaceglyde.app",
+  "https://routeace.app",
+  "https://www.routeace.app",
   "http://localhost:5173",
   "http://localhost:3000",
   "http://localhost:8080",
@@ -14,7 +14,7 @@ function pickOrigin(req: Request): string {
   if (ALLOWED_ORIGINS_EXACT.has(origin)) return origin;
   // Allow any localhost port for local development
   if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return origin;
-  return "https://routeaceglyde.app";
+  return "https://routeace.app";
 }
 
 function buildCors(req: Request) {
@@ -60,7 +60,7 @@ Deno.serve(async (req) => {
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const SITE_URL = "https://routeaceglyde.app";
+  const SITE_URL = "https://routeace.app";
   const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
   let body: Record<string, any>;

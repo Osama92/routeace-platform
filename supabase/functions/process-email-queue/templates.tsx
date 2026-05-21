@@ -64,7 +64,7 @@ export async function renderTransactionalTemplate(
   if (!def) return null
   const data = {
     siteName: 'RouteAce',
-    siteUrl: 'https://routeaceglyde.app',
+    siteUrl: 'https://routeace.app',
     ...templateData,
   }
   const Component = def.component

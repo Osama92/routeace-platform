@@ -17,10 +17,10 @@ const LandingPage = () => (
     <Helmet>
       <title>RouteAce - Fleet & Distribution Intelligence for Africa</title>
       <meta name="description" content="Stop revenue leakage in your logistics operation. RouteAce delivers real-time tracking, intelligent dispatch, and SLA enforcement for African fleets." />
-      <link rel="canonical" href="https://routeaceglyde.app/" />
+      <link rel="canonical" href="https://routeace.app/" />
       <meta property="og:title" content="RouteAce - Fleet & Distribution Intelligence for Africa" />
       <meta property="og:description" content="Real-time tracking, intelligent dispatch, and SLA enforcement built for Nigerian and African logistics operators." />
-      <meta property="og:url" content="https://routeaceglyde.app/" />
+      <meta property="og:url" content="https://routeace.app/" />
       <script type="application/ld+json">{JSON.stringify({
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",

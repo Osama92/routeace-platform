@@ -19,7 +19,7 @@ export default function PublicShell({
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
     itemListElement: [
-      { "@type": "ListItem", position: 1, name: "Home", item: "https://routeaceglyde.app/" },
+      { "@type": "ListItem", position: 1, name: "Home", item: "https://routeace.app/" },
       { "@type": "ListItem", position: 2, name: title, item: canonical },
     ],
   };

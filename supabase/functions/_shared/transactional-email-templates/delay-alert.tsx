@@ -123,7 +123,7 @@ export const template = {
     reason: 'Heavy traffic on Lagos-Ibadan expressway',
     deliveryAddress: '12 Allen Ave, Ikeja, Lagos',
     organizationName: 'RouteAce Logistics',
-    trackingUrl: 'https://routeaceglyde.app/track/DSP-00421',
+    trackingUrl: 'https://routeace.app/track/DSP-00421',
   },
 } satisfies TemplateEntry
 

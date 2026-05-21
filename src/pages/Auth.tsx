@@ -194,10 +194,10 @@ const Auth = () => {
       <Helmet>
         <title>{isLogin ? "Sign in to RouteAce" : "Create your RouteAce account"}</title>
         <meta name="description" content={isLogin ? "Sign in to RouteAce to manage dispatch, fleet, and distribution operations." : "Create your RouteAce account to start tracking fleet, dispatch, and distribution intelligence."} />
-        <link rel="canonical" href="https://routeaceglyde.app/auth" />
+        <link rel="canonical" href="https://routeace.app/auth" />
         <meta property="og:title" content={isLogin ? "Sign in to RouteAce" : "Create your RouteAce account"} />
         <meta property="og:description" content="Authentication for RouteAce - Distribution Intelligence Platform for African logistics." />
-        <meta property="og:url" content="https://routeaceglyde.app/auth" />
+        <meta property="og:url" content="https://routeace.app/auth" />
       </Helmet>
       {/* Left Panel - Branding */}
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden">

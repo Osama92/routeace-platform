@@ -104,7 +104,7 @@ export default function ApiReference() {
       <Helmet>
         <title>API Reference - RouteAce</title>
         <meta name="description" content="Complete REST API reference for RouteAce: fleet, dispatch, ingestion, fuel intelligence, maintenance, webhooks." />
-        <link rel="canonical" href="https://routeaceglyde.app/api-reference" />
+        <link rel="canonical" href="https://routeace.app/api-reference" />
       </Helmet>
 
       <header className="border-b border-border/40 bg-card/30">
@@ -124,7 +124,7 @@ export default function ApiReference() {
           <Badge variant="outline">REST · JSON · v1</Badge>
           <h1 className="text-4xl font-black">API Reference</h1>
           <p className="text-muted-foreground">
-            Base URL: <code className="px-1.5 py-0.5 bg-muted rounded">https://api.routeaceglyde.app/v1</code>. All
+            Base URL: <code className="px-1.5 py-0.5 bg-muted rounded">https://api.routeace.app/v1</code>. All
             requests require <code>Authorization: Bearer &lt;key&gt;</code> and <code>X-Tenant-Id</code> headers. See the {" "}
             <Link to="/docs" className="text-primary hover:underline">Documentation</Link> for getting-started guides.
           </p>

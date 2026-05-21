@@ -75,7 +75,7 @@ const STATUS_STYLE: Record<string, string> = {
 };
 
 const VEHICLE_COST_PER_MONTH = 2000;
-const PUBLIC_ROUTEACE_ORIGIN = "https://routeaceglyde.app";
+const PUBLIC_ROUTEACE_ORIGIN = "https://routeace.app";
 const TRANSPORTER_LINK_LABELS: Record<"new" | "access" | "vendor", string> = {
   new: "New Transporter Onboarding",
   access: "Existing Transporter Portal Access",

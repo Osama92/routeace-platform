@@ -6,10 +6,10 @@ export default function PrivacyPolicy() {
       <Helmet>
         <title>Privacy Policy - RouteAce</title>
         <meta name="description" content="How RouteAce (operated by Glyde Systems) collects, uses, and protects data under the Nigeria Data Protection Act 2023." />
-        <link rel="canonical" href="https://routeaceglyde.app/privacy" />
+        <link rel="canonical" href="https://routeace.app/privacy" />
         <meta property="og:title" content="Privacy Policy - RouteAce" />
         <meta property="og:description" content="RouteAce data protection, retention, and user-rights policy under NDPA 2023." />
-        <meta property="og:url" content="https://routeaceglyde.app/privacy" />
+        <meta property="og:url" content="https://routeace.app/privacy" />
       </Helmet>
       <div className="max-w-3xl mx-auto space-y-8">
         <div>
@@ -27,7 +27,7 @@ export default function PrivacyPolicy() {
               a company registered in Nigeria. We provide fleet operations, dispatch management,
               and enterprise logistics intelligence software to businesses across Africa.
             </p>
-            <p>Contact: <a href="mailto:privacy@routeaceglyde.app" className="text-primary underline">privacy@routeaceglyde.app</a></p>
+            <p>Contact: <a href="mailto:privacy@routeace.app" className="text-primary underline">privacy@routeace.app</a></p>
           </section>
 
           <section>
@@ -86,7 +86,7 @@ export default function PrivacyPolicy() {
               <li>Receive your data in a portable format</li>
               <li>Lodge a complaint with the Nigeria Data Protection Commission (NDPC)</li>
             </ul>
-            <p>Email <a href="mailto:privacy@routeaceglyde.app" className="text-primary underline">privacy@routeaceglyde.app</a> to exercise these rights.</p>
+            <p>Email <a href="mailto:privacy@routeace.app" className="text-primary underline">privacy@routeace.app</a> to exercise these rights.</p>
           </section>
 
           <section>
@@ -110,8 +110,8 @@ export default function PrivacyPolicy() {
           <section>
             <h2 className="text-xl font-bold">10. Contact</h2>
             <p>Data Controller: Glyde Systems</p>
-            <p>Data Protection Officer: <a href="mailto:privacy@routeaceglyde.app" className="text-primary underline">privacy@routeaceglyde.app</a></p>
-            <p>Website: <a href="https://routeaceglyde.app" className="text-primary underline">routeaceglyde.app</a></p>
+            <p>Data Protection Officer: <a href="mailto:privacy@routeace.app" className="text-primary underline">privacy@routeace.app</a></p>
+            <p>Website: <a href="https://routeace.app" className="text-primary underline">routeace.app</a></p>
           </section>
         </div>
 

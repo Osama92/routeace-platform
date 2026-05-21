@@ -13,7 +13,7 @@ export function buildCors(req?: Request): Record<string, string> {
   const isLocalhost = /^https?:\/\/localhost(:\d+)?$/.test(requestOrigin);
   const origin = allowedOrigins.includes(requestOrigin) || isRouteAceDomain || isLocalhost
     ? requestOrigin
-    : allowedOrigins[0] ?? "https://routeaceglyde.app";
+    : allowedOrigins[0] ?? "https://routeace.app";
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Headers":
