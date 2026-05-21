@@ -55,6 +55,10 @@ const Auth = () => {
   // Self-serve signup is handled exclusively by /signup/create-company so the
   // founding user is correctly provisioned as Super Admin + Organization owner.
   const [isLogin] = useState(true);
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotSent, setForgotSent] = useState(false);
+  const [forgotSubmitting, setForgotSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -155,6 +159,24 @@ const Auth = () => {
       toast({ title: "Error", description: "An unexpected error occurred. Please try again.", variant: "destructive" });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotEmail) return;
+    setForgotSubmitting(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
+        redirectTo: `${window.location.origin}/auth/reset-password`,
+      });
+      if (error) {
+        toast({ title: "Couldn't send reset email", description: error.message, variant: "destructive" });
+      } else {
+        setForgotSent(true);
+      }
+    } finally {
+      setForgotSubmitting(false);
     }
   };
 
@@ -383,6 +405,55 @@ const Auth = () => {
               )}
             </Button>
           </form>
+
+          {/* Forgot password link */}
+          {isLogin && !isForgotPassword && (
+            <div className="mt-3 text-right">
+              <button
+                type="button"
+                onClick={() => setIsForgotPassword(true)}
+                className="text-sm text-primary hover:underline"
+              >
+                Forgot your password?
+              </button>
+            </div>
+          )}
+
+          {/* Forgot password form */}
+          {isForgotPassword && (
+            <div className="mt-5 p-4 rounded-xl bg-secondary/40 border border-border space-y-3">
+              {forgotSent ? (
+                <div className="text-center space-y-1">
+                  <p className="text-sm font-medium text-foreground">Check your inbox</p>
+                  <p className="text-xs text-muted-foreground">A password reset link has been sent to <strong>{forgotEmail}</strong>. It expires in 1 hour.</p>
+                  <button type="button" onClick={() => { setIsForgotPassword(false); setForgotSent(false); }} className="text-xs text-primary hover:underline mt-1">Back to sign in</button>
+                </div>
+              ) : (
+                <form onSubmit={handleForgotPassword} className="space-y-3">
+                  <p className="text-sm font-medium text-foreground">Reset your password</p>
+                  <p className="text-xs text-muted-foreground">Enter your email and we'll send you a reset link.</p>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      type="email"
+                      placeholder="you@example.com"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      className="pl-10 bg-background"
+                      disabled={forgotSubmitting}
+                      required
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button type="submit" size="sm" className="flex-1" disabled={forgotSubmitting}>
+                      {forgotSubmitting ? "Sending…" : "Send reset link"}
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" onClick={() => setIsForgotPassword(false)}>Cancel</Button>
+                  </div>
+                </form>
+              )}
+            </div>
+          )}
 
           <div className="mt-4 text-center">
             {needsVerification && (

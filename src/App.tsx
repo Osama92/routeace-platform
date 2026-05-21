@@ -16,6 +16,7 @@ import AppErrorBoundary from "@/components/auth/AppErrorBoundary";
 import { PWAInstallPrompt } from "@/components/pwa/PWAInstallPrompt";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
+import ResetPassword from "./pages/ResetPassword";
 import BillingVerify from "./pages/BillingVerify";
 import TransporterJoinPage from "./pages/TransporterJoinPage";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
@@ -490,6 +491,7 @@ const App = () => (
               <Route path="/access-hub" element={<LandingPage />} />
               <Route path="/welcome" element={<LandingPage />} />
               <Route path="/auth" element={<Auth />} />
+              <Route path="/auth/reset-password" element={<ResetPassword />} />
               <Route path="/billing/verify" element={<BillingVerify />} />
               <Route path="/support/submit/:slug" element={<PublicSupportSubmit />} />
               <Route path="/support/track/:token" element={<PublicSupportTrack />} />
