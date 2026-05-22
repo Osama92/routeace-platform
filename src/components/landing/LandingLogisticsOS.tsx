@@ -1,4 +1,6 @@
 import { motion } from "framer-motion";
+import LazyVideo from "@/components/ui/LazyVideo";
+import { VIDEO } from "@/lib/cdn";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -27,15 +29,10 @@ const LandingLogisticsOS = () => {
 
   return (
     <section id="logistics-os" className="relative overflow-hidden py-24 px-6 bg-secondary/20">
-      <video
-        autoPlay
-        loop
-        muted
-        playsInline
+      <LazyVideo
+        src={VIDEO.ctaBg}
         className="absolute inset-0 w-full h-full object-cover object-center z-0"
-      >
-        <source src="" type="video/mp4" />
-      </video>
+      />
       <div className="absolute inset-0 bg-background/85 z-10" />
       <div className="max-w-7xl mx-auto relative z-20">
         <div className="text-center mb-6">

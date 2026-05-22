@@ -1,4 +1,6 @@
 import { motion } from "framer-motion";
+import LazyVideo from "@/components/ui/LazyVideo";
+import { VIDEO } from "@/lib/cdn";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -148,16 +150,11 @@ const LandingBottomCTA = () => {
 
       {/* FINAL VISION CTA */}
       <section className="relative overflow-hidden py-28 px-6">
-        <video
-          autoPlay
-          loop
-          muted
-          playsInline
+        <LazyVideo
+          src={VIDEO.ctaBg}
           className="absolute inset-0 w-full h-full object-cover object-center z-0"
           style={{ filter: "brightness(0.4)" }}
-        >
-          <source src="" type="video/mp4" />
-        </video>
+        />
         <div className="absolute inset-0 bg-background/75 z-10" />
         <div className="absolute inset-0 bg-[var(--gradient-hero)] z-10 opacity-60" />
         <div className="max-w-4xl mx-auto text-center relative z-20">

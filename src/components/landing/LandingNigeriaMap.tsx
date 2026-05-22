@@ -1,4 +1,6 @@
 import { motion } from "framer-motion";
+import LazyVideo from "@/components/ui/LazyVideo";
+import { VIDEO } from "@/lib/cdn";
 import { Badge } from "@/components/ui/badge";
 import { MapPin, Truck, Package, TrendingUp } from "lucide-react";
 
@@ -19,15 +21,10 @@ const corridors = [
 const LandingNigeriaMap = () => (
   <section className="relative overflow-hidden py-24 px-6">
     {/* Looping background video */}
-    <video
-      autoPlay
-      loop
-      muted
-      playsInline
+    <LazyVideo
+      src={VIDEO.sectionBg}
       className="absolute inset-0 w-full h-full object-cover object-center z-0"
-    >
-      <source src="" type="video/mp4" />
-    </video>
+    />
     {/* Dark overlay so text stays readable */}
     <div className="absolute inset-0 bg-background/80 backdrop-blur-[2px] z-10" />
 
@@ -49,12 +46,8 @@ const LandingNigeriaMap = () => (
       <div className="grid lg:grid-cols-5 gap-8">
         {/* Map Visualization */}
         <div className="lg:col-span-3 glass-card p-8 relative overflow-hidden">
-          <video
-            src=""
-            autoPlay
-            loop
-            muted
-            playsInline
+          <LazyVideo
+            src={VIDEO.networkBg}
             className="absolute inset-0 w-full h-full object-cover opacity-20 pointer-events-none"
           />
           <div className="absolute inset-0 bg-gradient-to-br from-background/70 via-background/40 to-background/70 pointer-events-none" />
