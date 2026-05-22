@@ -9,7 +9,6 @@ import {
 import avatar1 from "@/assets/landing/img-1-fleet-owner.png";
 import avatar5 from "@/assets/landing/img-5-female-driver.png";
 import avatar3 from "@/assets/landing/img-3-blue-trucks.png";
-import ctaBgVideo from "@/assets/landing/cta-bg.mp4";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 30 },
@@ -157,7 +156,7 @@ const LandingBottomCTA = () => {
           className="absolute inset-0 w-full h-full object-cover object-center z-0"
           style={{ filter: "brightness(0.4)" }}
         >
-          <source src={ctaBgVideo} type="video/mp4" />
+          <source src="" type="video/mp4" />
         </video>
         <div className="absolute inset-0 bg-background/75 z-10" />
         <div className="absolute inset-0 bg-[var(--gradient-hero)] z-10 opacity-60" />

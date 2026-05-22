@@ -1,8 +1,6 @@
 import { motion } from "framer-motion";
 import { Badge } from "@/components/ui/badge";
 import { MapPin, Truck, Package, TrendingUp } from "lucide-react";
-import networkBgVideo from "@/assets/landing/network-bg.mp4";
-import sectionBgVideo from "@/assets/landing/section-bg.mp4";
 
 const cities = [
   { name: "Lagos", x: 130, y: 280, score: 78, desc: "Distribution density hub", routes: "1,240", color: "hsl(var(--primary))" },
@@ -28,7 +26,7 @@ const LandingNigeriaMap = () => (
       playsInline
       className="absolute inset-0 w-full h-full object-cover object-center z-0"
     >
-      <source src={sectionBgVideo} type="video/mp4" />
+      <source src="" type="video/mp4" />
     </video>
     {/* Dark overlay so text stays readable */}
     <div className="absolute inset-0 bg-background/80 backdrop-blur-[2px] z-10" />
@@ -52,7 +50,7 @@ const LandingNigeriaMap = () => (
         {/* Map Visualization */}
         <div className="lg:col-span-3 glass-card p-8 relative overflow-hidden">
           <video
-            src={networkBgVideo}
+            src=""
             autoPlay
             loop
             muted

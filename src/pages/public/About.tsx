@@ -1,5 +1,4 @@
 import PublicShell from "./PublicShell";
-import heroVideo from "@/assets/about/hero-bg.mp4";
 import trucksDepot from "@/assets/about/trucks-depot.jpg";
 import lagosTraffic from "@/assets/about/lagos-traffic.jpg";
 import operatorImg from "@/assets/about/operator.jpg";
@@ -36,7 +35,7 @@ export default function About() {
             playsInline
             preload="auto"
             className="absolute inset-0 w-full h-full object-cover opacity-65"
-            src={heroVideo}
+            src=""
           />
           <div
             className="absolute inset-0 -z-0 opacity-60 pointer-events-none"

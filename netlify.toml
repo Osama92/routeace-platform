@@ -6,7 +6,6 @@
 [context.production]
   command = "npm run build"
   [context.production.environment]
-    NODE_ENV = "production"
     VITE_SUPABASE_URL = "https://mbybrzggrpyhvcnxhlua.supabase.co"
     VITE_SUPABASE_PROJECT_ID = "mbybrzggrpyhvcnxhlua"
     # VITE_SUPABASE_PUBLISHABLE_KEY — set in Netlify dashboard (Site config → Env vars)
@@ -15,7 +14,6 @@
 [context.develop]
   command = "npm run build"
   [context.develop.environment]
-    NODE_ENV = "production"
     VITE_SUPABASE_URL = "https://sklsqzsjclblrjdgzkhz.supabase.co"
     VITE_SUPABASE_PROJECT_ID = "sklsqzsjclblrjdgzkhz"
     # VITE_SUPABASE_PUBLISHABLE_KEY — set in Netlify dashboard under develop branch context
@@ -24,7 +22,6 @@
 [context.branch-deploy]
   command = "npm run build"
   [context.branch-deploy.environment]
-    NODE_ENV = "production"
     VITE_SUPABASE_URL = "https://sklsqzsjclblrjdgzkhz.supabase.co"
     VITE_SUPABASE_PROJECT_ID = "sklsqzsjclblrjdgzkhz"
 
