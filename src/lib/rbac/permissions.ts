@@ -213,6 +213,7 @@ export const ROLE_PERMISSIONS: Record<AppRole, PermissionKey[]> = {
     "INVOICES_EXPORT",
     "INVOICES_SYNC",
     "EXPENSES_VIEW",
+    "EXPENSES_CREATE",
     "EXPENSES_UPDATE",
     "EXPENSES_APPROVE",
     "PAYOUTS_VIEW",

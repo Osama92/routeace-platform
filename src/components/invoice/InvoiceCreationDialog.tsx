@@ -300,6 +300,7 @@ export const InvoiceCreationDialog = ({
           is_posted: false,
           created_by: user?.id,
           currency_code: "NGN",
+          organization_id: organizationId,
         };
 
         if (isNonAdmin) {

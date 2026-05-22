@@ -145,7 +145,7 @@ const Expenses = () => {
   const [rejectionReason, setRejectionReason] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
-  const { user, hasAnyRole } = useAuth();
+  const { user, hasAnyRole, organizationId } = useAuth();
   const { logChange } = useAuditLog();
 
   const isAdmin = hasAnyRole(["admin"]);
@@ -169,7 +169,7 @@ const Expenses = () => {
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptPreview, setReceiptPreview] = useState<string>("");
 
-  const canManage = hasAnyRole(["admin", "operations"]);
+  const canManage = hasAnyRole(["admin", "operations", "finance_manager", "org_admin", "super_admin"]);
 
   const fetchData = async () => {
     try {
@@ -279,6 +279,7 @@ const Expenses = () => {
       const insertData = {
         category: formData.category as "fuel" | "maintenance" | "driver_salary" | "insurance" | "tolls" | "parking" | "repairs" | "administrative" | "marketing" | "utilities" | "rent" | "equipment" | "other",
         description: formData.description,
+        expense_date: formData.expense_date,
         amount: parseFloat(formData.amount),
         vendor_id: formData.vendor_id || null,
         vehicle_id: formData.vehicle_id || null,
@@ -288,11 +289,12 @@ const Expenses = () => {
         is_cogs: formData.is_cogs,
         cogs_vendor_id: formData.is_cogs ? (formData.cogs_vendor_id || null) : null,
         receipt_url: receiptUrl || null,
-        approval_status: isAdmin ? "approved" : "pending",
+        approval_status: hasAnyRole(["admin", "finance_manager", "org_admin", "super_admin"]) ? "approved" : "pending",
         submitted_by: user?.id,
-        approved_by: isAdmin ? user?.id : null,
-        approved_at: isAdmin ? new Date().toISOString() : null,
+        approved_by: hasAnyRole(["admin", "finance_manager", "org_admin", "super_admin"]) ? user?.id : null,
+        approved_at: hasAnyRole(["admin", "finance_manager", "org_admin", "super_admin"]) ? new Date().toISOString() : null,
         created_by: user?.id,
+        organization_id: organizationId,
       };
 
       const { data, error } = await supabase.from("expenses").insert(insertData).select().single();

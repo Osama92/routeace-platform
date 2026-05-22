@@ -59,7 +59,7 @@ export interface TenantConfig {
 
 const PLAN_LIMITS: Record<string, Partial<TenantConfig>> = {
   free: {
-    max_users: 3, max_vehicles: 1, max_branches: 1,
+    max_users: 3, max_vehicles: 3, max_branches: 1,
     max_monthly_dispatches: 10, max_api_calls: 0, max_integrations: 0,
     ai_credits_total: 0,
   },
