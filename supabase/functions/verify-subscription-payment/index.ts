@@ -13,7 +13,7 @@ Deno.serve(async (req) => {
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
     let body: Record<string, unknown>;
-    try { body = await req.json(); } catch { return json({ error: "Invalid JSON body" }, 400, cors); }
+    try { body = await req.json(); } catch (_e) { return json({ error: "Invalid JSON body" }, 400, cors); }
     const reference = (body as any).reference;
     if (!reference) return json({ error: "reference is required" }, 400, cors);
 

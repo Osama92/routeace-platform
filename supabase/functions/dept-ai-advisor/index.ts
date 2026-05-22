@@ -21,7 +21,7 @@ Deno.serve(async (req) => {
     let body: Record<string, unknown>;
     try {
       body = await req.json();
-    } catch {
+    } catch (_e) {
       return json({ error: "Invalid JSON body" }, 400, cors);
     }
 

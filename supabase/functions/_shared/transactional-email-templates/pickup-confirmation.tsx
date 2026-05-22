@@ -23,7 +23,7 @@ interface Props {
   supportEmail?: string
 }
 
-const fmt = (s?: string) => { if (!s) return undefined; try { return new Date(s).toLocaleString() } catch { return s } }
+const fmt = (s?: string) => { if (!s) return undefined; try { return new Date(s).toLocaleString() } catch (_e) { return s } }
 
 const PickupConfirmationEmail = (p: Props) => {
   const accent = p.brandColor || 'hsl(142, 71%, 35%)'

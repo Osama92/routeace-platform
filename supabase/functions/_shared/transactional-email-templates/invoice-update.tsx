@@ -34,7 +34,7 @@ const fmtMoney = (amount?: number, currency?: string) => {
   const ccy = currency || 'NGN'
   try {
     return new Intl.NumberFormat('en-NG', { style: 'currency', currency: ccy, maximumFractionDigits: 2 }).format(amount)
-  } catch {
+  } catch (_e) {
     return `${ccy} ${amount.toLocaleString()}`
   }
 }

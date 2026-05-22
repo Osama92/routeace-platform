@@ -550,7 +550,7 @@ async function handleCreateDispatch(body: string, partnerId: string, scopes: str
   let data;
   try {
     data = JSON.parse(body);
-  } catch {
+  } catch (_e) {
     return new Response(
       JSON.stringify({ error: 'Invalid JSON body' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

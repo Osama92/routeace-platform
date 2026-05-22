@@ -92,7 +92,7 @@ Deno.serve(async (req) => {
     if (body.templateData && typeof body.templateData === 'object') {
       templateData = body.templateData
     }
-  } catch {
+  } catch (_e) {
     return new Response(
       JSON.stringify({ error: 'Invalid JSON in request body' }),
       {

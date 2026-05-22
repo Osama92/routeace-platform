@@ -56,7 +56,7 @@ async function verifyAndParse(req: Request, secret: string): Promise<Suppression
   let parsed: { data?: SuppressionPayload }
   try {
     parsed = JSON.parse(body)
-  } catch {
+  } catch (_e) {
     throw Object.assign(new Error('Invalid JSON'), { code: 'invalid_json' })
   }
 

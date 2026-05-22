@@ -155,7 +155,7 @@ const handler = async (req: Request): Promise<Response> => {
               .eq("id", (latest as any).id);
           }
         }
-      } catch {
+      } catch (_e) {
         // geocoding failure never blocks the status update
       }
     }

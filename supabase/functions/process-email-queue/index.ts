@@ -115,7 +115,7 @@ Deno.serve(async (req) => {
       if (payload?.role !== 'service_role') {
         return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { 'Content-Type': 'application/json' } })
       }
-    } catch {
+    } catch (_e) {
       return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { 'Content-Type': 'application/json' } })
     }
   } else if (user !== null) {

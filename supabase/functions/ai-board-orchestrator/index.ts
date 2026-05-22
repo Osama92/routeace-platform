@@ -114,7 +114,7 @@ Be specific with ₦ amounts. Survival > profit > scale.`;
     let parsed: any = {};
     try {
       parsed = JSON.parse(raw);
-    } catch {
+    } catch (_e) {
       const m = raw.match(/\{[\s\S]*\}/);
       parsed = m ? JSON.parse(m[0]) : {};
     }

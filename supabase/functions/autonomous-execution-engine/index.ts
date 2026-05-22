@@ -43,7 +43,7 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, serviceKey);
 
     let body: any = {};
-    try { body = await req.json(); } catch { body = {}; }
+    try { body = await req.json(); } catch (_e) { body = {}; }
     const action = body.action as string;
 
     // ─── ACTION: DETECT SIGNALS ───

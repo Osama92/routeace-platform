@@ -43,7 +43,7 @@ Deno.serve(async (req) => {
   let payload: Body;
   try {
     payload = await req.json();
-  } catch {
+  } catch (_e) {
     return json({ error: "Invalid JSON body" }, 400);
   }
 

@@ -89,7 +89,7 @@ async function verifyWebhookRequest(
   let payload: HookPayload
   try {
     payload = JSON.parse(body)
-  } catch {
+  } catch (_e) {
     throw new WebhookError('invalid_json', 'Failed to parse request body as JSON')
   }
 
@@ -196,7 +196,7 @@ async function handlePreview(req: Request): Promise<Response> {
   try {
     const body = await req.json()
     type = body.type
-  } catch {
+  } catch (_e) {
     return new Response(JSON.stringify({ error: 'Invalid JSON in request body' }), {
       status: 400,
       headers: { ...previewCorsHeaders, 'Content-Type': 'application/json' },

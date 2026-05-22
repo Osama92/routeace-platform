@@ -190,7 +190,7 @@ Focus on: User growth, Revenue changes, Churn signals, Ops efficiency. Be specif
       try {
         const jsonMatch = content.match(/\{[\s\S]*\}/);
         insights = jsonMatch ? JSON.parse(jsonMatch[0]) : { insights: [] };
-      } catch {
+      } catch (_e) {
         insights = { insights: [] };
       }
 
@@ -334,7 +334,7 @@ Be realistic with estimates based on the data provided. Use the revenue data to 
       try {
         const jsonMatch = content.match(/\{[\s\S]*\}/);
         predictions = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
-      } catch {
+      } catch (_e) {
         predictions = {};
       }
 

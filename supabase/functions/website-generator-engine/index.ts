@@ -58,7 +58,7 @@ serve(async (req) => {
           const aiJ = await aiResp.json();
           const txt = aiJ?.choices?.[0]?.message?.content || "{}";
           aiCopy = JSON.parse(txt.replace(/```json|```/g, "").trim());
-        } catch { aiCopy = {}; }
+        } catch (_e) { aiCopy = {}; }
       }
 
       const fallbackHero = `Reliable ${services[0] || "Logistics"} & Delivery Solutions Across ${cities_served[0] || "Nigeria"}`;

@@ -52,7 +52,7 @@ Deno.serve(async (req) => {
         if (body.token) {
           token = body.token
         }
-      } catch {
+      } catch (_e) {
         // Fall through - token stays from query param
       }
     }

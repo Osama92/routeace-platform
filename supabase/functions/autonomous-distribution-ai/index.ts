@@ -19,7 +19,6 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Resolve caller tenant scope to prevent cross-tenant data leakage
     const scope = await getTenantScope(auth.user.id, auth.userRoles);
     const orgId = await resolveCallerOrgId(req, auth.user.id, auth.userRoles);
     if (!scope.unrestricted && !orgId) {
@@ -28,10 +27,9 @@ serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const scoped = <T extends { eq: (col: string, val: any) => T }>(q: T): T =>
+    const scoped = (q: any): any =>
       scope.unrestricted ? q : q.eq("organization_id", orgId);
 
-    // Gather live platform data in parallel, scoped to caller's organization
     const [
       dispatchesRes,
       invoicesRes,
@@ -55,31 +53,53 @@ serve(async (req) => {
     const drivers = driversRes.data || [];
     const warehouses = warehousesRes.data || [];
 
-    // Compute live metrics
     const totalDispatches = dispatches.length;
-    const deliveredDispatches = dispatches.filter(d => ["delivered", "closed"].includes(d.status));
-    const onTimeCount = deliveredDispatches.filter(d => d.on_time_flag === true).length;
+    const deliveredDispatches = dispatches.filter((d: any) => ["delivered", "closed"].includes(d.status));
+    const onTimeCount = deliveredDispatches.filter((d: any) => d.on_time_flag === true).length;
     const otdRate = deliveredDispatches.length > 0 ? Math.round((onTimeCount / deliveredDispatches.length) * 100) : 0;
-    const activeVehicles = vehicles.filter(v => v.status === "active").length;
+    const activeVehicles = vehicles.filter((v: any) => v.status === "active").length;
     const fleetUtilization = vehicles.length > 0 ? Math.round((activeVehicles / vehicles.length) * 100) : 0;
-    const totalRevenue = invoices.reduce((sum, inv) => sum + (inv.total_amount || 0), 0);
-    const overdueInvoices = invoices.filter(inv => inv.status === "overdue");
-    const overdueAmount = overdueInvoices.reduce((sum, inv) => sum + (inv.balance_due || 0), 0);
-    const pendingDispatches = dispatches.filter(d => ["draft", "pending", "routed"].includes(d.status)).length;
-    const inTransit = dispatches.filter(d => d.status === "in_transit").length;
+    const totalRevenue = invoices.reduce((sum: number, inv: any) => sum + (inv.total_amount || 0), 0);
+    const overdueInvoices = invoices.filter((inv: any) => inv.status === "overdue");
+    const overdueAmount = overdueInvoices.reduce((sum: number, inv: any) => sum + (inv.balance_due || 0), 0);
+    const pendingDispatches = dispatches.filter((d: any) => ["draft", "pending", "routed"].includes(d.status)).length;
+    const inTransit = dispatches.filter((d: any) => d.status === "in_transit").length;
 
-    // City distribution analysis
     const cityDensity: Record<string, number> = {};
-    customers.forEach(c => {
+    customers.forEach((c: any) => {
       const city = c.city || c.state || "Unknown";
       cityDensity[city] = (cityDensity[city] || 0) + 1;
     });
     const topCities = Object.entries(cityDensity).sort((a, b) => b[1] - a[1]).slice(0, 8);
 
-    // Build AI context prompt
-          // Return computed metrics without AI predictions
+    const metrics = {
+      totalDispatches, otdRate, fleetUtilization, totalRevenue, overdueAmount,
+      pendingDispatches, inTransit, activeVehicles,
+      totalVehicles: vehicles.length, totalDrivers: drivers.length,
+      totalCustomers: customers.length, totalWarehouses: warehouses.length,
+    };
+
+    const topCitiesStr = topCities.map(([city, count]) => (city + "(" + count + ")")).join(", ");
+
+    const prompt = "You are RouteAce's Autonomous Distribution AI analyzing real logistics data for an African distribution network.\n\nLIVE PLATFORM DATA:\n- Total dispatches (recent): " + totalDispatches + "\n- On-time delivery rate: " + otdRate + "%\n- Fleet utilization: " + fleetUtilization + "% (" + activeVehicles + "/" + vehicles.length + " vehicles active)\n- Revenue (recent invoices): ₦" + (totalRevenue / 1000000).toFixed(1) + "M\n- Overdue receivables: ₦" + (overdueAmount / 1000000).toFixed(1) + "M (" + overdueInvoices.length + " invoices)\n- Pending dispatches: " + pendingDispatches + "\n- In-transit: " + inTransit + "\n- Total customers: " + customers.length + "\n- Total drivers: " + drivers.length + "\n- Warehouses: " + warehouses.length + "\n- Top cities by customer density: " + topCitiesStr + "\n\nGenerate a JSON response with EXACTLY this structure (no markdown, raw JSON only):\n{\n  \"demandPredictions\": [\n    {\"region\": \"string\", \"currentDemand\": number, \"predictedDemand\": number, \"confidence\": number, \"trend\": \"string like +12%\", \"signal\": \"string describing why\"}\n  ],\n  \"inventoryAlerts\": [\n    {\"warehouse\": \"string\", \"item\": \"string\", \"currentStock\": number, \"daysUntilStockout\": number, \"severity\": \"critical|warning|info\", \"recommendation\": \"string\"}\n  ],\n  \"fleetRecommendations\": [\n    {\"action\": \"string\", \"description\": \"string\", \"impact\": \"string\", \"priority\": \"high|medium|low\", \"automatable\": false}\n  ],\n  \"distributorExpansion\": [\n    {\"region\": \"string\", \"opportunity\": \"string\", \"score\": number, \"marketSize\": \"string\", \"reasoning\": \"string\"}\n  ],\n  \"creditRisks\": [\n    {\"entity\": \"string\", \"riskScore\": number, \"overdueAmount\": \"string\", \"recommendation\": \"string\"}\n  ],\n  \"networkHealth\": {\n    \"overallScore\": number,\n    \"deliveryEfficiency\": number,\n    \"coverageGap\": number,\n    \"bottlenecks\": [\"string\"]\n  }\n}\n\nProvide 4-6 items per array. Use realistic Nigerian/African city names and currency. Base predictions on the actual data provided.";
+
+    let aiPredictions: any = null;
+    try {
+      const rawContent = await callAnthropic({
+        system: "You are a logistics AI engine. Return valid JSON only, no markdown fences.",
+        messages: [{ role: "user", content: prompt }],
+        model: mapModel("google/gemini-2.5-flash"),
+        maxTokens: 2048,
+      });
+      const cleaned = rawContent.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      aiPredictions = JSON.parse(cleaned);
+    } catch (_e) {
+      aiPredictions = null;
+    }
+
+    if (!aiPredictions) {
       return new Response(JSON.stringify({
-        metrics: { totalDispatches, otdRate, fleetUtilization, totalRevenue, overdueAmount, pendingDispatches, inTransit, activeVehicles, totalVehicles: vehicles.length, totalDrivers: drivers.length, totalCustomers: customers.length, totalWarehouses: warehouses.length },
+        metrics,
         cityDistribution: topCities,
         predictions: [],
         recommendations: [],
@@ -87,71 +107,8 @@ serve(async (req) => {
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const prompt = `You are RouteAce's Autonomous Distribution AI analyzing real logistics data for an African distribution network.
-
-LIVE PLATFORM DATA:
-- Total dispatches (recent): ${totalDispatches}
-- On-time delivery rate: ${otdRate}%
-- Fleet utilization: ${fleetUtilization}% (${activeVehicles}/${vehicles.length} vehicles active)
-- Revenue (recent invoices): ₦${(totalRevenue / 1000000).toFixed(1)}M
-- Overdue receivables: ₦${(overdueAmount / 1000000).toFixed(1)}M (${overdueInvoices.length} invoices)
-- Pending dispatches: ${pendingDispatches}
-- In-transit: ${inTransit}
-- Total customers: ${customers.length}
-- Total drivers: ${drivers.length}
-- Warehouses: ${warehouses.length}
-- Top cities by customer density: ${topCities.map(([city, count]) => `${city}(${count})`).join(", ")}
-
-Generate a JSON response with EXACTLY this structure (no markdown, raw JSON only):
-{
-  "demandPredictions": [
-    {"region": "string", "currentDemand": number, "predictedDemand": number, "confidence": number, "trend": "string like +12%", "signal": "string describing why"}
-  ],
-  "inventoryAlerts": [
-    {"warehouse": "string", "item": "string", "currentStock": number, "daysUntilStockout": number, "severity": "critical|warning|info", "recommendation": "string"}
-  ],
-  "fleetRecommendations": [
-    {"action": "string", "description": "string", "impact": "string", "priority": "high|medium|low", "automatable": boolean}
-  ],
-  "distributorExpansion": [
-    {"region": "string", "opportunity": "string", "score": number, "marketSize": "string", "reasoning": "string"}
-  ],
-  "creditRisks": [
-    {"entity": "string", "riskScore": number, "overdueAmount": "string", "recommendation": "string"}
-  ],
-  "networkHealth": {
-    "overallScore": number,
-    "deliveryEfficiency": number,
-    "coverageGap": number,
-    "bottlenecks": ["string"]
-  }
-}
-
-Provide 4-6 items per array. Use realistic Nigerian/African city names and currency. Base predictions on the actual data provided.`;
-
-    const rawContent = await callAnthropic({
-      system: "You are a logistics AI engine. Return valid JSON only, no markdown fences.",
-      messages: [{ role: "user", content: prompt }],
-      model: mapModel("google/gemini-2.5-flash"),
-      maxTokens: 2048,
-    });
-    
-    // Parse AI response, handle potential markdown fences
-    let aiPredictions;
-    try {
-      const cleaned = rawContent.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-      aiPredictions = JSON.parse(cleaned);
-    } catch {
-      aiPredictions = { error: "Failed to parse AI response", raw: rawContent.substring(0, 200) };
-    }
-
     return new Response(JSON.stringify({
-      metrics: {
-        totalDispatches, otdRate, fleetUtilization, totalRevenue, overdueAmount,
-        pendingDispatches, inTransit, activeVehicles,
-        totalVehicles: vehicles.length, totalDrivers: drivers.length,
-        totalCustomers: customers.length, totalWarehouses: warehouses.length,
-      },
+      metrics,
       cityDistribution: topCities,
       ai: aiPredictions,
       generatedAt: new Date().toISOString(),

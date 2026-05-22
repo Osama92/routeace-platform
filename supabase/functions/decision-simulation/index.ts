@@ -37,7 +37,7 @@ Deno.serve(async (req) => {
   try {
     if (req.method === "POST" && action === "simulate") {
       let body: any;
-      try { body = await req.json(); } catch { return json({ error: "Invalid request body" }, 400); }
+      try { body = await req.json(); } catch (_e) { return json({ error: "Invalid request body" }, 400); }
       const { simulation_type, scenario_name, input_params } = body;
 
       if (!simulation_type || !scenario_name || !input_params) {

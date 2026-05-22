@@ -76,7 +76,7 @@ Deno.serve(async (req) => {
     if (!membership) return jsonRes({ error: "No active organisation" }, 403, cors);
 
     let body: Record<string, unknown>;
-    try { body = await req.json(); } catch { return jsonRes({ error: "Invalid JSON body" }, 400, cors); }
+    try { body = await req.json(); } catch (_e) { return jsonRes({ error: "Invalid JSON body" }, 400, cors); }
 
     const plan_name = String((body as any).plan_name ?? "");
     const billing_cycle = ((body as any).billing_cycle ?? "monthly") as string;

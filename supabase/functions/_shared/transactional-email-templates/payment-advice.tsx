@@ -24,12 +24,12 @@ interface Props {
   supportEmail?: string
 }
 
-const fmtDate = (s?: string) => { if (!s) return undefined; try { return new Date(s).toLocaleDateString() } catch { return s } }
+const fmtDate = (s?: string) => { if (!s) return undefined; try { return new Date(s).toLocaleDateString() } catch (_e) { return s } }
 const fmtMoney = (n?: number, c?: string) => {
   if (n == null) return '—'
   try {
     return new Intl.NumberFormat(undefined, { style: 'currency', currency: c || 'NGN', maximumFractionDigits: 2 }).format(n)
-  } catch {
+  } catch (_e) {
     return `${c || ''} ${n.toFixed(2)}`
   }
 }

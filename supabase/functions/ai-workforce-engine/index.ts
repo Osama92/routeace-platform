@@ -24,7 +24,7 @@ serve(async (req) => {
     const route = url.searchParams.get("route") || "/";
     let body: any = null;
     if (req.method === "POST") {
-      try { body = await req.json(); } catch { body = {}; }
+      try { body = await req.json(); } catch (_e) { body = {}; }
     }
 
     // ─── INITIALIZE AI EMPLOYEES ───

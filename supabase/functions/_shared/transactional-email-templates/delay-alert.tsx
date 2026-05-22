@@ -25,7 +25,7 @@ interface Props {
 
 const fmtEta = (s?: string) => {
   if (!s) return undefined
-  try { return new Date(s).toLocaleString() } catch { return s }
+  try { return new Date(s).toLocaleString() } catch (_e) { return s }
 }
 
 const DelayAlertEmail = ({

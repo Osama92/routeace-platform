@@ -41,7 +41,7 @@ serve(async (req) => {
 
     let body: any = {};
     if (req.method !== "GET") {
-      try { body = await req.json(); } catch { body = {}; }
+      try { body = await req.json(); } catch (_e) { body = {}; }
     }
     const action = body.action || new URL(req.url).searchParams.get("action") || "list";
 
