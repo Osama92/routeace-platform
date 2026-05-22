@@ -98,7 +98,7 @@ const InvoicesPage = () => {
   const { toast } = useToast();
   const { hasAnyRole } = useAuth();
 
-  const canManage = hasAnyRole(["admin", "operations"]);
+  const canManage = hasAnyRole(["admin", "operations", "finance_manager", "org_admin", "super_admin"]);
 
   const fetchInvoices = async () => {
     try {
@@ -360,7 +360,7 @@ const InvoicesPage = () => {
                                     <Send className="w-4 h-4 mr-2" />Send Invoice
                                   </DropdownMenuItem>
                                 )}
-                                {hasAnyRole(["admin"]) && (
+                                {hasAnyRole(["admin", "finance_manager", "org_admin", "super_admin"]) && (
                                   <>
                                     <DropdownMenuSeparator />
                                     <DropdownMenuItem onClick={() => updateInvoiceStatus(invoice.id, 'paid')}>
