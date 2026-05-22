@@ -7,7 +7,6 @@ import {
   Truck, MapPin, Users, Zap, Shield, Brain,
   TrendingUp, Fuel, BarChart3, ArrowRight, Crown, Factory, Building2,
 } from "lucide-react";
-import ctaBgVideo from "@/assets/landing/cta-bg.mp4";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 30 },
@@ -35,7 +34,7 @@ const LandingLogisticsOS = () => {
         playsInline
         className="absolute inset-0 w-full h-full object-cover object-center z-0"
       >
-        <source src={ctaBgVideo} type="video/mp4" />
+        <source src="" type="video/mp4" />
       </video>
       <div className="absolute inset-0 bg-background/85 z-10" />
       <div className="max-w-7xl mx-auto relative z-20">
