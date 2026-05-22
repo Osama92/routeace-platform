@@ -1,4 +1,6 @@
 import PublicShell from "./PublicShell";
+import LazyVideo from "@/components/ui/LazyVideo";
+import { VIDEO } from "@/lib/cdn";
 import trucksDepot from "@/assets/about/trucks-depot.jpg";
 import lagosTraffic from "@/assets/about/lagos-traffic.jpg";
 import operatorImg from "@/assets/about/operator.jpg";
@@ -28,14 +30,9 @@ export default function About() {
       <div className="-mx-6 md:-mx-0 space-y-0 animate-in fade-in duration-700">
         {/* Section 1 — Hero with background video */}
         <section className="relative py-16 md:py-24 px-6 overflow-hidden">
-          <video
-            autoPlay
-            muted
-            loop
-            playsInline
-            preload="auto"
+          <LazyVideo
+            src={VIDEO.heroBg}
             className="absolute inset-0 w-full h-full object-cover opacity-65"
-            src=""
           />
           <div
             className="absolute inset-0 -z-0 opacity-60 pointer-events-none"
