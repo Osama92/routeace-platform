@@ -37,9 +37,14 @@ export async function callAnthropic(opts: CallAnthropicOptions): Promise<string>
   }
 
   // Anthropic requires alternating user/assistant turns starting with user
-  const cleanMsgs: AnthropicMessage[] = msgs
+  let cleanMsgs: AnthropicMessage[] = msgs
     .filter((m) => m.role === "user" || m.role === "assistant")
     .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+
+  // Drop any leading assistant messages — Anthropic requires user turn first
+  while (cleanMsgs.length > 0 && cleanMsgs[0].role === "assistant") {
+    cleanMsgs = cleanMsgs.slice(1);
+  }
 
   if (cleanMsgs.length === 0) {
     throw new Error("callAnthropic: no user/assistant messages provided");
