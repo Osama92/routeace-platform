@@ -21,7 +21,7 @@ const schema = z.object({
   tag: z.string(),
   order_id: z.string().trim().max(80).optional().or(z.literal("")),
 });
-const PUBLIC_ROUTEACE_ORIGIN = "https://routeaceglyde.app";
+const PUBLIC_ROUTEACE_ORIGIN = "https://routeace.app";
 
 const isLovableOrLocalHost = (hostname: string) =>
   hostname.includes("id-preview--") ||

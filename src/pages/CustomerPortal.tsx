@@ -252,7 +252,7 @@ const CustomerPortal = () => {
       doc.rect(0, 277, w, 20, "F");
       doc.setFontSize(8);
       doc.setTextColor(120);
-      doc.text(`RouteAce Logistics Intelligence Platform  ·  Waybill ID: ${shipment.dispatch_number}  ·  routeaceglyde.app`, margin, 288);
+      doc.text(`RouteAce Logistics Intelligence Platform  ·  Waybill ID: ${shipment.dispatch_number}  ·  routeace.app`, margin, 288);
 
       doc.save(`waybill-${shipment.dispatch_number}.pdf`);
       toast({ title: "Waybill Downloaded", description: `waybill-${shipment.dispatch_number}.pdf saved.` });

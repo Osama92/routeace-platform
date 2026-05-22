@@ -108,7 +108,7 @@ const STATUS_COLORS: Record<string, string> = {
   resolved: "bg-green-500/20 text-green-700 dark:text-green-400",
   closed: "bg-muted text-muted-foreground",
 };
-const PUBLIC_ROUTEACE_ORIGIN = "https://routeaceglyde.app";
+const PUBLIC_ROUTEACE_ORIGIN = "https://routeace.app";
 const SUPPORT_LINK_PURPOSE = "Support intake only - receipts, complaints, enquiries";
 
 const buildPublicSupportSubmitUrl = (slug: string) => `${PUBLIC_ROUTEACE_ORIGIN}/support/submit/${slug}`;

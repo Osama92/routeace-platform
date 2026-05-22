@@ -24,7 +24,7 @@ export default function Documentation() {
       <Helmet>
         <title>Documentation - RouteAce Integration Platform</title>
         <meta name="description" content="Integrate GPS trackers, fuel probes, IoT maintenance sensors, and in-house apps with RouteAce. Authentication, ingestion endpoints, webhooks, and SDKs." />
-        <link rel="canonical" href="https://routeaceglyde.app/docs" />
+        <link rel="canonical" href="https://routeace.app/docs" />
       </Helmet>
 
       <header className="border-b border-border/40 bg-card/30">
@@ -78,7 +78,7 @@ export default function Documentation() {
               <Card className="p-4"><div className="font-semibold mb-1">3. Webhooks</div><div className="text-xs">Subscribe to dispatch, delivery, payment, and exception events.</div></Card>
               <Card className="p-4"><div className="font-semibold mb-1">4. Bulk Import</div><div className="text-xs">CSV/JSON loaders for historical migrations from your existing system.</div></Card>
             </div>
-            <p>Base URL: <code className="px-1.5 py-0.5 bg-muted rounded">https://api.routeaceglyde.app/v1</code></p>
+            <p>Base URL: <code className="px-1.5 py-0.5 bg-muted rounded">https://api.routeace.app/v1</code></p>
           </Section>
 
           <Section id="auth" title="Authentication" icon={KeyRound}>
@@ -87,7 +87,7 @@ export default function Documentation() {
               <li><strong>Device keys</strong> — for GPS/fuel/IoT hardware. Limited to ingestion endpoints only.</li>
               <li><strong>Application keys</strong> — for in-house apps. Scoped per resource (read/write).</li>
             </ul>
-            <Code>{`curl https://api.routeaceglyde.app/v1/fleet/vehicles \\
+            <Code>{`curl https://api.routeace.app/v1/fleet/vehicles \\
   -H "Authorization: Bearer ra_live_sk_..." \\
   -H "X-Tenant-Id: <tenant-uuid>"`}</Code>
             <p>Keys are signed with HMAC-SHA256. Rotate every 90 days. Device keys can optionally pin to a hardware IMEI.</p>
@@ -118,7 +118,7 @@ Body:
       "odometer_km": 124530.2, "ignition": true, "satellites": 12 }
   ]
 }`}</Code>
-            <p>For legacy TCP-only devices, point them to <code>tcp://ingest.routeaceglyde.app:5023</code> and pick a parser preset in the Integration Hub.</p>
+            <p>For legacy TCP-only devices, point them to <code>tcp://ingest.routeace.app:5023</code> and pick a parser preset in the Integration Hub.</p>
           </Section>
 
           <Section id="fuel" title="Fuel Probes → Fuel Intelligence" icon={Fuel}>

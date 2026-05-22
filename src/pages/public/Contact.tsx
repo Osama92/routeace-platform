@@ -28,12 +28,12 @@ export default function Contact() {
     <PublicShell
       title="Contact"
       description="Reach the RouteAce team for sales, support, integrations, or press inquiries — typically within one business day."
-      canonical="https://routeaceglyde.app/contact"
+      canonical="https://routeace.app/contact"
       jsonLd={{
         "@context": "https://schema.org",
         "@type": "LocalBusiness",
         name: "RouteAce (Glyde Services)",
-        url: "https://routeaceglyde.app/contact",
+        url: "https://routeace.app/contact",
         email: "support@glydeservicesng.com",
         telephone: "+234-9051776879",
         address: { "@type": "PostalAddress", addressLocality: "Lagos", addressCountry: "NG" },

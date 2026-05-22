@@ -24,7 +24,7 @@ interface SignupEmailProps {
 
 export const SignupEmail = ({
   siteName = 'RouteAce',
-  siteUrl = 'https://routeaceglyde.app',
+  siteUrl = 'https://routeace.app',
   recipient = '',
   confirmationUrl = '#',
 }: SignupEmailProps) => (

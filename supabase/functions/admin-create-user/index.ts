@@ -85,7 +85,7 @@ async function sendWelcomeEmail(opts: {
     console.warn("[welcome-email] RESEND_API_KEY not set - skipping email to", opts.email);
     return;
   }
-  const siteUrl = Deno.env.get("SITE_URL") ?? "https://routeaceglyde.app";
+  const siteUrl = Deno.env.get("SITE_URL") ?? "https://routeace.app";
   const loginUrl = `${siteUrl}/auth`;
   const displayRole = escHtml(ROLE_LABELS[opts.role] ?? opts.role);
   const safeFullName = escHtml(opts.fullName);

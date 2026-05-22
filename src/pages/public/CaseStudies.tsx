@@ -9,7 +9,7 @@ const CASES = [
 
 export default function CaseStudies() {
   return (
-    <PublicShell title="Case Studies" description="How African logistics operators use RouteAce to cut cost and lift SLA." canonical="https://routeaceglyde.app/case-studies">
+    <PublicShell title="Case Studies" description="How African logistics operators use RouteAce to cut cost and lift SLA." canonical="https://routeace.app/case-studies">
       <h1 className="text-4xl font-black">Case Studies</h1>
       <p className="text-muted-foreground">Real numbers from operators running RouteAce in production across Nigeria and West Africa.</p>
       <div className="space-y-4">
@@ -21,7 +21,7 @@ export default function CaseStudies() {
           </Card>
         ))}
       </div>
-      <p className="text-sm text-muted-foreground pt-4">Want a deep-dive deck? Email <a className="text-primary underline" href="mailto:sales@routeaceglyde.app">sales@routeaceglyde.app</a>.</p>
+      <p className="text-sm text-muted-foreground pt-4">Want a deep-dive deck? Email <a className="text-primary underline" href="mailto:sales@routeace.app">sales@routeace.app</a>.</p>
     </PublicShell>
   );
 }

@@ -28,7 +28,7 @@ async function stage1_triggerHook() {
     data: {
       action_type: 'signup',
       email: TEST_EMAIL,
-      url: `${SUPABASE_URL}/auth/v1/verify?token=TEST_TOKEN_123&type=signup&redirect_to=https://routeaceglyde.app`,
+      url: `${SUPABASE_URL}/auth/v1/verify?token=TEST_TOKEN_123&type=signup&redirect_to=https://routeace.app`,
       token: 'TEST_TOKEN_123',
     },
   }

@@ -85,7 +85,7 @@ export const template = {
     vehicleReg: 'LAG-554-XY',
     cargoDescription: '20 cartons · 480kg',
     organizationName: 'RouteAce Logistics',
-    trackingUrl: 'https://routeaceglyde.app/track/DSP-00421',
+    trackingUrl: 'https://routeace.app/track/DSP-00421',
   },
 } satisfies TemplateEntry
 

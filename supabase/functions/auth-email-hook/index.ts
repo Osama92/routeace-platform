@@ -105,7 +105,7 @@ async function verifyWebhookRequest(
 // ---------------------------------------------------------------------------
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') ?? 'https://routeaceglyde.app',
+  'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') ?? 'https://routeace.app',
   'Access-Control-Allow-Headers':
     'authorization, x-client-info, apikey, content-type, x-routeace-signature, x-routeace-timestamp, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 }
@@ -129,16 +129,16 @@ const EMAIL_TEMPLATES: Record<string, React.ComponentType<any>> = {
 }
 
 const SITE_NAME = 'routeace-platform'
-const SENDER_DOMAIN = 'notify.routeaceglyde.app'
-const ROOT_DOMAIN = 'routeaceglyde.app'
-const FROM_DOMAIN = 'routeaceglyde.app'
+const SENDER_DOMAIN = 'notify.routeace.app'
+const ROOT_DOMAIN = 'routeace.app'
+const FROM_DOMAIN = 'routeace.app'
 
 // ---------------------------------------------------------------------------
 // Preview endpoint — returns rendered HTML for email testing (no delivery)
 // Secured with WEBHOOK_SECRET Bearer token.
 // ---------------------------------------------------------------------------
 
-const SAMPLE_PROJECT_URL = 'https://routeaceglyde.app'
+const SAMPLE_PROJECT_URL = 'https://routeace.app'
 const SAMPLE_EMAIL = 'user@example.test'
 const SAMPLE_DATA: Record<string, object> = {
   signup: {
@@ -174,7 +174,7 @@ const SAMPLE_DATA: Record<string, object> = {
 
 async function handlePreview(req: Request): Promise<Response> {
   const previewCorsHeaders = {
-    'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') ?? 'https://routeaceglyde.app',
+    'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') ?? 'https://routeace.app',
     'Access-Control-Allow-Headers': 'authorization, content-type',
   }
 

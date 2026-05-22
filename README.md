@@ -75,7 +75,7 @@ Set these in the Supabase dashboard → Project Settings → Edge Functions → 
 |---|---|
 | `WEBHOOK_SECRET` | HMAC secret for the `auth-email-hook` edge function |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key for edge functions that write to the DB |
-| `ALLOWED_ORIGIN` | CORS allowed origin (e.g. `https://routeaceglyde.app`) |
+| `ALLOWED_ORIGIN` | CORS allowed origin (e.g. `https://routeace.app`) |
 
 ### Auth Email Hook
 

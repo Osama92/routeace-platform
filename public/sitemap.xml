@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://routeaceglyde.app/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
-  <url><loc>https://routeaceglyde.app/welcome</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://routeaceglyde.app/access-hub</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://routeaceglyde.app/auth</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://routeaceglyde.app/signup/company</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://routeaceglyde.app/billing/verify</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
-  <url><loc>https://routeaceglyde.app/privacy</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
+  <url><loc>https://routeace.app/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  <url><loc>https://routeace.app/welcome</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://routeace.app/access-hub</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://routeace.app/auth</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://routeace.app/signup/company</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://routeace.app/billing/verify</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
+  <url><loc>https://routeace.app/privacy</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
 </urlset>

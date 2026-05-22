@@ -126,7 +126,7 @@ export const template = {
     currency: 'NGN',
     dueDate: '30 May 2026',
     organizationName: 'RouteAce Logistics',
-    invoiceUrl: 'https://routeaceglyde.app/invoices/INV-2026-0142',
+    invoiceUrl: 'https://routeace.app/invoices/INV-2026-0142',
     notes: 'Lagos - Ibadan haulage, May Week 3.',
   },
 } satisfies TemplateEntry

@@ -4,7 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const PROJECT_REF = Deno.env.get("SUPABASE_PROJECT_REF") ?? "mbybrzggrpyhvcnxhlua";
 const CALLBACK_URL = `https://${PROJECT_REF}.supabase.co/functions/v1/erp-oauth-callback`;
-const APP_FALLBACK = "https://routeaceglyde.app/dept/erp-integrations";
+const APP_FALLBACK = "https://routeace.app/dept/erp-integrations";
 
 Deno.serve(async (req) => {
   const url = new URL(req.url);

@@ -9,7 +9,7 @@ const ROLES = [
 
 export default function Careers() {
   return (
-    <PublicShell title="Careers" description="Join the team building Africa's distribution infrastructure." canonical="https://routeaceglyde.app/careers">
+    <PublicShell title="Careers" description="Join the team building Africa's distribution infrastructure." canonical="https://routeace.app/careers">
       <h1 className="text-4xl font-black">Careers</h1>
       <p className="text-muted-foreground">We hire operators and builders. Engineers who have ridden in the truck. Ops folks who can read a query plan.</p>
       <div className="space-y-3">
@@ -23,7 +23,7 @@ export default function Careers() {
           </Card>
         ))}
       </div>
-      <p className="text-sm text-muted-foreground pt-4">Don't see your role? Email <a className="text-primary underline" href="mailto:careers@routeaceglyde.app">careers@routeaceglyde.app</a>.</p>
+      <p className="text-sm text-muted-foreground pt-4">Don't see your role? Email <a className="text-primary underline" href="mailto:careers@routeace.app">careers@routeace.app</a>.</p>
     </PublicShell>
   );
 }

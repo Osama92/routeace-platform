@@ -29,7 +29,7 @@ Deno.serve(async (req) => {
     });
   }
 
-  const appUrl = Deno.env.get("APP_PUBLIC_URL") || "https://routeaceglyde.app";
+  const appUrl = Deno.env.get("APP_PUBLIC_URL") || "https://routeace.app";
   let sent = 0, failed = 0;
 
   for (const t of (pending || []) as any[]) {
