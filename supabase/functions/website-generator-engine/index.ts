@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { callAnthropic, mapModel } from "../_shared/anthropic.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { buildCors } from "../_shared/cors.ts";
@@ -40,14 +41,13 @@ serve(async (req) => {
       ];
 
       // Use Lovable AI to draft hero + services copy
-      const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
       let aiCopy: any = {};
-      if (LOVABLE_API_KEY) {
-        const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      if (ANTHROPIC_API_KEY) {
+        const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
-          headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
+          headers: { "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!, "anthropic-version": "2023-06-01", "content-type": "application/json" },
           body: JSON.stringify({
-            model: "google/gemini-3-flash-preview",
+            model: mapModel("google/gemini-3-flash-preview"),
             messages: [
               { role: "system", content: "You are a logistics marketing copywriter. Return ONLY JSON." },
               { role: "user", content: `Write website copy for "${company_name}" - a ${brand_style} ${services.join(", ") || "logistics"} company serving ${cities_served.join(", ") || "Nigeria"}, fleet of ${fleet_size || "growing"} vehicles, targeting ${target_clients.join(", ") || "businesses"}. Return JSON: { "hero_headline": "", "hero_sub": "", "value_props": ["","",""], "services_intro": "", "about_us": "", "cta": "" }` },

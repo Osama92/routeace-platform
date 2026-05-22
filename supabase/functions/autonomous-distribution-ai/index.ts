@@ -1,4 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { checkAndDeductCredits } from "../_shared/ai-credits.ts";
+import { callAnthropic, mapModel } from "../_shared/anthropic.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.89.0";
 import { requireAuth, getTenantScope } from "../_shared/require-auth.ts";
 import { resolveCallerOrgId } from "../_shared/resolve-org.ts";
@@ -75,9 +77,7 @@ serve(async (req) => {
     const topCities = Object.entries(cityDensity).sort((a, b) => b[1] - a[1]).slice(0, 8);
 
     // Build AI context prompt
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      // Return computed metrics without AI predictions
+          // Return computed metrics without AI predictions
       return new Response(JSON.stringify({
         metrics: { totalDispatches, otdRate, fleetUtilization, totalRevenue, overdueAmount, pendingDispatches, inTransit, activeVehicles, totalVehicles: vehicles.length, totalDrivers: drivers.length, totalCustomers: customers.length, totalWarehouses: warehouses.length },
         cityDistribution: topCities,
@@ -129,34 +129,12 @@ Generate a JSON response with EXACTLY this structure (no markdown, raw JSON only
 
 Provide 4-6 items per array. Use realistic Nigerian/African city names and currency. Base predictions on the actual data provided.`;
 
-    const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: "You are a logistics AI engine. Return valid JSON only, no markdown fences." },
-          { role: "user", content: prompt },
-        ],
-      }),
+    const rawContent = await callAnthropic({
+      system: "You are a logistics AI engine. Return valid JSON only, no markdown fences.",
+      messages: [{ role: "user", content: prompt }],
+      model: mapModel("google/gemini-2.5-flash"),
+      maxTokens: 2048,
     });
-
-    if (!aiResponse.ok) {
-      const status = aiResponse.status;
-      if (status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limit exceeded. Please try again shortly." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-      if (status === 402) {
-        return new Response(JSON.stringify({ error: "AI credits exhausted. Please top up in Settings." }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-      throw new Error(`AI gateway error: ${status}`);
-    }
-
-    const aiData = await aiResponse.json();
-    const rawContent = aiData.choices?.[0]?.message?.content || "{}";
     
     // Parse AI response, handle potential markdown fences
     let aiPredictions;

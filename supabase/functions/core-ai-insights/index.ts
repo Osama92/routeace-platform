@@ -1,4 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { checkAndDeductCredits } from "../_shared/ai-credits.ts";
+import { callAnthropic, mapModel } from "../_shared/anthropic.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { requireAuth } from "../_shared/require-auth.ts";
 
@@ -31,12 +33,11 @@ serve(async (req) => {
 
   try {
     const { type } = await req.json();
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+    if (!ANTHROPIC_API_KEY) {
+      throw new Error("ANTHROPIC_API_KEY is not configured");
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -155,19 +156,19 @@ Provide exactly 4 insight cards in this JSON format:
 
 Focus on: User growth, Revenue changes, Churn signals, Ops efficiency. Be specific and actionable.`;
 
-      const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      const aiResponse = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
-          "Content-Type": "application/json",
+          "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
         },
         body: JSON.stringify({
-          model: "google/gemini-3-flash-preview",
+          model: mapModel("google/gemini-3-flash-preview"),
           messages: [
             { role: "system", content: "You are a business intelligence analyst. Always respond with valid JSON only." },
             { role: "user", content: prompt }
-          ],
-          temperature: 0.3,
+          ]
         }),
       });
 
@@ -182,7 +183,7 @@ Focus on: User growth, Revenue changes, Churn signals, Ops efficiency. Be specif
       }
 
       const aiData = await aiResponse.json();
-      const content = aiData.choices?.[0]?.message?.content || "{}";
+      const content = aiData.content?.[0]?.text || "{}";
       
       // Parse JSON from response
       let insights;
@@ -300,19 +301,19 @@ Generate predictive KPIs in this JSON format:
 
 Be realistic with estimates based on the data provided. Use the revenue data to project growth.`;
 
-      const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      const aiResponse = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
-          "Content-Type": "application/json",
+          "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
         },
         body: JSON.stringify({
-          model: "google/gemini-3-flash-preview",
+          model: mapModel("google/gemini-3-flash-preview"),
           messages: [
             { role: "system", content: "You are a business intelligence analyst specializing in logistics. Always respond with valid JSON only." },
             { role: "user", content: prompt }
-          ],
-          temperature: 0.2,
+          ]
         }),
       });
 
@@ -327,7 +328,7 @@ Be realistic with estimates based on the data provided. Use the revenue data to 
       }
 
       const aiData = await aiResponse.json();
-      const content = aiData.choices?.[0]?.message?.content || "{}";
+      const content = aiData.content?.[0]?.text || "{}";
       
       let predictions;
       try {

@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { callAnthropic, mapModel } from "../_shared/anthropic.ts";
 import { requireAuth } from "../_shared/require-auth.ts";
 import { rateLimit } from "../_shared/rate-limit.ts";
 
@@ -40,22 +41,21 @@ serve(async (req) => {
 
   try {
     const { role, context } = await req.json();
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
-
+    
     const systemPrompt = ROLE_PROMPTS[role] || ROLE_PROMPTS.executive;
     const userPrompt = context
       ? `Given this operational context: ${JSON.stringify(context)}. Generate role-specific AI insights now.`
       : `Generate role-specific AI insights for today's operations. Use realistic African FMCG distribution scenarios.`;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
+        "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+        model: mapModel("google/gemini-3-flash-preview"),
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },

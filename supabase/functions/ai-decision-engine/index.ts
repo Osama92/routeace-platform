@@ -1,4 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.89.0";
+import { checkAndDeductCredits } from "../_shared/ai-credits.ts";
+import { callAnthropic, mapModel } from "../_shared/anthropic.ts";
 import { requireAuth } from "../_shared/require-auth.ts";
 
 import { buildCors } from "../_shared/cors.ts";
@@ -13,9 +16,7 @@ serve(async (req) => {
   try {
     const { agentOutputs, orchestratorDecision, systemHealth } = await req.json();
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
-
+    
     const systemPrompt = `You are the Routeace AI Decision Orchestrator - a multi-agent CFO + Fleet Operating System brain.
 
 Your role is to analyze structured agent outputs from 7 specialized agents (Finance Core, Fleet Performance, Debt & Financing, Tax & Compliance, Risk Stress, Growth Simulation, Reconciliation) and produce:
@@ -53,19 +54,19 @@ ${orchestratorDecision.reasoning.map((r: string) => `- ${r}`).join('\n')}
 
 Based on the above, provide your analysis.`;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
+        "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+        model: mapModel("google/gemini-3-flash-preview"),
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
-        stream: false,
       }),
     });
 
@@ -88,7 +89,7 @@ Based on the above, provide your analysis.`;
     }
 
     const result = await response.json();
-    const analysis = result.choices?.[0]?.message?.content || "Analysis unavailable.";
+    const analysis = result.content?.[0]?.text || "Analysis unavailable.";
 
     return new Response(JSON.stringify({ analysis, timestamp: new Date().toISOString() }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

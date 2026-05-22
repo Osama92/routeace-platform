@@ -1,17 +1,19 @@
 import { buildCors, preflight, json, validateBody } from "../_shared/cors.ts";
+import { callAnthropic, mapModel } from "../_shared/anthropic.ts";
+import { checkAndDeductCredits } from "../_shared/ai-credits.ts";
 import { requireAuth } from "../_shared/require-auth.ts";
 import { rateLimit } from "../_shared/rate-limit.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.89.0";
+
+const CREDIT_COST = 2;
 
 Deno.serve(async (req) => {
   const cors = buildCors(req);
   if (req.method === "OPTIONS") return preflight(cors);
 
-  // Phase 3: AI tenant-scoping - require signed-in caller to prevent
-  // anonymous AI-credit drain and enforce tenant identity at the gateway edge.
   const auth = await requireAuth(req);
   if (!auth.ok) return auth.response;
 
-  // Phase 9: AI credit + flood protection (30 req/min/user).
   const rl = rateLimit({ bucket: "dept-ai", identifier: auth.user.id, limit: 30, windowMs: 60_000 });
   if (!rl.allowed) return rl.response!;
 
@@ -26,7 +28,7 @@ Deno.serve(async (req) => {
     const invalid = validateBody(body, ["messages"], cors);
     if (invalid) return invalid;
 
-    const { messages, context, userRole, scope, navigationCatalog } = body as any;
+    const { messages, context, userRole, scope, navigationCatalog, organizationId, conversationId } = body as any;
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return json({ error: "messages must be a non-empty array of {role, content} objects" }, 400, cors);
@@ -37,8 +39,20 @@ Deno.serve(async (req) => {
       }
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) return json({ error: "AI gateway not configured" }, 500, cors);
+    // Credit enforcement
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+
+    const credit = await checkAndDeductCredits(supabase, {
+      organizationId: organizationId ?? null,
+      userId: auth.user.id,
+      cost: CREDIT_COST,
+    });
+    if (!credit.allowed) {
+      return json({ error: credit.reason ?? "Insufficient AI credits" }, 402, cors);
+    }
 
     const roleFraming = ({
       ops_manager: "You are advising an Operations Manager. Focus on dispatch flow, SLA risk, route efficiency, and driver/vehicle utilisation. Do not discuss vendor payment terms or budget variance unless asked.",
@@ -94,21 +108,44 @@ Always answer concisely with concrete next actions and KPIs. When suggesting
 navigation, embed the link inline in your sentence using markdown
 \`[Label](/path)\` so the user can click it directly.`;
 
-    const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [{ role: "system", content: systemPrompt }, ...messages],
-      }),
+    const reply = await callAnthropic({
+      system: systemPrompt,
+      messages: messages.filter((m: any) => m.role === "user" || m.role === "assistant"),
+      model: mapModel("google/gemini-2.5-flash"),
+      maxTokens: 2048,
     });
 
-    if (!resp.ok) {
-      const t = await resp.text();
-      return json({ error: "AI request failed", details: t }, resp.status, cors);
+    // Persist conversation to database
+    try {
+      const lastUserMsg = [...messages].reverse().find((m: any) => m.role === "user");
+      if (lastUserMsg) {
+        const convId = conversationId ?? crypto.randomUUID();
+        await supabase.from("zaza_conversations" as any).insert([
+          {
+            id: crypto.randomUUID(),
+            conversation_id: convId,
+            organization_id: organizationId ?? null,
+            user_id: auth.user.id,
+            role: "user",
+            content: lastUserMsg.content,
+            created_at: new Date().toISOString(),
+          },
+          {
+            id: crypto.randomUUID(),
+            conversation_id: convId,
+            organization_id: organizationId ?? null,
+            user_id: auth.user.id,
+            role: "assistant",
+            content: reply,
+            created_at: new Date().toISOString(),
+          },
+        ]);
+      }
+    } catch (histErr) {
+      // History save failures are non-fatal
+      console.error("Failed to save conversation history:", histErr);
     }
-    const data = await resp.json();
-    const reply = data.choices?.[0]?.message?.content ?? "";
+
     return json({ reply }, 200, cors);
   } catch (e) {
     return json({ error: String(e) }, 500, cors);

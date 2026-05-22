@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { callAnthropic, mapModel } from "../_shared/anthropic.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { requireAuth } from "../_shared/require-auth.ts";
 import { resolveCallerOrgId } from "../_shared/resolve-org.ts";
@@ -126,15 +127,14 @@ serve(async (req) => {
     } : {};
 
     // AI narrative
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     let narrative = "";
-    if (LOVABLE_API_KEY) {
+    if (ANTHROPIC_API_KEY) {
       try {
-        const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        const r = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
-          headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
+          headers: { "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!, "anthropic-version": "2023-06-01", "content-type": "application/json" },
           body: JSON.stringify({
-            model: "google/gemini-2.5-flash-lite",
+            model: mapModel("google/gemini-2.5-flash-lite"),
             messages: [{
               role: "user",
               content: `You are the AI Investor advisor. In 3 sentences, write an investor briefing.

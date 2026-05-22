@@ -1,4 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { checkAndDeductCredits } from "../_shared/ai-credits.ts";
+import { callAnthropic, mapModel } from "../_shared/anthropic.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { requireAuth } from "../_shared/require-auth.ts";
 import { resolveCallerOrgId } from "../_shared/resolve-org.ts";
@@ -187,10 +189,9 @@ serve(async (req) => {
     const growthMode = riskLevel === "critical" ? "SURVIVAL" : riskLevel === "high" ? "STABILIZE" : revenueGrowth > 10 ? "GROWTH" : "HOLD";
 
     // ── 9. AI Narrative ──────────────────────────────────
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     let aiNarrative = "";
 
-    if (LOVABLE_API_KEY) {
+    if (ANTHROPIC_API_KEY) {
       try {
         const prompt = `You are the AI CEO of a logistics company. Based on these metrics, give a 3-sentence executive briefing:
 - Revenue: ₦${(totalRevenue30d/1e6).toFixed(1)}M (${revenueGrowth > 0 ? "+" : ""}${revenueGrowth.toFixed(1)}% MoM)
@@ -204,19 +205,18 @@ serve(async (req) => {
 - Open Support Tickets: ${(supportTickets || []).length}
 Be direct, specific with ₦ amounts, and actionable. No fluff.`;
 
-        const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
-          headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
+          headers: { "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!, "anthropic-version": "2023-06-01", "content-type": "application/json" },
           body: JSON.stringify({
-            model: "google/gemini-3-flash-preview",
+            model: mapModel("google/gemini-3-flash-preview"),
             messages: [{ role: "user", content: prompt }],
-            stream: false,
           }),
         });
 
         if (aiResp.ok) {
           const aiData = await aiResp.json();
-          aiNarrative = aiData.choices?.[0]?.message?.content || "";
+          aiNarrative = aiData.content?.[0]?.text || "";
         }
       } catch (e) {
         console.error("AI narrative failed:", e);

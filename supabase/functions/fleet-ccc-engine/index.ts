@@ -1,4 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { checkAndDeductCredits } from "../_shared/ai-credits.ts";
+import { callAnthropic, mapModel } from "../_shared/anthropic.ts";
 import { resolveTenantMode, blockIfLD } from "../_shared/tenant-mode.ts";
 
 import { buildCors } from "../_shared/cors.ts";
@@ -151,10 +153,9 @@ Deno.serve(async (req) => {
       .slice(0, 5);
 
     // Generate AI optimization recommendations
-    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
     let aiRecommendations: any[] = [];
 
-    if (lovableApiKey) {
+    if (anthropicApiKey) {
       try {
         const aiPrompt = `You are a fleet financial intelligence AI. Analyze these fleet CCC metrics and provide 4 actionable recommendations:
 
@@ -165,22 +166,22 @@ AR Aging - Current: ${arAging.current}, 30d: ${arAging.days30}, 60d: ${arAging.d
 
 Return JSON array with objects: { "title": string, "description": string, "impact": "high"|"medium"|"low", "category": "dso"|"dpo"|"dio"|"ccc", "estimatedImprovement": string }`;
 
-        const aiResp = await fetch("https://api.lovable.dev/v1/chat/completions", {
+        const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${lovableApiKey}`,
-            "Content-Type": "application/json",
+            "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
           },
           body: JSON.stringify({
-            model: "google/gemini-2.5-flash",
-            messages: [{ role: "user", content: aiPrompt }],
-            temperature: 0.3,
+            model: mapModel("google/gemini-2.5-flash"),
+            messages: [{ role: "user", content: aiPrompt }]
           }),
         });
 
         if (aiResp.ok) {
           const aiData = await aiResp.json();
-          const content = aiData.choices?.[0]?.message?.content || "";
+          const content = aiData.content?.[0]?.text || "";
           const jsonMatch = content.match(/\[[\s\S]*\]/);
           if (jsonMatch) {
             aiRecommendations = JSON.parse(jsonMatch[0]);

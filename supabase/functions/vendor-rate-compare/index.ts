@@ -1,5 +1,6 @@
 // AI-powered vendor rate comparison for Logistics Department
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { callAnthropic, mapModel } from "../_shared/anthropic.ts";
 
 import { buildCors } from "../_shared/cors.ts";
 let corsHeaders: Record<string, string> = buildCors();
@@ -50,14 +51,14 @@ Deno.serve(async (req) => {
 
     // AI recommendation via Lovable AI
     let aiRecommendation = `${cheapest.vendor_name} offers the lowest rate (₦${cheapest.rate_ngn.toLocaleString()}) with ${cheapest.sla_days}-day SLA.`;
-    const lovableKey = Deno.env.get("LOVABLE_API_KEY");
+    const lovableKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (lovableKey && cards.length > 1) {
       try {
-        const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${lovableKey}` },
+          headers: { "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!, "anthropic-version": "2023-06-01", "content-type": "application/json" },
           body: JSON.stringify({
-            model: "google/gemini-2.5-flash",
+            model: mapModel("google/gemini-2.5-flash"),
             messages: [
               { role: "system", content: "You are a logistics procurement analyst. Recommend the best vendor balancing cost and SLA. Reply in 2 sentences max." },
               { role: "user", content: `Route ${route_from}→${route_to}, vehicle ${vehicle_type}. Options: ${JSON.stringify(alternatives)}. Recommend the best.` },
@@ -66,7 +67,7 @@ Deno.serve(async (req) => {
         });
         if (aiResp.ok) {
           const aiData = await aiResp.json();
-          aiRecommendation = aiData.choices?.[0]?.message?.content ?? aiRecommendation;
+          aiRecommendation = aiData.content?.[0]?.text ?? aiRecommendation;
         }
       } catch (e) {
         console.error("AI call failed:", e);
@@ -81,7 +82,7 @@ Deno.serve(async (req) => {
       cheapest_rate_ngn: cheapest.rate_ngn,
       alternatives,
       ai_recommendation: aiRecommendation,
-      ai_model: "google/gemini-2.5-flash",
+      ai_model: mapModel("google/gemini-2.5-flash"),
       created_by: userData.user.id,
     });
 

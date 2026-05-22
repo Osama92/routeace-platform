@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { callAnthropic, mapModel } from "../_shared/anthropic.ts";
 import { requireAuth } from "../_shared/require-auth.ts";
 
 import { buildCors } from "../_shared/cors.ts";
@@ -12,9 +13,7 @@ serve(async (req) => {
 
   try {
     const { industryName, industryDescription, products } = await req.json();
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
-
+    
     const systemPrompt = `You are an enterprise architecture AI for RouteAce, Africa's multi-industry distribution intelligence platform. You generate complete Industry Operating System blueprints.
 
 Given an industry, you MUST return a JSON object with this exact structure (no markdown, no code fences, pure JSON):
@@ -102,14 +101,15 @@ Products/Services: ${products || "Not provided"}
 
 Return ONLY the JSON object, no markdown formatting.`;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
+        "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: mapModel("google/gemini-2.5-flash"),
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },

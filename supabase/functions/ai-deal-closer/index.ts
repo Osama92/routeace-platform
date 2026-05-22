@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { callAnthropic, mapModel } from "../_shared/anthropic.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { buildCors } from "../_shared/cors.ts";
@@ -26,7 +27,7 @@ serve(async (req) => {
     if (route === "/scan" && req.method === "POST") {
       // Detect prospects from existing customer base (high fleet, high spend)
       const { data: customers } = await supabase.from("customers").select("id, customer_name, total_spent, total_invoices").order("total_spent", { ascending: false, nullsFirst: false }).limit(10);
-      const apiKey = Deno.env.get("LOVABLE_API_KEY");
+      const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
       const created: string[] = [];
 
       for (const c of customers || []) {
@@ -41,11 +42,11 @@ serve(async (req) => {
 
         if (apiKey) {
           try {
-            const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+            const r = await fetch("https://api.anthropic.com/v1/messages", {
               method: "POST",
-              headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+              headers: { "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!, "anthropic-version": "2023-06-01", "content-type": "application/json" },
               body: JSON.stringify({
-                model: "google/gemini-2.5-flash",
+                model: mapModel("google/gemini-2.5-flash"),
                 messages: [
                   { role: "system", content: "You are a B2B logistics sales strategist. Reply with concise, data-backed pitches. JSON only." },
                   { role: "user", content: `Generate a personalized enterprise sales pitch for ${c.customer_name} (estimated ${fleetSize} trucks, ₦${monthlyLoss}/mo loss). Return JSON: {pitch:string, objections:[{objection,response}]}` },

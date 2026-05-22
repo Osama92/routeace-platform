@@ -1,13 +1,14 @@
 // AI-powered vendor invoice processor: extracts waybill/dispatch numbers from PDF
 // and matches them against the organization's dispatches/waybills.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import { callAnthropic, mapModel } from "../_shared/anthropic.ts";
 import { requireAuth } from "../_shared/require-auth.ts";
 
 import { buildCors } from "../_shared/cors.ts";
 let corsHeaders: Record<string, string> = buildCors();
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
+const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
 
 Deno.serve(async (req) => {
   corsHeaders = buildCors(req);
@@ -57,11 +58,11 @@ ${extractedText.slice(0, 30000)}`;
 
     let parsed: any = {};
     try {
-      const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      const aiRes = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${LOVABLE_API_KEY}` },
+        headers: { "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!, "anthropic-version": "2023-06-01", "content-type": "application/json" },
         body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
+          model: mapModel("google/gemini-2.5-flash"),
           messages: [{ role: "user", content: aiPrompt }],
           response_format: { type: "json_object" },
         }),

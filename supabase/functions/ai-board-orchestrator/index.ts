@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { callAnthropic, mapModel } from "../_shared/anthropic.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { requireAuth } from "../_shared/require-auth.ts";
 import { resolveCallerOrgId } from "../_shared/resolve-org.ts";
@@ -16,9 +17,7 @@ serve(async (req) => {
     const { question, context } = await req.json();
     if (!question) throw new Error("question required");
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
-
+    
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -91,11 +90,11 @@ Be specific with ₦ amounts. Survival > profit > scale.`;
 
     const userPrompt = `${snapshot}\n\nDecision Question: ${question}\n\n${context ? `Additional context: ${JSON.stringify(context)}` : ""}`;
 
-    const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
+      headers: { "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!, "anthropic-version": "2023-06-01", "content-type": "application/json" },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: mapModel("google/gemini-2.5-flash"),
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
@@ -111,7 +110,7 @@ Be specific with ₦ amounts. Survival > profit > scale.`;
     }
 
     const aiData = await aiResp.json();
-    const raw = aiData.choices?.[0]?.message?.content || "{}";
+    const raw = aiData.content?.[0]?.text || "{}";
     let parsed: any = {};
     try {
       parsed = JSON.parse(raw);
