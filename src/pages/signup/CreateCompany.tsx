@@ -297,6 +297,7 @@ const CreateCompany = () => {
         },
       });
 
+
       // Try to extract the server's friendly error message even on non-2xx
       let serverError: string | null = null;
       if (error && (error as any).context?.json) {
