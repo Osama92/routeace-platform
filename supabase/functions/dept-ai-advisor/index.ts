@@ -1,5 +1,5 @@
 import { buildCors, preflight, json, validateBody } from "../_shared/cors.ts";
-import { callAnthropic, mapModel } from "../_shared/anthropic.ts";
+import { callGemini } from "../_shared/gemini.ts";
 import { checkAndDeductCredits } from "../_shared/ai-credits.ts";
 import { requireAuth } from "../_shared/require-auth.ts";
 import { rateLimit } from "../_shared/rate-limit.ts";
@@ -108,10 +108,10 @@ Always answer concisely with concrete next actions and KPIs. When suggesting
 navigation, embed the link inline in your sentence using markdown
 \`[Label](/path)\` so the user can click it directly.`;
 
-    const reply = await callAnthropic({
+    const reply = await callGemini({
       system: systemPrompt,
-      messages: messages.filter((m: any) => m.role === "user" || m.role === "assistant"),
-      model: mapModel("google/gemini-2.5-flash"),
+      messages,
+      model: "gemini-2.5-flash",
       maxTokens: 2048,
     });
 
