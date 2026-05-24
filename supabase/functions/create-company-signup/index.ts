@@ -181,6 +181,8 @@ Deno.serve(async (req) => {
           country: body.country ?? null,
           tenant_mode: body.tenant_mode,
           mode_locked_at: new Date().toISOString(),
+          ai_credits_total: isInternalAccount ? 9_999_999 : 100,
+          ai_credits_used: 0,
           ...(isDepartment ? {
             // tenant_mode drives Department behavior. Keep operating_model within
             // the existing DB constraint so tenant_config is actually created.
@@ -291,17 +293,25 @@ Deno.serve(async (req) => {
 
     // 10. Send the confirmation email via the auth email hook.
     //     admin.createUser() does NOT trigger this - we must explicitly resend.
+    //     We use the anon client so Supabase routes this through the normal
+    //     auth flow (and triggers the Send Email hook) instead of bypassing it.
     const originHeader = req.headers.get("origin") || req.headers.get("referer") || "";
     const siteUrl = originHeader ? new URL(originHeader).origin : "https://routeace.app";
+    const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const anonClient = createClient(SUPABASE_URL, ANON_KEY);
     try {
-      const { error: resendErr } = await admin.auth.resend({
+      const { error: resendErr } = await anonClient.auth.resend({
         type: "signup",
         email,
         options: { emailRedirectTo: `${siteUrl}/auth` },
       });
-      if (resendErr) console.warn("Confirmation email resend failed:", resendErr.message);
+      if (resendErr) {
+        console.error("[create-company-signup] Confirmation email resend FAILED:", resendErr.message, { email });
+      } else {
+        console.log("[create-company-signup] Confirmation email resend triggered OK", { email, redirectTo: `${siteUrl}/auth` });
+      }
     } catch (e) {
-      console.warn("Confirmation email resend threw:", e);
+      console.error("[create-company-signup] Confirmation email resend threw:", e, { email });
     }
 
     return json({
