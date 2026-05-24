@@ -60,7 +60,7 @@ export async function buildZazaOrgContext(opts: {
       .eq("organization_id", orgId).limit(20);
   const fetchOrg = () =>
     supabase.from("organizations" as any)
-      .select("id, name, country, industry, tenant_mode, plan_tier, billing_cycle, created_at")
+      .select("id, name, country, industry, tenant_mode, created_at")
       .eq("id", orgId).maybeSingle();
   const fetchTenantConfig = () =>
     supabase.from("tenant_config" as any)
@@ -68,7 +68,7 @@ export async function buildZazaOrgContext(opts: {
       .eq("organization_id", orgId).limit(1).maybeSingle();
   const fetchMembers = () =>
     supabase.from("organization_members" as any)
-      .select("user_id, role, status")
+      .select("user_id, role, is_active")
       .eq("organization_id", orgId).limit(100);
 
   const orgBlock = async () => {

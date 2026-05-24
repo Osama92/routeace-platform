@@ -181,6 +181,8 @@ Deno.serve(async (req) => {
           country: body.country ?? null,
           tenant_mode: body.tenant_mode,
           mode_locked_at: new Date().toISOString(),
+          ai_credits_total: isInternalAccount ? 9_999_999 : 100,
+          ai_credits_used: 0,
           ...(isDepartment ? {
             // tenant_mode drives Department behavior. Keep operating_model within
             // the existing DB constraint so tenant_config is actually created.
