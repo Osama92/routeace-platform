@@ -743,21 +743,25 @@ const UsersPage = () => {
                               <CalendarDays className="w-4 h-4 mr-2 text-primary" />
                               Edit Leave Allocation
                             </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setSelectedUser(user);
-                                setSuspendAction("suspend");
-                                setSuspendDialogOpen(true);
-                              }}
-                              className="text-destructive"
-                            >
-                              <Ban className="w-4 h-4 mr-2" />
-                              Suspend Access
-                            </DropdownMenuItem>
+                            {canModifyUserRole(user.role) && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setSelectedUser(user);
+                                    setSuspendAction("suspend");
+                                    setSuspendDialogOpen(true);
+                                  }}
+                                  className="text-destructive"
+                                >
+                                  <Ban className="w-4 h-4 mr-2" />
+                                  Suspend Access
+                                </DropdownMenuItem>
+                              </>
+                            )}
                           </>
                         )}
-                        {user.approval_status === "suspended" && (
+                        {user.approval_status === "suspended" && canModifyUserRole(user.role) && (
                           <DropdownMenuItem
                             onClick={() => {
                               setSelectedUser(user);

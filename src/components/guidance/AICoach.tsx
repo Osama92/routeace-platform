@@ -6,11 +6,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Sparkles, X, Send, ArrowRight, Lightbulb, MessageCircle } from "lucide-react";
+import { Sparkles, X, Send, ArrowRight, Lightbulb, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 
 interface Intent {
   keywords: string[];
@@ -82,6 +83,7 @@ export default function AICoach() {
     { role: "coach", text: "Hi 👋 I'm your RouteAce coach. Ask me anything like 'how do I create a dispatch?' or 'where do I see payments?'" },
   ]);
   const [input, setInput] = useState("");
+  const [thinking, setThinking] = useState(false);
   const [tip, setTip] = useState<typeof PHASE_TIPS[number] | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -118,16 +120,30 @@ export default function AICoach() {
     setTip(null);
   };
 
-  const send = (text?: string) => {
+  const send = async (text?: string) => {
     const value = (text ?? input).trim();
-    if (!value) return;
+    if (!value || thinking) return;
+    setInput("");
     const userMsg: ChatMsg = { role: "user", text: value };
     const intent = findIntent(value);
-    const reply: ChatMsg = intent
-      ? { role: "coach", text: intent.hint, action: { label: `Take me to ${intent.label}`, href: intent.href } }
-      : { role: "coach", text: "I couldn't match that yet. Try keywords like 'dispatch', 'invoice', 'driver', 'route', 'integration', or 'KPI'." };
-    setMessages(m => [...m, userMsg, reply]);
-    setInput("");
+    if (intent) {
+      setMessages(m => [...m, userMsg, { role: "coach", text: intent.hint, action: { label: `Take me to ${intent.label}`, href: intent.href } }]);
+      return;
+    }
+    // Gemini fallback for open-ended questions
+    setMessages(m => [...m, userMsg]);
+    setThinking(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("coach-ai", {
+        body: { question: value },
+      });
+      const aiText = data?.answer ?? (error ? "Sorry, I couldn't reach the AI right now." : "I don't have an answer for that yet.");
+      setMessages(m => [...m, { role: "coach", text: aiText }]);
+    } catch {
+      setMessages(m => [...m, { role: "coach", text: "Sorry, I couldn't reach the AI right now. Try a keyword like 'dispatch', 'invoice', or 'route'." }]);
+    } finally {
+      setThinking(false);
+    }
   };
 
   const navigateTo = (href: string) => {
@@ -219,6 +235,15 @@ export default function AICoach() {
                 </div>
               ))}
 
+              {thinking && (
+                <div className="flex justify-start">
+                  <div className="bg-muted rounded-2xl px-3 py-2 flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Thinking…
+                  </div>
+                </div>
+              )}
+
               {messages.length <= 1 && (
                 <div className="pt-2">
                   <p className="text-[10px] text-muted-foreground mb-1.5">Try:</p>
@@ -237,12 +262,13 @@ export default function AICoach() {
               <Input
                 value={input}
                 onChange={e => setInput(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && send()}
+                onKeyDown={e => e.key === "Enter" && !thinking && send()}
                 placeholder="Ask the coach…"
                 className="h-9 text-sm"
+                disabled={thinking}
               />
-              <Button size="sm" className="h-9" onClick={() => send()}>
-                <Send className="w-3.5 h-3.5" />
+              <Button size="sm" className="h-9" onClick={() => send()} disabled={thinking}>
+                {thinking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
               </Button>
             </div>
           </motion.div>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useActiveErp } from "@/hooks/useActiveErp";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -99,6 +100,7 @@ const InvoicesPage = () => {
   const { hasAnyRole } = useAuth();
 
   const canManage = hasAnyRole(["admin", "operations", "finance_manager", "org_admin", "super_admin"]);
+  const activeErp = useActiveErp();
 
   const fetchInvoices = async () => {
     try {
@@ -141,17 +143,27 @@ const InvoicesPage = () => {
     }
   };
 
-  const syncToZoho = async (invoiceId?: string) => {
+  const syncToErp = async (invoiceId?: string) => {
+    if (!activeErp.connected) {
+      toast({ title: "No ERP Connected", description: "Connect an accounting integration in Settings → Integrations first.", variant: "destructive" });
+      return;
+    }
     setSyncing(true);
     try {
-      const { data, error } = await supabase.functions.invoke('zoho-sync', {
-        body: { action: invoiceId ? 'sync_invoice' : 'sync_all_invoices', invoiceId },
+      const fnMap: Record<string, string> = {
+        quickbooks: "quickbooks-sync",
+        xero: "xero-sync",
+        zoho_books: "zoho-sync",
+      };
+      const fnName = fnMap[activeErp.id] ?? "zoho-sync";
+      const { data, error } = await supabase.functions.invoke(fnName, {
+        body: { action: invoiceId ? "sync_invoice" : "sync_all_invoices", invoiceId },
       });
       if (error) throw error;
-      if (data.success) {
-        toast({ title: "Synced to Zoho", description: invoiceId ? "Invoice synced" : `Synced ${data.synced} invoices` });
+      if (data?.success) {
+        toast({ title: `Synced to ${activeErp.name}`, description: invoiceId ? "Invoice synced" : `Synced ${data.synced ?? ""} invoices` });
         fetchInvoices();
-      } else throw new Error(data.error);
+      } else throw new Error(data?.error ?? "Sync failed");
     } catch (error: any) {
       toast({ title: "Sync Error", description: error.message || "Failed to sync", variant: "destructive" });
     } finally { setSyncing(false); }
@@ -238,10 +250,10 @@ const InvoicesPage = () => {
         </div>
 
         <div className="flex gap-2">
-          {hasAnyRole(["admin"]) && (
-            <Button variant="outline" size="sm" onClick={() => syncToZoho()} disabled={syncing}>
+          {hasAnyRole(["admin"]) && activeErp.connected && (
+            <Button variant="outline" size="sm" onClick={() => syncToErp()} disabled={syncing}>
               {syncing ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <CloudUpload className="w-4 h-4 mr-2" />}
-              Sync to Zoho
+              Sync to {activeErp.name}
             </Button>
           )}
           {canManage && (
@@ -274,7 +286,7 @@ const InvoicesPage = () => {
                   <TableHead className="text-muted-foreground font-medium">Amount</TableHead>
                   <TableHead className="text-muted-foreground font-medium">Status</TableHead>
                   <TableHead className="text-muted-foreground font-medium hidden md:table-cell">Due Date</TableHead>
-                  <TableHead className="text-muted-foreground font-medium hidden lg:table-cell">Zoho</TableHead>
+                  {activeErp.connected && <TableHead className="text-muted-foreground font-medium hidden lg:table-cell">{activeErp.name}</TableHead>}
                   <TableHead className="text-right text-muted-foreground font-medium">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -336,13 +348,15 @@ const InvoicesPage = () => {
                         <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
                           {invoice.due_date ? new Date(invoice.due_date).toLocaleDateString() : '-'}
                         </TableCell>
-                        <TableCell className="hidden lg:table-cell">
-                          {invoice.zoho_invoice_id ? (
-                            <Badge variant="outline" className="text-xs text-emerald-500 border-emerald-500/30">Synced</Badge>
-                          ) : (
-                            <span className="text-muted-foreground/50 text-xs">-</span>
-                          )}
-                        </TableCell>
+                        {activeErp.connected && (
+                          <TableCell className="hidden lg:table-cell">
+                            {invoice.zoho_invoice_id ? (
+                              <Badge variant="outline" className="text-xs text-emerald-500 border-emerald-500/30">Synced</Badge>
+                            ) : (
+                              <span className="text-muted-foreground/50 text-xs">-</span>
+                            )}
+                          </TableCell>
+                        )}
                         <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setSelectedInvoice(invoice); setIsPreviewOpen(true); }}>
@@ -373,9 +387,9 @@ const InvoicesPage = () => {
                                       <XCircle className="w-4 h-4 mr-2 text-destructive" />Mark as Overdue
                                     </DropdownMenuItem>
                                     <DropdownMenuSeparator />
-                                    {!invoice.zoho_invoice_id && (
-                                      <DropdownMenuItem onClick={() => syncToZoho(invoice.id)}>
-                                        <CloudUpload className="w-4 h-4 mr-2" />Sync to Zoho
+                                    {!invoice.zoho_invoice_id && activeErp.connected && (
+                                      <DropdownMenuItem onClick={() => syncToErp(invoice.id)}>
+                                        <CloudUpload className="w-4 h-4 mr-2" />Sync to {activeErp.name}
                                       </DropdownMenuItem>
                                     )}
                                   </>

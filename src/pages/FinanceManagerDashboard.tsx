@@ -105,19 +105,6 @@ const FinanceManagerDashboardInner = () => {
 
   return (
     <DashboardLayout title="Finance Manager" subtitle="Financial Intelligence & Decision Engine">
-      {/* Onboarding Checklist (auto-hides once complete) */}
-      <div className="mb-6">
-        <OpsOnboardingChecklist
-          fleetCount={onboardingCounts?.fleetCount ?? 0}
-          vehicleCount={onboardingCounts?.vehicleCount ?? 0}
-          driverCount={onboardingCounts?.driverCount ?? 0}
-          dispatchCount={onboardingCounts?.dispatchCount ?? 0}
-          orderCount={onboardingCounts?.orderCount ?? 0}
-          routePlanCount={onboardingCounts?.routePlanCount ?? 0}
-          waybillCount={onboardingCounts?.waybillCount ?? 0}
-        />
-      </div>
-
       {/* Quick Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         {[

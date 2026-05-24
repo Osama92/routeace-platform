@@ -484,10 +484,12 @@ const SettingsPage = () => {
             <Bell className="w-4 h-4 mr-2" />
             Notifications
           </TabsTrigger>
-          <TabsTrigger value="general">
-            <SettingsIcon className="w-4 h-4 mr-2" />
-            General
-          </TabsTrigger>
+          {isSuperAdmin && (
+            <TabsTrigger value="general">
+              <SettingsIcon className="w-4 h-4 mr-2" />
+              General
+            </TabsTrigger>
+          )}
           {isSuperAdmin && (
             <TabsTrigger value="approvals">
               <Shield className="w-4 h-4 mr-2" />

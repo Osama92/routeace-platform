@@ -84,7 +84,7 @@ const dashboardSection: NavSection = {
     { name: "Vendor Portal", href: "/vendor-portal", icon: FileText, roles: ["transporter" as any] },
     { name: "Customer Portal", href: "/customer-portal", icon: Package, roles: ["customer", "super_admin", "org_admin", "admin", "ops_manager", "support"] },
     { name: "Overview", href: "/", icon: LayoutDashboard, roles: ["admin", "operations", "support", "dispatcher", "super_admin", "org_admin", "ops_manager", "finance_manager"] },
-    { name: "Control Center", href: "/control-center", icon: Cpu, roles: ["admin", "super_admin", "org_admin", "ops_manager", "finance_manager"] },
+    { name: "Control Center", href: "/control-center", icon: Cpu, roles: ["admin", "super_admin", "org_admin"] },
     // NOTE: 'customer' role intentionally excluded from above - they only see Customer Portal entry above
   ],
 };
@@ -111,8 +111,6 @@ const fleetSection: NavSection = {
     { name: "Inspection & Safety", href: "/fleet-inspection", icon: ShieldCheck, roles: ["admin", "super_admin", "org_admin", "ops_manager"] },
     { name: "Fleet Compliance", href: "/fleet-compliance", icon: ClipboardList, roles: ["admin", "super_admin", "org_admin", "ops_manager"] },
     { name: "Driver Intelligence", href: "/company/driver-intelligence", icon: Brain, roles: ["admin", "super_admin", "org_admin", "ops_manager"] },
-    { name: "IoT Telemetry", href: "/iot-telemetry", icon: Radio, roles: ["admin", "super_admin", "org_admin", "ops_manager"] },
-    { name: "Autonomous Fleet", href: "/autonomous-fleet", icon: Cpu, roles: ["admin", "super_admin", "org_admin", "ops_manager"] },
     { name: "Fuel Intelligence", href: "/fuel-intelligence", icon: Fuel, roles: ["admin", "super_admin", "org_admin", "ops_manager", "finance_manager"] },
     { name: "Predictive Maintenance", href: "/predictive-maintenance", icon: Wrench, roles: ["admin", "super_admin", "org_admin", "ops_manager"] },
     { name: "Asset Operations Control", href: "/asset-operations", icon: Activity, roles: ["admin", "super_admin", "org_admin", "ops_manager"] },

@@ -18,7 +18,7 @@ import {
 import { useNavigate } from "react-router-dom";
 
 // ─── Types ─────────────────────────────────────────
-interface Vehicle { id: string; plate_number: string; status: string; current_mileage: number; truck_type: string; }
+interface Vehicle { id: string; plate_number: string | null; registration_number?: string | null; status: string; current_mileage: number; truck_type: string; }
 interface Inspection { id: string; vehicle_id: string; inspection_type: string; status: string; overall_score: number | null; inspector_notes: string | null; blocked_dispatch: boolean; completed_at: string | null; created_at: string; vehicle_inspection_items?: InspectionItem[]; }
 interface InspectionItem { id: string; category: string; item_name: string; condition: string; is_safety_critical: boolean; notes: string | null; }
 interface Prediction { id: string; vehicle_id: string; component: string; failure_probability: number; confidence_score: number; predicted_failure_date: string; urgency: string; risk_factors: any[]; recommended_action: string; auto_blocked: boolean; resolved_at: string | null; }
@@ -60,7 +60,7 @@ export default function FleetInspectionEngine() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     const [vRes, iRes, pRes, gRes] = await Promise.all([
-      supabase.from("vehicles").select("id, plate_number, status, current_mileage, truck_type").order("plate_number"),
+      supabase.from("vehicles").select("id, plate_number, registration_number, status, current_mileage, truck_type").order("plate_number"),
       supabase.from("vehicle_inspections").select("*, vehicle_inspection_items(*)").order("created_at", { ascending: false }).limit(100),
       supabase.from("maintenance_predictions").select("*").is("resolved_at", null).order("failure_probability", { ascending: false }),
       supabase.from("dispatch_safety_gates").select("*").order("created_at", { ascending: false }).limit(50),
@@ -189,7 +189,7 @@ export default function FleetInspectionEngine() {
                 <div className="grid grid-cols-2 gap-4">
                   <Select value={inspVehicle} onValueChange={setInspVehicle}>
                     <SelectTrigger><SelectValue placeholder="Select Vehicle" /></SelectTrigger>
-                    <SelectContent>{vehicles.map(v => <SelectItem key={v.id} value={v.id}>{v.plate_number}</SelectItem>)}</SelectContent>
+                    <SelectContent>{vehicles.map(v => <SelectItem key={v.id} value={v.id}>{v.registration_number || v.plate_number || v.id}</SelectItem>)}</SelectContent>
                   </Select>
                   <Select value={inspType} onValueChange={(v: any) => setInspType(v)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
@@ -279,7 +279,7 @@ export default function FleetInspectionEngine() {
                       <Activity className={`w-5 h-5 ${urgencyColor(p.urgency)}`} />
                     </div>
                     <div>
-                      <p className="font-semibold text-sm capitalize">{p.component} - {vehicles.find(v => v.id === p.vehicle_id)?.plate_number || "Unknown"}</p>
+                      <p className="font-semibold text-sm capitalize">{p.component} - {vehicles.find(v => v.id === p.vehicle_id)?.registration_number || vehicles.find(v => v.id === p.vehicle_id)?.plate_number || "Unknown"}</p>
                       <p className="text-xs text-muted-foreground">{p.recommended_action}</p>
                     </div>
                   </div>
@@ -319,7 +319,7 @@ export default function FleetInspectionEngine() {
                      <Clock className="w-5 h-5 text-muted-foreground" />}
                     <div>
                       <p className="font-semibold text-sm">
-                        {vehicles.find(v => v.id === insp.vehicle_id)?.plate_number || "Unknown"} - {insp.inspection_type === "pre_trip" ? "Pre-Trip" : "Post-Trip"}
+                        {vehicles.find(v => v.id === insp.vehicle_id)?.registration_number || vehicles.find(v => v.id === insp.vehicle_id)?.plate_number || "Unknown"} - {insp.inspection_type === "pre_trip" ? "Pre-Trip" : "Post-Trip"}
                       </p>
                       <p className="text-xs text-muted-foreground">{new Date(insp.created_at).toLocaleString()}</p>
                     </div>
@@ -357,7 +357,7 @@ export default function FleetInspectionEngine() {
                 <div className="flex items-center gap-3">
                   {decisionIcon(g.decision)}
                   <div>
-                    <p className="font-semibold text-sm">{vehicles.find(v => v.id === g.vehicle_id)?.plate_number || "Unknown"}</p>
+                    <p className="font-semibold text-sm">{vehicles.find(v => v.id === g.vehicle_id)?.registration_number || vehicles.find(v => v.id === g.vehicle_id)?.plate_number || "Unknown"}</p>
                     <p className="text-xs text-muted-foreground">{g.reason}</p>
                   </div>
                 </div>
@@ -386,7 +386,7 @@ export default function FleetInspectionEngine() {
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <Truck className="w-4 h-4 text-muted-foreground" />
-                        <span className="font-mono font-semibold text-sm">{v.plate_number}</span>
+                        <span className="font-mono font-semibold text-sm">{v.registration_number || v.plate_number}</span>
                         <Badge variant="outline" className="text-[10px]">{v.truck_type || v.status}</Badge>
                       </div>
                       <div className="flex gap-1.5">

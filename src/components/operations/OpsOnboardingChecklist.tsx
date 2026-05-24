@@ -18,7 +18,7 @@ interface SetupStep {
 
 interface OpsOnboardingChecklistProps {
   fleetCount: number;
-  vehicleCount: number;
+  vehicleCount?: number;
   driverCount: number;
   dispatchCount: number;
   orderCount: number;
@@ -27,14 +27,13 @@ interface OpsOnboardingChecklistProps {
 }
 
 const OpsOnboardingChecklist = ({
-  fleetCount, vehicleCount, driverCount, dispatchCount, orderCount,
+  fleetCount, driverCount, dispatchCount, orderCount,
   routePlanCount = 0, waybillCount = 0,
 }: OpsOnboardingChecklistProps) => {
   const navigate = useNavigate();
 
   const steps: SetupStep[] = [
     { id: "fleet", label: "Add your first fleet", icon: Truck, completed: fleetCount > 0, href: "/fleet" },
-    { id: "vehicle", label: "Register vehicles", icon: Truck, completed: vehicleCount > 0, href: "/fleet" },
     { id: "driver", label: "Add drivers", icon: Users, completed: driverCount > 0, href: "/drivers" },
     { id: "order", label: "Receive first order", icon: Inbox, completed: orderCount > 0, href: "/ops-manager" },
     { id: "dispatch", label: "Create first dispatch", icon: Package, completed: dispatchCount > 0, href: "/dispatch" },

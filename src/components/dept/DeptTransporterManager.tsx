@@ -10,6 +10,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import useTenantMode from "@/hooks/useTenantMode";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -96,6 +97,7 @@ interface Props {
 
 export default function DeptTransporterManager({ orgId, role }: Props) {
   const { user } = useAuth();
+  const { isDepartment } = useTenantMode();
   const qc = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
@@ -677,7 +679,7 @@ export default function DeptTransporterManager({ orgId, role }: Props) {
               <Textarea placeholder="Additional notes…" value={form.notes}
                 onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} rows={2} />
             </div>
-            {parseInt(form.vehicle_count) > 0 && (
+            {isDepartment && parseInt(form.vehicle_count) > 0 && (
               <div className="p-2 rounded bg-teal-500/10 border border-teal-500/20">
                 <p className="text-xs text-teal-700">
                   Monthly cost if approved:{" "}

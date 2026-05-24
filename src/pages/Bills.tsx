@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useActiveErp } from "@/hooks/useActiveErp";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -89,6 +90,7 @@ export default function BillsPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const qc = useQueryClient();
+  const activeErp = useActiveErp();
   const [createOpen, setCreateOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
@@ -315,9 +317,11 @@ export default function BillsPage() {
             </SelectContent>
           </Select>
 
-          <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5">
-            <RefreshCw className="w-3 h-3" /> Pull from Zoho
-          </Button>
+          {activeErp.connected && (
+            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5">
+              <RefreshCw className="w-3 h-3" /> Pull from {activeErp.name}
+            </Button>
+          )}
           <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => setCreateOpen(true)}>
             <Plus className="w-3 h-3" /> New Bill
           </Button>
@@ -341,7 +345,7 @@ export default function BillsPage() {
                   <TableHead className="text-xs text-primary text-right">Paid</TableHead>
                   <TableHead className="text-xs text-primary text-right">Balance</TableHead>
                   <TableHead className="text-xs text-primary">Status</TableHead>
-                  <TableHead className="text-xs text-primary">Zoho</TableHead>
+                  {activeErp.connected && <TableHead className="text-xs text-primary">{activeErp.name}</TableHead>}
                   <TableHead className="text-xs text-primary">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -368,7 +372,7 @@ export default function BillsPage() {
                         <TableCell>
                           <Badge variant="outline" className={`text-[10px] ${STATUS_COLORS[displayStatus] || ""}`}>{displayStatus}</Badge>
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">-</TableCell>
+                        {activeErp.connected && <TableCell className="text-xs text-muted-foreground">-</TableCell>}
                         <TableCell>
                           {bill.payment_status === "pending" && (
                             <Button size="sm" variant="outline" className="h-6 text-[10px]" onClick={() => markPaid.mutate(bill.id)}>

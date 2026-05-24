@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import LiveTrackingPanel from "@/components/tracking/LiveTrackingPanel";
 import { useQuery } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,7 +34,6 @@ const fmtCurrency = (n: number) => {
 
 export default function FleetCommandCenter() {
   const [activeTab, setActiveTab] = useState("live");
-  const [selectedVehicle, setSelectedVehicle] = useState<string | null>(null);
 
   // ── Live tenant-scoped data (RLS auto-filters by org for LC + LD users) ──
   const { data: vehicles = [], isLoading: vehiclesLoading, refetch: refetchVehicles } = useQuery({
@@ -169,7 +169,6 @@ export default function FleetCommandCenter() {
     medium: "border-yellow-500 bg-yellow-500/10",
   };
 
-  const selected = vehicleStats.find((v) => v.id === selectedVehicle);
   const loading = vehiclesLoading || dispatchesLoading;
   const isEmpty = !loading && vehicles.length === 0;
 
@@ -219,99 +218,7 @@ export default function FleetCommandCenter() {
 
         {/* ─── LIVE TRACKING ─── */}
         <TabsContent value="live">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div className="lg:col-span-1 space-y-2">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="font-semibold text-sm">Fleet Status ({vehicleStats.length})</h3>
-                <Button variant="ghost" size="sm" onClick={refetch}>
-                  {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                </Button>
-              </div>
-              {vehicleStats.length === 0 && !loading && (
-                <p className="text-xs text-muted-foreground py-4">No vehicles to display.</p>
-              )}
-              {vehicleStats.map((v) => (
-                <Card
-                  key={v.id}
-                  className={`cursor-pointer transition-all ${selectedVehicle === v.id ? "ring-2 ring-primary" : ""}`}
-                  onClick={() => setSelectedVehicle(v.id === selectedVehicle ? null : v.id)}
-                >
-                  <CardContent className="p-3">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <p className="font-mono font-semibold text-sm">{v.registration_number}</p>
-                        <p className="text-xs text-muted-foreground">{v.driverName}</p>
-                      </div>
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${statusColors[v.status || "inactive"] || statusColors.inactive}`}>
-                        {(v.status || "unknown").replace("_", " ")}
-                      </span>
-                    </div>
-                    <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-                      <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{v.route.split("→")[0].trim() || "-"}</span>
-                      <span className="flex items-center gap-1"><Fuel className="w-3 h-3" />{v.current_fuel_level ?? 0}%</span>
-                    </div>
-                    {(v.current_fuel_level ?? 100) < 25 && (
-                      <div className="mt-2 flex items-center gap-1 text-xs text-destructive">
-                        <AlertTriangle className="w-3 h-3" />Low fuel
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-
-            <div className="lg:col-span-2 space-y-4">
-              <Card className="h-72">
-                <CardContent className="p-0 h-full">
-                  <div className="w-full h-full bg-gradient-to-br from-muted/50 to-muted rounded-lg flex flex-col items-center justify-center gap-3">
-                    <Radio className="w-10 h-10 text-primary animate-pulse" />
-                    <p className="font-medium">Live Map View</p>
-                    <p className="text-sm text-muted-foreground text-center px-8">
-                      Connect Mapbox token in Settings to enable real-time vehicle tracking with geo-fencing and route overlays.
-                    </p>
-                    <div className="flex gap-2 flex-wrap justify-center">
-                      {vehicleStats.filter((v) => v.status === "in_transit" || v.status === "active").slice(0, 6).map((v) => (
-                        <Badge key={v.id} variant="outline" className="text-xs">
-                          <Navigation className="w-3 h-3 mr-1" />{v.registration_number}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {selected && (
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <Truck className="w-4 h-4" />{selected.registration_number} - {selected.truck_type || selected.vehicle_type}
-                    </CardTitle>
-                    <CardDescription>Driver: {selected.driverName}</CardDescription>
-                  </CardHeader>
-                  <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div className="space-y-1">
-                      <p className="text-muted-foreground text-xs">Fuel Level</p>
-                      <Progress value={selected.current_fuel_level ?? 0} className="h-2" />
-                      <p className="font-medium">{selected.current_fuel_level ?? 0}%</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-muted-foreground text-xs">Fleet Health Score</p>
-                      <Progress value={selected.health_score ?? 0} className="h-2" />
-                      <p className="font-medium">{selected.health_score ?? 0}/100</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-muted-foreground text-xs">Trips (30d)</p>
-                      <p className="text-xl font-bold">{selected.tripsMtd}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-muted-foreground text-xs">Revenue (30d)</p>
-                      <p className="text-xl font-bold">{fmtCurrency(selected.revenueMtd)}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          </div>
+          <LiveTrackingPanel />
         </TabsContent>
 
         {/* ─── ALERTS & FRAUD ─── */}
