@@ -75,8 +75,6 @@ const dashboardSection: NavSection = {
     { name: "Super Admin Console", href: "/super-admin", icon: Crown, roles: ["super_admin"] },
     { name: "My Savings & ROI", href: "/my-savings", icon: TrendingUp, roles: ["super_admin", "admin", "org_admin", "finance_manager"] },
     { name: "COO Command", href: "/org-admin", icon: Building2, roles: ["org_admin"] },
-    { name: "Approval Queue", href: "/org-admin?tab=approvals", icon: CheckCircle, roles: ["org_admin"] },
-    { name: "COO KPI Board", href: "/org-admin?tab=kpis", icon: BarChart3, roles: ["org_admin"] },
     { name: "Ops Manager", href: "/ops-manager", icon: ClipboardList, roles: ["ops_manager"] },
     { name: "Finance Manager", href: "/finance-manager", icon: CreditCard, roles: ["finance_manager"] },
     { name: "Driver Super App", href: "/driver-super-app", icon: Navigation, roles: ["driver"] },
@@ -262,8 +260,6 @@ const DEPT_DASHBOARD_SECTION: NavSection = {
   items: [
     { name: "Logistics Director Console", href: "/super-admin", icon: Crown, roles: ["super_admin"] },
     { name: "Logistics Manager Command", href: "/org-admin", icon: Building2, roles: ["org_admin"] },
-    { name: "Approval Queue", href: "/org-admin?tab=approvals", icon: CheckCircle, roles: ["org_admin", "super_admin"] },
-    { name: "Logistics KPI Board", href: "/org-admin?tab=kpis", icon: BarChart3, roles: ["org_admin", "super_admin"] },
     { name: "Outbound & Inbound Desk", href: "/ops-manager", icon: ClipboardList, roles: ["ops_manager"] },
     { name: "Logistics Cost Control", href: "/finance-manager", icon: CreditCard, roles: ["finance_manager"] },
     { name: "3PL Transporter Portal", href: "/transporter-portal", icon: Navigation, roles: ["driver", "transporter" as any] },
