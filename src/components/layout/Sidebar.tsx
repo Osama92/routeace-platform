@@ -97,7 +97,6 @@ const operationsSection: NavSection = {
     { name: "Route Planner", href: "/advanced-route-planner", icon: Route, roles: ["admin", "super_admin", "org_admin", "ops_manager", "dispatcher"] },
     { name: "Routes Library", href: "/routes", icon: Navigation, roles: ["admin", "super_admin", "org_admin", "ops_manager", "dispatcher"] },
     { name: "SLA Management", href: "/operations/sla-management", icon: Shield, roles: ["admin", "super_admin", "org_admin", "ops_manager"] },
-    { name: "Tracking", href: "/tracking", icon: MapPin, roles: ["admin", "operations", "support", "dispatcher", "super_admin", "org_admin", "ops_manager"] },
     { name: "Fleet Command", href: "/fleet-command", icon: Radio, roles: ["admin", "super_admin", "org_admin", "ops_manager"], region: "BOTH" },
   ],
 };
@@ -291,7 +290,6 @@ const DEPT_OPERATIONS_SECTION: NavSection = {
     { name: "SLA Management", href: "/operations/sla-management", icon: Shield, roles: ["super_admin", "org_admin", "ops_manager"] },
     { name: "Exception Management", href: "/dept/exceptions", icon: AlertTriangle, roles: ["super_admin", "org_admin", "ops_manager", "support"] },
     { name: "Risk Register", href: "/org-admin?tab=planning-kpis", icon: Shield, roles: ["super_admin", "org_admin"] },
-    { name: "Tracking", href: "/tracking", icon: MapPin, roles: ["super_admin", "org_admin", "ops_manager", "support", "dispatcher"] },
     { name: "Fleet Command", href: "/fleet-command", icon: Radio, roles: ["super_admin", "org_admin", "ops_manager"] },
     { name: "Approval Center", href: "/approval-center", icon: CheckCircle, roles: ["super_admin", "org_admin", "finance_manager", "ops_manager"] },
   ],

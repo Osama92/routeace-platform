@@ -138,7 +138,13 @@ export default function AICoach() {
         body: { question: value },
       });
       const aiText = data?.answer ?? (error ? "Sorry, I couldn't reach the AI right now." : "I don't have an answer for that yet.");
-      setMessages(m => [...m, { role: "coach", text: aiText }]);
+      const nav = data?.navigation as { label: string; href: string } | undefined;
+      const reply: ChatMsg = {
+        role: "coach",
+        text: aiText,
+        ...(nav ? { action: { label: `Take me to ${nav.label}`, href: nav.href } } : {}),
+      };
+      setMessages(m => [...m, reply]);
     } catch {
       setMessages(m => [...m, { role: "coach", text: "Sorry, I couldn't reach the AI right now. Try a keyword like 'dispatch', 'invoice', or 'route'." }]);
     } finally {
