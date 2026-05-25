@@ -9,7 +9,7 @@ export function buildCors(req?: Request): Record<string, string> {
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
-  const isRouteAceDomain = /^https:\/\/(www\.)?routeaceglyde\.app$/i.test(requestOrigin);
+  const isRouteAceDomain = /^https:\/\/(www\.)?routeace\.app$/i.test(requestOrigin);
   const isLocalhost = /^https?:\/\/localhost(:\d+)?$/.test(requestOrigin);
   const origin = allowedOrigins.includes(requestOrigin) || isRouteAceDomain || isLocalhost
     ? requestOrigin

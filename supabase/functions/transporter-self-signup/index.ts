@@ -98,7 +98,7 @@ Deno.serve(async (req) => {
     if (!org) return json(req, { valid: false, reason: "org_not_found" }, 200);
     if (org.tenant_mode !== "LOGISTICS_DEPARTMENT" && org.tenant_mode !== "LOGISTICS_COMPANY")
       return json(req, { valid: false, reason: "tenant_mode_mismatch", tenant_mode: org.tenant_mode }, 200);
-    return json(req, { valid: true, org_name: org.name, org_id: tokenRec.organization_id, link_type: tokenRec.link_type ?? "access" }, 200);
+    return json(req, { valid: true, org_name: org.name, org_id: tokenRec.organization_id, link_type: tokenRec.link_type ?? "access", tenant_mode: org.tenant_mode }, 200);
   }
 
   const {

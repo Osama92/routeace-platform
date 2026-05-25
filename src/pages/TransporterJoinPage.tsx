@@ -168,6 +168,7 @@ export default function TransporterJoinPage() {
   const [pageState, setPageState] = useState<PageState>("loading");
   const [orgName, setOrgName] = useState("");
   const [orgId, setOrgId] = useState("");
+  const [isLc, setIsLc] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [debugInfo, setDebugInfo] = useState<any>(null);
 
@@ -206,6 +207,7 @@ export default function TransporterJoinPage() {
       if (data?.valid && data?.org_name) {
         setOrgName(data.org_name);
         setOrgId(data.org_id ?? "");
+        setIsLc(data.tenant_mode === "LOGISTICS_COMPANY");
         setPageState("ready");
       } else {
         setPageState("invalid");
@@ -368,7 +370,7 @@ export default function TransporterJoinPage() {
             {linkType === "new" ? "logistics partner" : "3PL carrier"}
           </p>
           <div className="flex flex-wrap items-center justify-center gap-2">
-            <Badge variant="outline">Free to register · ₦2,000/vehicle/month billed to the department</Badge>
+            {!isLc && <Badge variant="outline">Free to register · ₦2,000/vehicle/month billed to the department</Badge>}
             {linkType === "new" && (
               <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
                 Full KYC - document uploads required
