@@ -382,6 +382,9 @@ export default function AdvancedRoutePlanner() {
             destination: { address: destination.address, latitude: destination.lat, longitude: destination.lng },
             waypoints: stops.map(s => ({ address: s.address, latitude: s.lat, longitude: s.lng, weightKg: s.weightKg, volumeCbm: s.volumeCbm })),
             vehicleType: transportMode,
+            longHaulMode,
+            containerMode,
+            industrialMode,
           },
         });
         if (data?.totalDistanceKm) baseDistance = data.totalDistanceKm;

@@ -12,6 +12,8 @@
   [context.production.environment]
     VITE_SUPABASE_URL = "https://mbybrzggrpyhvcnxhlua.supabase.co"
     VITE_SUPABASE_PROJECT_ID = "mbybrzggrpyhvcnxhlua"
+    VITE_GOOGLE_MAPS_API_KEY = "AIzaSyDELbTZfxz3r0r_RdyE-acr0AtZAw6u-WI"
+    VITE_GOOGLE_PLACES_API_KEY = "AIzaSyDELbTZfxz3r0r_RdyE-acr0AtZAw6u-WI"
     # VITE_SUPABASE_PUBLISHABLE_KEY — set in Netlify dashboard (Site config → Env vars)
 
 # Staging / develop branch → develop--<site>.netlify.app

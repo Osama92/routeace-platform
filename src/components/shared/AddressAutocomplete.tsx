@@ -76,9 +76,15 @@ export const AddressAutocomplete = ({
         if (error) throw error;
         setPredictions(data.predictions || []);
         setShowDropdown(true);
-      } catch (error) {
-        console.error('Error fetching predictions:', error);
-        setPredictions([]);
+      } catch {
+        // Fallback: show the typed text as a manual entry option so the user isn't blocked
+        setPredictions([{
+          placeId: "__manual__",
+          description: value,
+          mainText: value,
+          secondaryText: "Enter address manually",
+        }]);
+        setShowDropdown(true);
       } finally {
         setIsLoading(false);
       }
@@ -96,7 +102,7 @@ export const AddressAutocomplete = ({
     setShowDropdown(false);
     setPredictions([]);
 
-    if (onPlaceSelect) {
+    if (onPlaceSelect && prediction.placeId !== "__manual__") {
       try {
         const { data, error } = await supabase.functions.invoke('google-places-details', {
           body: { placeId: prediction.placeId, sessionToken },

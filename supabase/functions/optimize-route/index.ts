@@ -90,12 +90,12 @@ function calculateConfidenceScore(
   const risks: RouteRiskFactor[] = [];
   
   // Base scores for each factor
-  let historicalSuccess = hasHistoricalData ? 85 + Math.random() * 10 : 70;
+  let historicalSuccess = hasHistoricalData ? 88 : 70;
   let trafficVolatility = trafficLevel === "light" ? 90 : trafficLevel === "moderate" ? 75 : 55;
   let dropDensity = drops <= 5 ? 95 : drops <= 10 ? 80 : 65;
   let driverWorkload = drops <= 8 ? 90 : drops <= 15 ? 75 : 60;
-  let roadRisk = 85 + Math.random() * 10;
-  let delayFrequency = 80 + Math.random() * 15;
+  let roadRisk = distance > 300 ? 82 : 88;
+  let delayFrequency = trafficLevel === "heavy" ? 72 : trafficLevel === "moderate" ? 83 : 90;
 
   // Identify risk factors
   if (trafficVolatility < 70) {
@@ -240,7 +240,10 @@ async function getOptimizedRoute(
   waypoints: Waypoint[],
   apiKey: string,
   vehicleType: keyof typeof VEHICLE_CONFIGS = "15t",
-  waitTimePerDrop: number = 2
+  waitTimePerDrop: number = 2,
+  longHaulMode = false,
+  containerMode = false,
+  industrialMode = false,
 ): Promise<OptimizedRoute | null> {
   try {
     // Build waypoints string with optimization
@@ -356,17 +359,31 @@ async function getOptimizedRoute(
     );
 
     // Calculate on-time likelihood based on confidence
-    const onTimeLikelihood = Math.min(
-      confidence.overall + Math.random() * 5,
-      98
-    );
+    const onTimeLikelihood = Math.min(confidence.overall + 3, 98);
+
+    // Apply smart-toggle adjustments
+    // Long-haul: add mandatory rest stops (1 per 4h) to ETA
+    let finalDeliveryDays = estimatedDeliveryDays;
+    if (longHaulMode && totalDurationHours > 4) {
+      const restStops = Math.floor(totalDurationHours / 4);
+      finalDeliveryDays = calculateETADays(totalDurationHours + restStops * 0.5, totalDrops, waitTimePerDrop);
+    }
+    // Container mode: add 2h loading/unloading buffer per terminal drop
+    if (containerMode) {
+      finalDeliveryDays = calculateETADays(totalDurationHours + 2, totalDrops, waitTimePerDrop);
+    }
+    // Industrial mode: clustering reduces wait time by 20%
+    const effectiveWaitTime = industrialMode ? waitTimePerDrop * 0.8 : waitTimePerDrop;
+    if (industrialMode) {
+      finalDeliveryDays = calculateETADays(totalDurationHours, totalDrops, effectiveWaitTime);
+    }
 
     return {
       optimizedOrder,
       waypoints: optimizedPoints,
       totalDistanceKm: Math.round(totalDistanceKm * 10) / 10,
       totalDurationHours: Math.round(totalDurationHours * 100) / 100,
-      estimatedDeliveryDays,
+      estimatedDeliveryDays: finalDeliveryDays,
       vehicleUtilization,
       legs,
       savingsPercent: Math.max(0, savingsPercent),
@@ -410,13 +427,29 @@ serve(async (req) => {
       );
     }
 
-    const { 
-      origin, 
-      destination, 
-      waypoints, 
-      vehicleType = "15t",
-      waitTimePerDrop = 2 
+    const {
+      origin,
+      destination,
+      waypoints,
+      vehicleType: rawVehicleType = "15t",
+      waitTimePerDrop = 2,
+      longHaulMode = false,
+      containerMode = false,
+      industrialMode = false,
     } = await req.json();
+
+    // Normalise frontend vehicle IDs to backend VEHICLE_CONFIGS keys
+    const VEHICLE_TYPE_MAP: Record<string, keyof typeof VEHICLE_CONFIGS> = {
+      motorbike: "bike", bike: "bike",
+      van_small_truck: "van", van: "van",
+      "5t_light_truck": "5t", "5t": "5t",
+      "10t": "10t",
+      "15t_medium_heavy": "15t", "15t": "15t",
+      "20t_rigid_hgv": "20t", "20t": "20t",
+      heavy_truck: "30t", "30t": "30t",
+    };
+    const vehicleType: keyof typeof VEHICLE_CONFIGS =
+      VEHICLE_TYPE_MAP[rawVehicleType] ?? "15t";
 
     if (!origin?.address || !destination?.address) {
       return new Response(
@@ -455,7 +488,7 @@ serve(async (req) => {
         totalDistanceKm: Math.round(mockDistance * 10) / 10,
         totalDurationHours: Math.round(mockTravelHours * 100) / 100,
         estimatedDeliveryDays: estimatedDays,
-        vehicleUtilization: 65 + Math.random() * 25,
+        vehicleUtilization: 72,
         legs: [{
           from: origin.address,
           to: destination.address,
@@ -463,10 +496,10 @@ serve(async (req) => {
           durationHours: Math.round(mockTravelHours * 100) / 100,
           trafficLevel: "moderate"
         }],
-        savingsPercent: Math.round(Math.random() * 15),
+        savingsPercent: 8,
         confidence: mockConfidence,
         costBreakdown: mockCostBreakdown,
-        onTimeLikelihood: mockConfidence.overall + Math.round(Math.random() * 5)
+        onTimeLikelihood: Math.min(mockConfidence.overall + 3, 98)
       };
 
       return new Response(
@@ -512,7 +545,10 @@ serve(async (req) => {
       geocodedWaypoints,
       apiKey,
       vehicleType,
-      waitTimePerDrop
+      waitTimePerDrop,
+      longHaulMode,
+      containerMode,
+      industrialMode,
     );
 
     if (!result) {
