@@ -74,6 +74,11 @@ interface OptimizedRoute {
     driverCost: number;
     maintenanceCost: number;
     tollEstimate: number;
+    overnightAllowance: number;
+    restStopCost: number;
+    borderFees: number;
+    terminalHandlingFees: number;
+    zoneFees: number;
     totalCost: number;
     costPerDelivery: number;
   };
@@ -166,24 +171,74 @@ function calculateConfidenceScore(
   };
 }
 
-// Calculate cost breakdown
+// Calculate cost breakdown with real-world global toggle surcharges
 function calculateCostBreakdown(
   distanceKm: number,
   durationHours: number,
   drops: number,
-  vehicleType: keyof typeof VEHICLE_CONFIGS
+  vehicleType: keyof typeof VEHICLE_CONFIGS,
+  longHaulMode = false,
+  containerMode = false,
+  industrialMode = false,
+  originAddress = "",
+  destinationAddress = "",
 ): OptimizedRoute["costBreakdown"] {
   const config = VEHICLE_CONFIGS[vehicleType] || VEHICLE_CONFIGS["15t"];
-  const fuelPricePerLiter = 700; // NGN
-  const driverRatePerHour = 1500; // NGN
-  const maintenancePerKm = 15; // NGN
-  const avgTollPerRoute = distanceKm > 200 ? 5000 : distanceKm > 100 ? 2500 : 0;
+  const region = detectRegion(originAddress, destinationAddress);
+
+  // Base rates vary by region
+  const fuelPricePerLiter = region === "NG" ? 900 : region === "EU" ? usdToNgn(1.7) : region === "US" ? usdToNgn(1.2) : 900;
+  const driverRatePerHour = region === "NG" ? 1800 : region === "EU" ? usdToNgn(22) : region === "US" ? usdToNgn(28) : 2000;
+  const maintenancePerKm = region === "NG" ? 18 : region === "EU" ? usdToNgn(0.15) : region === "US" ? usdToNgn(0.18) : 20;
+  const tollBase = distanceKm > 200 ? (region === "NG" ? 6000 : usdToNgn(25)) : distanceKm > 100 ? (region === "NG" ? 3000 : usdToNgn(12)) : 0;
 
   const fuelCost = Math.round(distanceKm * config.fuelPerKm * fuelPricePerLiter);
   const driverCost = Math.round(durationHours * driverRatePerHour);
   const maintenanceCost = Math.round(distanceKm * maintenancePerKm);
-  const tollEstimate = avgTollPerRoute;
-  const totalCost = fuelCost + driverCost + maintenanceCost + tollEstimate;
+  const tollEstimate = tollBase;
+
+  // Toggle surcharges
+  let overnightAllowance = 0;
+  let restStopCost = 0;
+  let borderFees = 0;
+  let terminalHandlingFees = 0;
+  let zoneFees = 0;
+
+  if (longHaulMode && durationHours > 4) {
+    // EU/International HOS (Regulation EC 561/2006): rest every 4.5h driving, 45 min each
+    const hosRestCount = Math.floor(durationHours / 4.5);
+    restStopCost = hosRestCount * (region === "NG" ? 4000 : region === "EU" ? usdToNgn(18) : usdToNgn(15));
+
+    // Overnight stay: journey > 10 driving hours requires overnight stop(s)
+    if (durationHours > 10) {
+      const overnightNights = Math.ceil((durationHours - 10) / 16) + 1;
+      const nightly = region === "NG" ? 20000 : region === "EU" ? usdToNgn(90) : region === "US" ? usdToNgn(130) : usdToNgn(80);
+      overnightAllowance = overnightNights * nightly;
+    }
+
+    // Cross-border detection: long route or address keywords
+    const isCrossBorder = distanceKm > 400 || /border|crossing|customs|entry point/.test(`${originAddress} ${destinationAddress}`.toLowerCase());
+    if (isCrossBorder) {
+      borderFees = region === "NG" ? usdToNgn(50) : region === "EU" ? usdToNgn(120) : usdToNgn(200);
+    }
+  }
+
+  if (containerMode) {
+    const hasPort = /port|terminal|apapa|tin can|wharf|dock|harbour|harbor|pier|container yard/i.test(`${originAddress} ${destinationAddress}`);
+    // Higher fees for actual port terminals; standard container handling otherwise
+    terminalHandlingFees = hasPort
+      ? (region === "NG" ? 250000 : usdToNgn(480))
+      : (region === "NG" ? 120000 : usdToNgn(250));
+  }
+
+  if (industrialMode && drops > 0) {
+    // Zone entry/exit fees per industrial cluster (1 cluster ≈ every 3 drops)
+    const clusterCount = Math.max(1, Math.ceil(drops / 3));
+    zoneFees = clusterCount * (region === "NG" ? 12000 : usdToNgn(55));
+  }
+
+  const totalCost = fuelCost + driverCost + maintenanceCost + tollEstimate +
+    overnightAllowance + restStopCost + borderFees + terminalHandlingFees + zoneFees;
   const costPerDelivery = Math.round(totalCost / (drops || 1));
 
   return {
@@ -191,8 +246,13 @@ function calculateCostBreakdown(
     driverCost,
     maintenanceCost,
     tollEstimate,
+    overnightAllowance,
+    restStopCost,
+    borderFees,
+    terminalHandlingFees,
+    zoneFees,
     totalCost,
-    costPerDelivery
+    costPerDelivery,
   };
 }
 
@@ -214,6 +274,21 @@ function calculateVehicleUtilization(
   const weightUtil = (totalWeight / config.maxWeight) * 100;
   const volumeUtil = (totalVolume / config.maxVolume) * 100;
   return Math.min(Math.round(Math.max(weightUtil, volumeUtil)), 100);
+}
+
+// Detect geographic region from address strings for locale-aware cost rates
+function detectRegion(origin: string, dest: string): "NG" | "EU" | "US" | "GLOBAL" {
+  const text = `${origin} ${dest}`.toLowerCase();
+  if (/nigeria|lagos|abuja|kano|ibadan|port harcourt|benin city|owerri|enugu|kaduna|jos/.test(text)) return "NG";
+  if (/\buk\b|united kingdom|london|manchester|birmingham|england|scotland|wales|ireland/.test(text)) return "EU";
+  if (/\busa?\b|united states|new york|california|texas|chicago|florida|houston|atlanta/.test(text)) return "US";
+  if (/germany|france|netherlands|belgium|spain|italy|poland|sweden|europe|amsterdam|paris|berlin/.test(text)) return "EU";
+  return "GLOBAL";
+}
+
+// Approximate USD → NGN (live rate not available in edge runtime)
+function usdToNgn(usd: number): number {
+  return Math.round(usd * 1550);
 }
 
 async function geocodeAddress(address: string, apiKey: string): Promise<{ lat: number; lng: number } | null> {
@@ -350,33 +425,49 @@ async function getOptimizedRoute(
       true // Assume we have some historical data
     );
 
-    // Calculate cost breakdown
+    // Apply smart-toggle adjustments — real-world global scenarios
+    let bonusHours = 0;
+
+    if (longHaulMode && totalDurationHours > 4) {
+      // EU HOS (EC 561/2006): mandatory 45-min rest every 4.5h driving
+      const hosRestCount = Math.floor(totalDurationHours / 4.5);
+      bonusHours += hosRestCount * 0.75;
+
+      // Overnight: journey > 10h driving → overnight stop (8h)
+      if (totalDurationHours + bonusHours > 10) {
+        const overnightCount = Math.ceil((totalDurationHours + bonusHours - 10) / 16) + 1;
+        bonusHours += overnightCount * 8;
+      }
+
+      // Cross-border dwell: +3h if route is long or address hints at border crossing
+      const isCrossBorder = totalDistanceKm > 400 ||
+        /border|crossing|customs|entry point/.test(`${origin.address} ${destination.address}`.toLowerCase());
+      if (isCrossBorder) bonusHours += 3;
+    }
+
+    if (containerMode) {
+      // Terminal gate-in/gate-out + documentation dwell
+      bonusHours += 2.5;
+    }
+
+    const effectiveWaitTime = industrialMode ? waitTimePerDrop * 0.8 : waitTimePerDrop;
+    const finalDeliveryDays = calculateETADays(totalDurationHours + bonusHours, totalDrops, effectiveWaitTime);
+
+    // Calculate cost breakdown with toggle surcharges
     const costBreakdown = calculateCostBreakdown(
       totalDistanceKm,
-      totalDurationHours + (totalDrops * waitTimePerDrop),
+      totalDurationHours + bonusHours + (totalDrops * effectiveWaitTime),
       totalDrops,
-      vehicleType
+      vehicleType,
+      longHaulMode,
+      containerMode,
+      industrialMode,
+      origin.address,
+      destination.address,
     );
 
     // Calculate on-time likelihood based on confidence
     const onTimeLikelihood = Math.min(confidence.overall + 3, 98);
-
-    // Apply smart-toggle adjustments
-    // Long-haul: add mandatory rest stops (1 per 4h) to ETA
-    let finalDeliveryDays = estimatedDeliveryDays;
-    if (longHaulMode && totalDurationHours > 4) {
-      const restStops = Math.floor(totalDurationHours / 4);
-      finalDeliveryDays = calculateETADays(totalDurationHours + restStops * 0.5, totalDrops, waitTimePerDrop);
-    }
-    // Container mode: add 2h loading/unloading buffer per terminal drop
-    if (containerMode) {
-      finalDeliveryDays = calculateETADays(totalDurationHours + 2, totalDrops, waitTimePerDrop);
-    }
-    // Industrial mode: clustering reduces wait time by 20%
-    const effectiveWaitTime = industrialMode ? waitTimePerDrop * 0.8 : waitTimePerDrop;
-    if (industrialMode) {
-      finalDeliveryDays = calculateETADays(totalDurationHours, totalDrops, effectiveWaitTime);
-    }
 
     return {
       optimizedOrder,
@@ -479,7 +570,12 @@ serve(async (req) => {
         mockDistance,
         mockTravelHours + (totalDrops * waitTimePerDrop),
         totalDrops,
-        vehicleType
+        vehicleType,
+        longHaulMode,
+        containerMode,
+        industrialMode,
+        origin?.address ?? "",
+        destination?.address ?? "",
       );
 
       const mockResult: OptimizedRoute = {

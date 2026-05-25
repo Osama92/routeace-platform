@@ -45,7 +45,6 @@ serve(async (req) => {
     const url = new URL('https://maps.googleapis.com/maps/api/place/autocomplete/json');
     url.searchParams.set('input', input);
     url.searchParams.set('key', apiKey);
-    url.searchParams.set('components', 'country:ng'); // Restrict to Nigeria
     url.searchParams.set('types', 'address');
     if (sessionToken) {
       url.searchParams.set('sessiontoken', sessionToken);

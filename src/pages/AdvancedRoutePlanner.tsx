@@ -28,7 +28,7 @@ import {
   Target, Activity, Globe, ChevronUp, ChevronDown, Lightbulb,
   Package, CheckCircle2, XCircle, Info, Settings, ChevronRight,
   Shield, FileText, Gauge, Container, Factory, Mountain,
-  Thermometer, AlertCircle, BadgeCheck, Weight,
+  Thermometer, AlertCircle, BadgeCheck, Weight, Moon,
 } from "lucide-react";
 
 // ─── FEATURE FLAG ───────────────────────────────────────────────────────────
@@ -142,6 +142,21 @@ const CARGO_TYPES = [
   { id: "industrial_machinery", label: "Industrial Machinery", icon: Wrench, color: "text-destructive" },
 ];
 
+// ─── REGION DETECTION ────────────────────────────────────────────────────────
+function detectRegion(origin: string, dest: string): "NG" | "EU" | "US" | "GLOBAL" {
+  const text = `${origin} ${dest}`.toLowerCase();
+  if (/nigeria|lagos|abuja|kano|ibadan|port harcourt|benin city|owerri|enugu|kaduna|jos/.test(text)) return "NG";
+  if (/\buk\b|united kingdom|london|manchester|birmingham|england|scotland|wales/.test(text)) return "EU";
+  if (/\busa?\b|united states|new york|california|texas|chicago|florida|houston/.test(text)) return "US";
+  if (/germany|france|netherlands|belgium|spain|italy|poland|sweden|europe|amsterdam|paris|berlin/.test(text)) return "EU";
+  return "GLOBAL";
+}
+
+// Approximate USD → NGN for display
+function usdToNgn(usd: number): number {
+  return Math.round(usd * 1550);
+}
+
 // ─── ROUTE OPTIONS ────────────────────────────────────────────────────────────
 interface Stop {
   id: string;
@@ -179,6 +194,12 @@ interface RouteOption {
   tonKmEfficiency: number;
   fuelPerTon: number;
   estimatedDeliveryDays: number;
+  // Toggle-specific surcharges (only present when toggle is active)
+  overnightAllowance?: number;
+  restStopCost?: number;
+  borderFees?: number;
+  terminalHandlingFees?: number;
+  zoneFees?: number;
 }
 
 // ─── COMPLIANCE CHECKS ────────────────────────────────────────────────────────
@@ -215,9 +236,9 @@ function computeConfidenceScore(name: string): number {
   ));
 }
 
-// ETA formula: (travel_hours + drops × 2h) / 24 → round to nearest 0.5, min 0.5
-function computeETADays(travelHours: number, numDrops: number): number {
-  const total = travelHours + numDrops * 2;
+// ETA formula: (travel_hours + drops × waitPerDrop) / 24 → round to nearest 0.5, min 0.5
+function computeETADays(travelHours: number, numDrops: number, waitPerDrop = 2): number {
+  const total = travelHours + numDrops * waitPerDrop;
   const raw = total / 24;
   return Math.max(0.5, Math.round(raw * 2) / 2);
 }
@@ -229,21 +250,77 @@ const generateRouteOptions = (
   driverRate: number,
   cargoWeight: number,
   marginThreshold: number,
-  numDrops: number = 0
+  numDrops: number = 0,
+  longHaulMode = false,
+  containerMode = false,
+  industrialMode = false,
+  originAddr = "",
+  destAddr = "",
 ): RouteOption[] => {
   const restStops = Math.floor((distance / (mode.speed * mode.restIntervalHrs)) * 0.7);
+  const region = detectRegion(originAddr, destAddr);
 
   const genOption = (name: string, distMult: number, speedMult: number, isRec: boolean, algo: string): RouteOption => {
     const dist = Math.round(distance * distMult);
-    const travelHours = dist / (mode.speed * speedMult) + restStops * 0.5;
+    let travelHours = dist / (mode.speed * speedMult) + restStops * 0.5;
+
+    // ── LONG HAUL MODE: EU/International HOS ───────────────────────────────
+    let overnightAllowance: number | undefined;
+    let restStopCost: number | undefined;
+    let borderFees: number | undefined;
+    let terminalHandlingFees: number | undefined;
+    let zoneFees: number | undefined;
+
+    if (longHaulMode && travelHours > 4) {
+      // EU HOS (EC 561/2006): 45-min rest every 4.5h driving
+      const hosRestCount = Math.floor(travelHours / 4.5);
+      const hosHours = hosRestCount * 0.75;
+      travelHours += hosHours;
+      const restRate = region === "NG" ? 4000 : region === "EU" ? usdToNgn(18) : usdToNgn(15);
+      restStopCost = hosRestCount * restRate;
+
+      // Overnight stay: journey > 10h total driving
+      if (travelHours > 10) {
+        const nights = Math.ceil((travelHours - 10) / 16) + 1;
+        const nightly = region === "NG" ? 20000 : region === "EU" ? usdToNgn(90) : region === "US" ? usdToNgn(130) : usdToNgn(80);
+        overnightAllowance = nights * nightly;
+        travelHours += nights * 8; // overnight sleep time
+      }
+
+      // Cross-border fees: long route or explicit border keywords
+      const isCrossBorder = dist > 450 || /border|crossing|customs|entry point/.test(`${originAddr} ${destAddr}`.toLowerCase());
+      if (isCrossBorder) {
+        const borderRate = region === "NG" ? usdToNgn(50) : region === "EU" ? usdToNgn(120) : usdToNgn(200);
+        borderFees = borderRate;
+        travelHours += 3; // border dwell time
+      }
+    }
+
+    // ── CONTAINER MODE ─────────────────────────────────────────────────────
+    if (containerMode) {
+      const hasPort = /port|terminal|apapa|tin can|wharf|dock|harbour|harbor|pier/i.test(`${originAddr} ${destAddr}`);
+      terminalHandlingFees = hasPort
+        ? (region === "NG" ? 250000 : usdToNgn(480))
+        : (region === "NG" ? 120000 : usdToNgn(250));
+      travelHours += 2.5; // terminal gate-in/out + documentation
+    }
+
+    // ── INDUSTRIAL MODE: clustering + zone fees ────────────────────────────
+    const waitPerDrop = industrialMode ? 1.6 : 2; // 20% reduction from stop clustering
+    if (industrialMode && numDrops > 0) {
+      const clusterCount = Math.max(1, Math.ceil(numDrops / 3));
+      zoneFees = clusterCount * (region === "NG" ? 12000 : usdToNgn(55));
+    }
+
     const fuel = dist * mode.fuelPerKm * fuelPrice;
     const toll = dist > 200 ? dist * 22 : dist * 15;
     const driver = travelHours * driverRate;
     const risk = dist * 9;
     const maint = dist * mode.maintenancePerKm;
     const maintProvision = dist * mode.maintenancePerKm * 0.3;
-    const total = fuel + toll + driver + risk + maint;
-    // Remove Math.random() - use deterministic margin based on optimization direction
+    const toggleSurcharges = (overnightAllowance ?? 0) + (restStopCost ?? 0) + (borderFees ?? 0) + (terminalHandlingFees ?? 0) + (zoneFees ?? 0);
+    const total = fuel + toll + driver + risk + maint + toggleSurcharges;
+
     const marginBonus = isRec ? 0.15 : name.includes("Fastest") ? 0.08 : 0.11;
     const estimatedRevenue = total * (1 + (marginThreshold / 100) + marginBonus);
     const routeProfit = estimatedRevenue - total;
@@ -257,8 +334,7 @@ const generateRouteOptions = (
     const tonKmEff = Math.round((actualWeight / 1000) * dist);
     const fuelPerTon = mode.fuelPerKm > 0 ? Math.round((dist * mode.fuelPerKm * fuelPrice) / (actualWeight / 1000)) : 0;
 
-    // ── ETA IN DAYS (+2hr per drop) ─────────────────────────────────────────
-    const estimatedDays = computeETADays(travelHours, numDrops);
+    const estimatedDays = computeETADays(travelHours, numDrops, waitPerDrop);
 
     const overloadWarning = cargoWeight > mode.maxWeight
       ? `⚠ Load ${cargoWeight.toLocaleString()}kg exceeds ${mode.label} limit (${mode.maxWeight.toLocaleString()}kg). Upgrade to larger vehicle.`
@@ -279,6 +355,7 @@ const generateRouteOptions = (
       isRecommended: isRec, algorithm: algo,
       restStops, overloadWarning, marginWarning,
       tonKmEfficiency: tonKmEff, fuelPerTon, estimatedDeliveryDays: estimatedDays,
+      overnightAllowance, restStopCost, borderFees, terminalHandlingFees, zoneFees,
     };
   };
 
@@ -391,7 +468,12 @@ export default function AdvancedRoutePlanner() {
       } catch { /* use default */ }
 
       const cargoWt = totalCargoWeight || stops.reduce((s, st) => s + (st.weightKg || 0), 0);
-      const opts = generateRouteOptions(baseDistance + stops.length * (isHeavyMode ? 35 : 25), mode, fuelPrice, effectiveDriverHourlyRate, cargoWt, marginThreshold, stops.length);
+      const opts = generateRouteOptions(
+        baseDistance + stops.length * (isHeavyMode ? 35 : 25),
+        mode, fuelPrice, effectiveDriverHourlyRate, cargoWt, marginThreshold, stops.length,
+        longHaulMode, containerMode, industrialMode,
+        origin.address, destination.address,
+      );
       setRouteOptions(opts);
       setSelectedRoute(0);
       setActiveTab("results");
@@ -904,14 +986,19 @@ export default function AdvancedRoutePlanner() {
                     <div className="space-y-2">
                       <p className="text-xs font-bold uppercase text-muted-foreground">Profit-Aware Cost Breakdown</p>
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
-                        {[
+                        {([
                           { label: "Fuel", value: opt.fuelCost, icon: Fuel },
                           { label: "Tolls", value: opt.tollCost, icon: DollarSign },
                           { label: "Driver", value: opt.driverCost, icon: User },
                           { label: "Risk Premium", value: opt.riskPremium, icon: AlertTriangle },
                           { label: "Maintenance", value: opt.maintenanceCost, icon: Wrench },
                           { label: "Maint. Provision", value: opt.maintenanceProvision, icon: Settings },
-                        ].map((c) => (
+                          ...(opt.restStopCost ? [{ label: "HOS Rest Stops", value: opt.restStopCost, icon: Clock }] : []),
+                          ...(opt.overnightAllowance ? [{ label: "Overnight Allowance", value: opt.overnightAllowance, icon: Moon }] : []),
+                          ...(opt.borderFees ? [{ label: "Border / Customs", value: opt.borderFees, icon: Globe }] : []),
+                          ...(opt.terminalHandlingFees ? [{ label: "Terminal Handling", value: opt.terminalHandlingFees, icon: Container }] : []),
+                          ...(opt.zoneFees ? [{ label: "Industrial Zone Fees", value: opt.zoneFees, icon: Factory }] : []),
+                        ] as { label: string; value: number; icon: React.ElementType }[]).map((c) => (
                           <div key={c.label} className="flex items-center gap-1 p-2 rounded bg-background/80">
                             <c.icon className="w-3 h-3 text-muted-foreground shrink-0" />
                             <div><p className="text-muted-foreground">{c.label}</p><p className="font-semibold">{fmt(c.value)}</p></div>
