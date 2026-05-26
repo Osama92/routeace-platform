@@ -7,6 +7,10 @@
 !.env.production
 !.env.development
 
+# Bun lock files — Cloudflare must use npm (package-lock.json)
+bun.lock
+bun.lockb
+
 # Supabase temp files
 supabase/.temp/
 
