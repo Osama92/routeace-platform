@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { Plus, Loader2 } from "lucide-react";
+import { isQuotaError, emitQuotaExceeded, resourceFromError } from "@/lib/quotaErrors";
 
 const CreateDispatchDialog = () => {
   const { toast } = useToast();
@@ -144,7 +145,11 @@ const CreateDispatchDialog = () => {
       setForm({ customer_id: "", route_id: "", pickup_address: "", delivery_address: "", cargo_description: "", cargo_weight_kg: "", priority: "normal", scheduled_pickup: "", vehicle_id: "", driver_id: "", transporter_id: "", distance_km: "", diesel_liters: "", cost: "" });
       setExtraDrops([]);
     } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      if (isQuotaError(err)) {
+        emitQuotaExceeded({ resource: resourceFromError(err.message ?? ""), message: err.message ?? "" });
+      } else {
+        toast({ title: "Error", description: err.message, variant: "destructive" });
+      }
     } finally {
       setSaving(false);
     }

@@ -22,6 +22,7 @@ interface AuthContextType {
   subscriptionStatus: string | null;
   subscriptionExpiresAt: string | null;
   trialExpired: boolean;
+  trialDaysRemaining: number | null;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: any }>;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
@@ -62,6 +63,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     subscriptionStatus === "trial" &&
     !!subscriptionExpiresAt &&
     new Date(subscriptionExpiresAt).getTime() < Date.now();
+
+  const trialDaysRemaining: number | null = (() => {
+    if (subscriptionStatus !== "trial" || !subscriptionExpiresAt) return null;
+    const msLeft = new Date(subscriptionExpiresAt).getTime() - Date.now();
+    return Math.max(0, Math.ceil(msLeft / 86_400_000));
+  })();
 
   // Detailed trial telemetry - fires whenever trial status, expiry, or org changes.
   useEffect(() => {
@@ -488,6 +495,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         subscriptionStatus,
         subscriptionExpiresAt,
         trialExpired,
+        trialDaysRemaining,
         signUp,
         signIn,
         signOut,
