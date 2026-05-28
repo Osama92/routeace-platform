@@ -12,6 +12,17 @@ Deno.serve(async (req) => {
     if (!PAYSTACK_SECRET) return json({ error: "Payment provider not configured" }, 500, cors);
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
+    // Auth gate: require a valid logged-in user
+    const authHeader = req.headers.get("Authorization") ?? "";
+    if (!authHeader.startsWith("Bearer ")) {
+      return json({ error: "Unauthorized" }, 401, cors);
+    }
+    const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: userData, error: authErr } = await userClient.auth.getUser();
+    if (authErr || !userData?.user) return json({ error: "Unauthorized" }, 401, cors);
+
     let body: Record<string, unknown>;
     try { body = await req.json(); } catch (_e) { return json({ error: "Invalid JSON body" }, 400, cors); }
     const reference = (body as any).reference;
@@ -31,6 +42,18 @@ Deno.serve(async (req) => {
     const meta = tx.metadata ?? {};
     const orgId = meta.organization_id;
     const planName = meta.plan_name;
+
+    // Org ownership check: ensure the authenticated user belongs to the org being charged
+    if (orgId) {
+      const { data: membership } = await admin
+        .from("organization_members")
+        .select("id")
+        .eq("organization_id", orgId)
+        .eq("user_id", userData.user.id)
+        .eq("is_active", true)
+        .maybeSingle();
+      if (!membership) return json({ error: "Unauthorized: you do not belong to this organization" }, 403, cors);
+    }
     const billingCycle = meta.billing_cycle ?? "monthly";
     const daysToAdd = billingCycle === "annual" ? 365 : 30;
     const expiresAt = new Date(Date.now() + daysToAdd * 86400_000).toISOString();
@@ -54,6 +77,23 @@ Deno.serve(async (req) => {
     if (vehicleCount > 0) orgUpdate.vehicle_quota = vehicleCount;
 
     await admin.from("organizations").update(orgUpdate as any).eq("id", orgId);
+
+    // Sync tenant_config limits to the new plan
+    if (orgId && planName) {
+      const { data: planLimits } = await admin.rpc("get_plan_limits", { tier: planName }).single();
+      if (planLimits) {
+        await admin.from("tenant_config").update({
+          plan_tier:              planName,
+          max_users:              (planLimits as any).max_users,
+          max_vehicles:           (planLimits as any).max_vehicles,
+          max_branches:           (planLimits as any).max_branches,
+          max_monthly_dispatches: (planLimits as any).max_monthly_dispatches,
+          max_api_calls:          (planLimits as any).max_api_calls,
+          max_integrations:       (planLimits as any).max_integrations,
+          ai_credits_total:       (planLimits as any).ai_credits_total,
+        }).eq("organization_id", orgId);
+      }
+    }
 
     // Attribute commission to reseller if this org was provisioned by one
     try {

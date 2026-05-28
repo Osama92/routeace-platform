@@ -93,7 +93,7 @@ export interface PlanLimits {
 export const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
   free: {
     max_users: 3,
-    max_vehicles: 1,
+    max_vehicles: 3,
     max_branches: 1,
     max_monthly_dispatches: 10,
     max_daily_stops: 10,
