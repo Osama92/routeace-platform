@@ -21,6 +21,7 @@ import ResetPassword from "./pages/ResetPassword";
 import BillingVerify from "./pages/BillingVerify";
 import TransporterJoinPage from "./pages/TransporterJoinPage";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
+import TermsOfService from "./pages/TermsOfService";
 import Documentation from "./pages/public/Documentation";
 import ApiReference from "./pages/public/ApiReference";
 import CaseStudies from "./pages/public/CaseStudies";
@@ -511,6 +512,8 @@ const App = () => (
               <Route path="/transporter/join/:token" element={<TransporterJoinPage />} />
               <Route path="/privacy" element={<PrivacyPolicy />} />
               <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+              <Route path="/terms" element={<TermsOfService />} />
+              <Route path="/terms-of-service" element={<TermsOfService />} />
               <Route path="/docs" element={<Documentation />} />
               <Route path="/documentation" element={<Documentation />} />
               <Route path="/api-reference" element={<ApiReference />} />

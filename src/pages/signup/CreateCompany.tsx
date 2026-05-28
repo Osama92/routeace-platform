@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "sonner";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Building2,
   Crown,
@@ -26,6 +27,8 @@ import {
   Truck,
   Shield,
   Sparkles,
+  ExternalLink,
+  FileText,
 } from "lucide-react";
 
 const signupSchema = z.object({
@@ -195,6 +198,8 @@ const CreateCompany = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  const [tosAccepted, setTosAccepted] = useState(false);
+
   const [formData, setFormData] = useState<FormData>({
     fullName: "",
     email: "",
@@ -262,6 +267,10 @@ const CreateCompany = () => {
 
   const handleSubmit = async () => {
     if (!validateStep(currentStep)) return;
+    if (!tosAccepted) {
+      setErrors(prev => ({ ...prev, tos: "You must accept the Terms of Service to continue." }));
+      return;
+    }
 
     setIsSubmitting(true);
 
@@ -846,6 +855,75 @@ const CreateCompany = () => {
                 </p>
               </CardContent>
             </Card>
+
+            {/* Terms of Service — mandatory acceptance */}
+            <div className={`rounded-xl border p-4 space-y-3 transition-colors ${
+              errors.tos ? "border-destructive bg-destructive/5" : "border-border bg-muted/20"
+            }`}>
+              <div className="flex items-start gap-2.5">
+                <FileText className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs font-semibold text-foreground">Terms of Service</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Effective 1 May 2026 · Governed by Nigerian law · Glyde Systems Services Ltd
+                  </p>
+                </div>
+                <a
+                  href="/terms"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ml-auto shrink-0 inline-flex items-center gap-1 text-xs text-primary hover:underline font-medium"
+                  onClick={e => e.stopPropagation()}
+                >
+                  Read <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+
+              <label
+                htmlFor="tos-accept"
+                className="flex items-start gap-3 cursor-pointer group"
+              >
+                <Checkbox
+                  id="tos-accept"
+                  checked={tosAccepted}
+                  onCheckedChange={(checked) => {
+                    setTosAccepted(checked === true);
+                    if (checked) setErrors(prev => ({ ...prev, tos: "" }));
+                  }}
+                  className="mt-0.5 shrink-0"
+                />
+                <span className="text-xs text-muted-foreground leading-relaxed group-hover:text-foreground transition-colors">
+                  I have read and agree to the{" "}
+                  <a
+                    href="/terms"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline font-medium"
+                    onClick={e => e.stopPropagation()}
+                  >
+                    Terms of Service
+                  </a>{" "}
+                  and acknowledge the{" "}
+                  <a
+                    href="/privacy"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline font-medium"
+                    onClick={e => e.stopPropagation()}
+                  >
+                    Privacy Policy
+                  </a>
+                  . If accepting on behalf of a company, I confirm I have authority to bind that entity.
+                </span>
+              </label>
+
+              {errors.tos && (
+                <p className="text-xs text-destructive flex items-center gap-1.5">
+                  <span className="w-1 h-1 rounded-full bg-destructive inline-block" />
+                  {errors.tos}
+                </p>
+              )}
+            </div>
           </motion.div>
         );
 
@@ -960,8 +1038,8 @@ const CreateCompany = () => {
             ) : (
               <Button
                 onClick={handleSubmit}
-                disabled={isSubmitting}
-                className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600"
+                disabled={isSubmitting || !tosAccepted}
+                className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 disabled:opacity-50"
               >
                 {isSubmitting ? (
                   <>
