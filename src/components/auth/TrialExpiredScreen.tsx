@@ -36,7 +36,7 @@ const TrialExpiredScreen = () => {
 
             {/* Headline */}
             <h1 className="text-2xl font-bold text-foreground text-center mb-2">
-              Your 7-day trial has ended
+              Your free trial has ended
             </h1>
             <p className="text-muted-foreground text-center text-sm mb-6">
               Choose a plan to restore full access instantly. Your operations data is

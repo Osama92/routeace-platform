@@ -78,7 +78,7 @@ export default function TrialBanner() {
     ? "Your free trial expires tomorrow. Upgrade to keep your operations running."
     : trialDaysRemaining === 2
     ? "2 days left on your free trial. Lock in your plan before it expires."
-    : `You're on a free 7-day trial. ${trialDaysRemaining} days remaining.`;
+    : `You have ${trialDaysRemaining} days left in your free trial. All features are unlocked.`;
 
   return (
     <div
