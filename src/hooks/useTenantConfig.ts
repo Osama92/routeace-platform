@@ -74,7 +74,7 @@ const PLAN_LIMITS: Record<string, Partial<TenantConfig>> = {
     ai_credits_total: 500,
   },
   enterprise: {
-    max_users: 999, max_vehicles: 999, max_branches: 999,
+    max_users: 9999, max_vehicles: 9999, max_branches: 999,
     max_monthly_dispatches: 99999, max_api_calls: 99999, max_integrations: 99,
     ai_credits_total: 2000,
   },
