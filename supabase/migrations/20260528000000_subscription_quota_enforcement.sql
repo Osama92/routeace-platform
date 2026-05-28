@@ -18,7 +18,9 @@ RETURNS TABLE (
   max_integrations       INT,
   ai_credits_total       INT
 ) LANGUAGE sql IMMUTABLE AS $$
-  SELECT * FROM (VALUES
+  SELECT t.max_users, t.max_vehicles, t.max_branches, t.max_monthly_dispatches,
+         t.max_api_calls, t.max_integrations, t.ai_credits_total
+  FROM (VALUES
     ('free',         3,    3,    1,   10,    0,      0,    0),
     ('starter',      10,   20,   3,   500,   1000,   2,    0),
     ('growth',       50,   100,  10,  5000,  10000,  5,    500),
