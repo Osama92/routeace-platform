@@ -5,8 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
   Truck, LogIn, ArrowRight, Mail, Lock, Eye, EyeOff, Loader2,
-  CheckCircle, Crown, Building2,
+  CheckCircle, Crown, Building2, Clock,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -24,6 +31,7 @@ const LandingHero = () => {
   const navigate = useNavigate();
   const { signIn, userRole } = useAuth();
   const [showLogin, setShowLogin] = useState(false);
+  const [showModeSelect, setShowModeSelect] = useState(false);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -96,7 +104,7 @@ const LandingHero = () => {
             <Button
               size="sm"
               className="bg-infra-orange hover:bg-infra-orange/90 text-primary-foreground font-semibold whitespace-nowrap px-3 sm:px-4"
-              onClick={() => navigate("/signup/company")}
+              onClick={() => setShowModeSelect(true)}
             >
               <span className="sm:hidden">Get Started</span>
               <span className="hidden sm:inline">Get Started Free</span>
@@ -104,6 +112,101 @@ const LandingHero = () => {
           </div>
         </div>
       </header>
+
+      {/* MODE PICKER MODAL */}
+      <Dialog open={showModeSelect} onOpenChange={setShowModeSelect}>
+        <DialogContent className="max-w-2xl p-0 overflow-hidden gap-0">
+          <div className="px-6 pt-6 pb-4">
+            <DialogHeader>
+              <DialogTitle className="text-xl font-bold">How do you use logistics?</DialogTitle>
+              <DialogDescription className="text-sm text-muted-foreground mt-1">
+                Choose your setup — this determines your workspace, features, and free trial length.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-4 px-6 pb-6">
+            {/* LOGISTICS COMPANY */}
+            <button
+              onClick={() => { setShowModeSelect(false); navigate("/signup/company?mode=LOGISTICS_COMPANY"); }}
+              className="group text-left rounded-2xl border-2 border-primary/20 hover:border-primary/60 bg-primary/5 hover:bg-primary/10 transition-all p-5 relative overflow-hidden"
+            >
+              <div className="absolute top-3 right-3">
+                <span className="flex items-center gap-1 text-[10px] font-semibold text-primary bg-primary/10 border border-primary/20 rounded-full px-2 py-0.5">
+                  <Clock className="w-3 h-3" /> 30-day free trial
+                </span>
+              </div>
+              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                <Truck className="w-6 h-6 text-primary" />
+              </div>
+              <Badge variant="outline" className="text-[10px] mb-2">Logistics Company · LC</Badge>
+              <h3 className="text-base font-bold font-heading mb-1">I Own or Run a Fleet</h3>
+              <p className="text-xs text-muted-foreground mb-4">
+                3PLs, haulage companies, last-mile operators. Full fleet control with real-time visibility.
+              </p>
+              <ul className="space-y-1.5 mb-4">
+                {[
+                  "Fleet tracking & dispatch management",
+                  "Driver monitoring & fraud detection",
+                  "Route optimisation & waybills",
+                  "Invoicing & customer SLA tracking",
+                ].map(f => (
+                  <li key={f} className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <CheckCircle className="w-3 h-3 text-primary shrink-0" /> {f}
+                  </li>
+                ))}
+              </ul>
+              <div className="flex items-center gap-1.5 text-primary text-xs font-semibold">
+                <Crown className="w-3.5 h-3.5" /> Full access, no limits during trial
+                <ArrowRight className="w-3.5 h-3.5 ml-auto group-hover:translate-x-1 transition-transform" />
+              </div>
+            </button>
+
+            {/* LOGISTICS DEPARTMENT */}
+            <button
+              onClick={() => { setShowModeSelect(false); navigate("/signup/company?mode=LOGISTICS_DEPARTMENT"); }}
+              className="group text-left rounded-2xl border-2 border-teal-500/20 hover:border-teal-500/60 bg-teal-500/5 hover:bg-teal-500/10 transition-all p-5 relative overflow-hidden"
+            >
+              <div className="absolute top-3 right-3">
+                <span className="flex items-center gap-1 text-[10px] font-semibold text-teal-600 dark:text-teal-400 bg-teal-500/10 border border-teal-500/20 rounded-full px-2 py-0.5">
+                  <Clock className="w-3 h-3" /> 60-day free trial
+                </span>
+              </div>
+              <div className="w-12 h-12 rounded-xl bg-teal-500/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                <Building2 className="w-6 h-6 text-teal-500" />
+              </div>
+              <Badge variant="outline" className="text-[10px] mb-2">Enterprise Logistics Dept · LD</Badge>
+              <h3 className="text-base font-bold font-heading mb-1">I Manage Company Logistics</h3>
+              <p className="text-xs text-muted-foreground mb-4">
+                FMCG, Manufacturing, Oil & Gas, Retail. Manage your internal logistics team and 3PL vendors.
+              </p>
+              <ul className="space-y-1.5 mb-4">
+                {[
+                  "OTIF, DQI & SLA tracking vs DPO standards",
+                  "3PL vendor management & cost visibility",
+                  "Multi-branch distribution control",
+                  "Full finance suite & compliance hub",
+                ].map(f => (
+                  <li key={f} className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <CheckCircle className="w-3 h-3 text-teal-500 shrink-0" /> {f}
+                  </li>
+                ))}
+              </ul>
+              <div className="flex items-center gap-1.5 text-teal-600 dark:text-teal-400 text-xs font-semibold">
+                <Crown className="w-3.5 h-3.5" /> Full access, no limits during trial
+                <ArrowRight className="w-3.5 h-3.5 ml-auto group-hover:translate-x-1 transition-transform" />
+              </div>
+            </button>
+          </div>
+
+          <div className="border-t border-border/50 px-6 py-3 bg-muted/30 flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">No credit card required. Cancel anytime.</p>
+            <button onClick={() => setShowModeSelect(false)} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+              Not now
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* LOGIN PANEL */}
       <AnimatePresence>
