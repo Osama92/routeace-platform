@@ -67,6 +67,7 @@ import { useSuperAdminGuard } from "@/hooks/useSuperAdminGuard";
 import UserApprovalDialog from "@/components/users/UserApprovalDialog";
 import UserSuspendDialog from "@/components/users/UserSuspendDialog";
 import CreateUserDialog from "@/components/users/CreateUserDialog";
+import { isQuotaError, emitQuotaExceeded } from "@/lib/quotaErrors";
 import LeaveAllocationDialog from "@/components/users/LeaveAllocationDialog";
 import { CalendarDays } from "lucide-react";
 import { getRoleDisplay } from "@/lib/deptRoleDisplay";
@@ -352,7 +353,7 @@ const UsersPage = () => {
             .maybeSingle();
 
           if (!existingMember) {
-            await supabase.from("organization_members").insert({
+            const { error: memberErr } = await supabase.from("organization_members").insert({
               user_id: selectedUser.user_id,
               organization_id: organizationId,
               role: (role ?? "support") as any,
@@ -361,6 +362,13 @@ const UsersPage = () => {
               joined_at: new Date().toISOString(),
               invited_by: currentUser!.id,
             });
+            if (memberErr) {
+              if (isQuotaError(memberErr)) {
+                emitQuotaExceeded({ resource: "user", message: memberErr.message ?? "" });
+                return;
+              }
+              throw memberErr;
+            }
           }
         }
 

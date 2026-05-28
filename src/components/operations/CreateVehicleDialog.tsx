@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Truck, Loader2 } from "lucide-react";
+import { isQuotaError, emitQuotaExceeded, resourceFromError } from "@/lib/quotaErrors";
 
 const TRUCK_TYPES = [
   "Flatbed", "Box Truck", "Curtain Side", "Tanker", "Refrigerated",
@@ -60,7 +61,11 @@ const CreateVehicleDialog = () => {
       setOpen(false);
       setForm({ registration_number: "", vehicle_type: "", truck_type: "", make: "", model: "", year: "", capacity_kg: "", fuel_type: "diesel", ownership_type: "owned" });
     } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      if (isQuotaError(err)) {
+        emitQuotaExceeded({ resource: resourceFromError(err.message ?? ""), message: err.message ?? "" });
+      } else {
+        toast({ title: "Error", description: err.message, variant: "destructive" });
+      }
     } finally {
       setSaving(false);
     }

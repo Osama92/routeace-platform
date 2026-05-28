@@ -12,6 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useAutoStaffSignin } from "@/hooks/useAutoStaffSignin";
+import TrialBanner from "./TrialBanner";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -147,6 +148,7 @@ const DashboardLayout = ({ children, title, subtitle }: DashboardLayoutProps) =>
         <Sidebar />
         <MobileBackdrop />
         <main className="lg:ml-[280px] transition-all duration-300 min-w-0">
+          <TrialBanner />
           <Header title={title} subtitle={subtitle} />
           <Breadcrumbs />
           <div className="p-4 sm:p-6 lg:p-8 min-w-0">{children}</div>
