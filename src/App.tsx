@@ -482,8 +482,8 @@ const App = () => (
         <TooltipProvider>
           <Toaster />
           <Sonner />
-          <UpgradePromptDialog />
           <BrowserRouter>
+            <UpgradePromptDialog />
             <WorkspaceProvider>
             <OSIsolationGuard>
             <DeptRouteGuard>
