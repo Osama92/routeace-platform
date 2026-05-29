@@ -14,6 +14,23 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Table,
   TableBody,
   TableCell,
@@ -36,6 +53,9 @@ import {
   Trash2,
   Eye,
   Loader2,
+  Pencil,
+  Power,
+  PowerOff,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -76,9 +96,15 @@ const RoutesPage = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedRoute, setSelectedRoute] = useState<RouteData | null>(null);
+  const [editingRoute, setEditingRoute] = useState<RouteData | null>(null);
+  const [deletingRoute, setDeletingRoute] = useState<RouteData | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [calculating, setCalculating] = useState(false);
   const { toast } = useToast();
   const { user, hasAnyRole } = useAuth();
@@ -397,6 +423,96 @@ const RoutesPage = () => {
   const viewRouteDetails = (route: RouteData) => {
     setSelectedRoute(route);
     setIsViewDialogOpen(true);
+  };
+
+  const openEditDialog = (route: RouteData) => {
+    setEditingRoute(route);
+    setFormData({
+      name: route.name,
+      origin: route.origin,
+      origin_lat: route.origin_lat,
+      origin_lng: route.origin_lng,
+      destination: route.destination,
+      destination_lat: route.destination_lat,
+      destination_lng: route.destination_lng,
+      distance_km: route.distance_km?.toString() ?? "",
+      estimated_duration_hours: route.estimated_duration_hours?.toString() ?? "",
+    });
+    setWaypoints(route.waypoints ?? []);
+    setIsEditDialogOpen(true);
+  };
+
+  const handleUpdate = async () => {
+    if (!editingRoute || !formData.name || !formData.origin || !formData.destination) {
+      toast({ title: "Validation Error", description: "Please fill in all required fields", variant: "destructive" });
+      return;
+    }
+    setUpdating(true);
+    try {
+      const { error } = await supabase
+        .from("routes")
+        .update({
+          name: formData.name,
+          origin: formData.origin,
+          origin_lat: formData.origin_lat,
+          origin_lng: formData.origin_lng,
+          destination: formData.destination,
+          destination_lat: formData.destination_lat,
+          destination_lng: formData.destination_lng,
+          distance_km: formData.distance_km ? parseFloat(formData.distance_km) : null,
+          estimated_duration_hours: formData.estimated_duration_hours ? parseFloat(formData.estimated_duration_hours) : null,
+        })
+        .eq("id", editingRoute.id);
+      if (error) throw error;
+
+      // Replace waypoints
+      await supabase.from("route_waypoints").delete().eq("route_id", editingRoute.id);
+      if (waypoints.length > 0) {
+        await supabase.from("route_waypoints").insert(
+          waypoints.map((wp) => ({
+            route_id: editingRoute.id,
+            location_name: wp.location_name,
+            address: wp.address,
+            latitude: wp.latitude,
+            longitude: wp.longitude,
+            sequence_order: wp.sequence_order,
+            distance_from_previous_km: wp.distance_from_previous_km,
+            duration_from_previous_hours: wp.duration_from_previous_hours,
+            sla_hours: wp.sla_hours,
+          }))
+        );
+      }
+
+      await logChange({ table_name: "routes", record_id: editingRoute.id, action: "update", new_data: { name: formData.name } });
+      toast({ title: "Route Updated", description: "Changes saved successfully" });
+      setIsEditDialogOpen(false);
+      setEditingRoute(null);
+      resetForm();
+      fetchRoutes();
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to update route", variant: "destructive" });
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deletingRoute) return;
+    setDeleting(true);
+    try {
+      await supabase.from("route_waypoints").delete().eq("route_id", deletingRoute.id);
+      const { error } = await supabase.from("routes").delete().eq("id", deletingRoute.id);
+      if (error) throw error;
+      await logChange({ table_name: "routes", record_id: deletingRoute.id, action: "delete", old_data: { name: deletingRoute.name } });
+      toast({ title: "Route Deleted", description: `"${deletingRoute.name}" has been removed` });
+      setIsDeleteDialogOpen(false);
+      setDeletingRoute(null);
+      fetchRoutes();
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to delete route", variant: "destructive" });
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const filteredRoutes = routes.filter(
@@ -805,16 +921,44 @@ const RoutesPage = () => {
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => viewRouteDetails(route)}
-                      >
+                      <Button variant="ghost" size="icon" onClick={() => viewRouteDetails(route)}>
                         <Eye className="w-4 h-4" />
                       </Button>
-                      <Button variant="ghost" size="icon">
-                        <MoreVertical className="w-4 h-4" />
-                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon">
+                            <MoreVertical className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => viewRouteDetails(route)}>
+                            <Eye className="w-4 h-4 mr-2" />View Details
+                          </DropdownMenuItem>
+                          {canManage && (
+                            <DropdownMenuItem onClick={() => openEditDialog(route)}>
+                              <Pencil className="w-4 h-4 mr-2" />Edit Route
+                            </DropdownMenuItem>
+                          )}
+                          {canManage && (
+                            <DropdownMenuItem onClick={() => toggleRouteStatus(route.id, route.is_active)}>
+                              {route.is_active
+                                ? <><PowerOff className="w-4 h-4 mr-2" />Deactivate</>
+                                : <><Power className="w-4 h-4 mr-2" />Activate</>}
+                            </DropdownMenuItem>
+                          )}
+                          {canManage && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => { setDeletingRoute(route); setIsDeleteDialogOpen(true); }}
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />Delete Route
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -823,6 +967,81 @@ const RoutesPage = () => {
           </TableBody>
         </Table>
       </motion.div>
+
+      {/* ── EDIT ROUTE DIALOG ──────────────────────────────────────────────── */}
+      <Dialog open={isEditDialogOpen} onOpenChange={(open) => { setIsEditDialogOpen(open); if (!open) { setEditingRoute(null); resetForm(); } }}>
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-heading">Edit Route</DialogTitle>
+            <DialogDescription>Update route details, stops, and distance.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label>Route Name *</Label>
+              <input name="name" className="flex h-9 w-full rounded-md border border-input bg-secondary/50 px-3 py-1 text-sm shadow-sm" value={formData.name} onChange={handleInputChange} placeholder="Lagos - Abuja Express" />
+            </div>
+            <div className="space-y-2">
+              <Label>Origin *</Label>
+              <AddressAutocomplete value={formData.origin} onChange={(v) => setFormData(p => ({ ...p, origin: v }))} onPlaceSelect={(pl) => setFormData(p => ({ ...p, origin: pl.formattedAddress, origin_lat: pl.lat, origin_lng: pl.lng }))} placeholder="Start location" />
+            </div>
+            {waypoints.length > 0 && (
+              <div className="space-y-3">
+                <Label>Intermediate Stops</Label>
+                {waypoints.map((wp, index) => (
+                  <div key={index} className="p-3 bg-secondary/30 rounded-lg space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-muted-foreground">Stop {index + 1}</span>
+                      <Button variant="ghost" size="icon" onClick={() => removeWaypoint(index)}><Trash2 className="w-4 h-4 text-destructive" /></Button>
+                    </div>
+                    <Input placeholder="Location name" value={wp.location_name} onChange={(e) => updateWaypoint(index, "location_name", e.target.value)} className="bg-background" />
+                    <AddressAutocomplete value={wp.address} onChange={(v) => updateWaypoint(index, "address", v)} onPlaceSelect={(pl) => { updateWaypoint(index, "address", pl.formattedAddress); updateWaypoint(index, "latitude", pl.lat); updateWaypoint(index, "longitude", pl.lng); }} placeholder="Stop address" />
+                  </div>
+                ))}
+              </div>
+            )}
+            <Button type="button" variant="outline" onClick={addWaypoint} className="w-full"><Plus className="w-4 h-4 mr-2" />Add Stop</Button>
+            <div className="space-y-2">
+              <Label>Destination *</Label>
+              <AddressAutocomplete value={formData.destination} onChange={(v) => setFormData(p => ({ ...p, destination: v }))} onPlaceSelect={(pl) => setFormData(p => ({ ...p, destination: pl.formattedAddress, destination_lat: pl.lat, destination_lng: pl.lng }))} placeholder="End location" />
+            </div>
+            <Button type="button" variant="secondary" onClick={calculateDistance} disabled={calculating} className="w-full">
+              {calculating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Calculating...</> : <><Navigation className="w-4 h-4 mr-2" />Recalculate Distance & Duration</>}
+            </Button>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Distance (km)</Label>
+                <Input name="distance_km" type="number" value={formData.distance_km} onChange={handleInputChange} placeholder="Auto-calculated" className="bg-secondary/50" readOnly />
+              </div>
+              <div className="space-y-2">
+                <Label>Est. Duration (hours)</Label>
+                <Input name="estimated_duration_hours" type="number" step="0.5" value={formData.estimated_duration_hours} onChange={handleInputChange} placeholder="Auto-calculated" className="bg-secondary/50" readOnly />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleUpdate} disabled={updating}>{updating ? "Saving..." : "Save Changes"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── DELETE CONFIRMATION ─────────────────────────────────────────────── */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Route</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete <strong>"{deletingRoute?.name}"</strong>? This will also remove all waypoints. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeletingRoute(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete} disabled={deleting} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {deleting ? "Deleting..." : "Delete Route"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Route Details Dialog */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>

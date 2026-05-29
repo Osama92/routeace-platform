@@ -34,6 +34,9 @@ import {
   Factory,
   Bell,
   BellOff,
+  Eye,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
@@ -44,6 +47,23 @@ import { useAuditLog } from "@/hooks/useAuditLog";
 import CustomerInviteDialog from "@/components/customer/CustomerInviteDialog";
 import ApprovalDecisionHistory from "@/components/approvals/ApprovalDecisionHistory";
 import CustomerVendorBulkUpload from "@/components/approvals/CustomerVendorBulkUpload";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface Customer {
   id: string;
@@ -79,8 +99,15 @@ const Customers = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [deletingCustomer, setDeletingCustomer] = useState<Customer | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const { toast } = useToast();
   const { user, hasAnyRole, organizationId, userRole } = useAuth();
   const { logChange } = useAuditLog();
@@ -261,6 +288,84 @@ const Customers = () => {
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const openEditDialog = (customer: Customer) => {
+    setSelectedCustomer(customer);
+    setFormData({
+      company_name: customer.company_name,
+      contact_name: customer.contact_name,
+      email: customer.email,
+      phone: customer.phone,
+      head_office_address: customer.head_office_address ?? "",
+      head_office_lat: customer.head_office_lat,
+      head_office_lng: customer.head_office_lng,
+      factory_address: customer.factory_address ?? "",
+      factory_lat: customer.factory_lat,
+      factory_lng: customer.factory_lng,
+      city: "",
+      state: "",
+      tin_number: "",
+      email_delivery_updates: customer.email_delivery_updates ?? true,
+      email_invoice_reminders: customer.email_invoice_reminders ?? true,
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleUpdate = async () => {
+    if (!selectedCustomer) return;
+    if (!formData.company_name || !formData.email) {
+      toast({ title: "Validation Error", description: "Company name and email are required", variant: "destructive" });
+      return;
+    }
+    setUpdating(true);
+    try {
+      const { error } = await supabase
+        .from("customers")
+        .update({
+          company_name: formData.company_name,
+          contact_name: formData.contact_name,
+          email: formData.email,
+          phone: formData.phone,
+          head_office_address: formData.head_office_address || null,
+          head_office_lat: formData.head_office_lat,
+          head_office_lng: formData.head_office_lng,
+          factory_address: formData.factory_address || null,
+          factory_lat: formData.factory_lat,
+          factory_lng: formData.factory_lng,
+          email_delivery_updates: formData.email_delivery_updates,
+          email_invoice_reminders: formData.email_invoice_reminders,
+        })
+        .eq("id", selectedCustomer.id);
+      if (error) throw error;
+      await logChange({ table_name: "customers", record_id: selectedCustomer.id, action: "update", new_data: { company_name: formData.company_name } });
+      toast({ title: "Customer Updated", description: "Changes saved successfully" });
+      setIsEditDialogOpen(false);
+      setSelectedCustomer(null);
+      fetchCustomers();
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to update customer", variant: "destructive" });
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const confirmDeleteCustomer = async () => {
+    if (!deletingCustomer) return;
+    setDeleting(true);
+    try {
+      const { error } = await supabase.from("customers").delete().eq("id", deletingCustomer.id);
+      if (error) throw error;
+      await logChange({ table_name: "customers", record_id: deletingCustomer.id, action: "delete", old_data: { company_name: deletingCustomer.company_name } });
+      toast({ title: "Customer Deleted", description: `"${deletingCustomer.company_name}" has been removed` });
+      setIsDeleteDialogOpen(false);
+      setDeletingCustomer(null);
+      fetchCustomers();
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to delete customer", variant: "destructive" });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -634,9 +739,34 @@ const Customers = () => {
                         customerEmail={customer.email}
                         customerName={customer.contact_name || customer.company_name}
                       />
-                      <Button variant="ghost" size="icon">
-                        <MoreVertical className="w-4 h-4" />
-                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon">
+                            <MoreVertical className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => { setSelectedCustomer(customer); setIsViewDialogOpen(true); }}>
+                            <Eye className="w-4 h-4 mr-2" />View Details
+                          </DropdownMenuItem>
+                          {canManage && (
+                            <DropdownMenuItem onClick={() => openEditDialog(customer)}>
+                              <Pencil className="w-4 h-4 mr-2" />Edit Customer
+                            </DropdownMenuItem>
+                          )}
+                          {canManage && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => { setDeletingCustomer(customer); setIsDeleteDialogOpen(true); }}
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />Delete Customer
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -651,6 +781,96 @@ const Customers = () => {
           <ApprovalDecisionHistory entityType="customers" organizationId={organizationId} />
         </div>
       )}
+
+      {/* ── VIEW CUSTOMER DIALOG ──────────────────────────────────────────── */}
+      <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>{selectedCustomer?.company_name}</DialogTitle>
+            <DialogDescription>Customer details</DialogDescription>
+          </DialogHeader>
+          {selectedCustomer && (
+            <div className="space-y-3 py-2 text-sm">
+              <div className="grid grid-cols-2 gap-3">
+                <div><p className="text-xs text-muted-foreground">Contact</p><p className="font-medium">{selectedCustomer.contact_name || "—"}</p></div>
+                <div><p className="text-xs text-muted-foreground">Email</p><p className="font-medium">{selectedCustomer.email}</p></div>
+                <div><p className="text-xs text-muted-foreground">Phone</p><p className="font-medium">{selectedCustomer.phone || "—"}</p></div>
+                <div><p className="text-xs text-muted-foreground">Since</p><p className="font-medium">{new Date(selectedCustomer.created_at).toLocaleDateString()}</p></div>
+              </div>
+              {selectedCustomer.head_office_address && (
+                <div><p className="text-xs text-muted-foreground">Head Office</p><p className="font-medium">{selectedCustomer.head_office_address}</p></div>
+              )}
+              {selectedCustomer.factory_address && (
+                <div><p className="text-xs text-muted-foreground">Factory / Depot</p><p className="font-medium">{selectedCustomer.factory_address}</p></div>
+              )}
+              <div className="flex gap-4 pt-1">
+                <div className="flex items-center gap-1.5 text-xs"><Package className="w-3.5 h-3.5" />Delivery updates: <span className={selectedCustomer.email_delivery_updates ? "text-success font-medium" : "text-muted-foreground"}>{selectedCustomer.email_delivery_updates ? "On" : "Off"}</span></div>
+                <div className="flex items-center gap-1.5 text-xs"><Mail className="w-3.5 h-3.5" />Invoice reminders: <span className={selectedCustomer.email_invoice_reminders ? "text-success font-medium" : "text-muted-foreground"}>{selectedCustomer.email_invoice_reminders ? "On" : "Off"}</span></div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsViewDialogOpen(false)}>Close</Button>
+            {canManage && selectedCustomer && (
+              <Button onClick={() => { setIsViewDialogOpen(false); openEditDialog(selectedCustomer); }}>
+                <Pencil className="w-4 h-4 mr-2" />Edit
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── EDIT CUSTOMER DIALOG ──────────────────────────────────────────── */}
+      <Dialog open={isEditDialogOpen} onOpenChange={(open) => { setIsEditDialogOpen(open); if (!open) setSelectedCustomer(null); }}>
+        <DialogContent className="sm:max-w-[540px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Customer</DialogTitle>
+            <DialogDescription>Update customer information.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>Company Name *</Label><Input name="company_name" value={formData.company_name} onChange={handleInputChange} className="bg-secondary/50" /></div>
+              <div className="space-y-1.5"><Label>Contact Name</Label><Input name="contact_name" value={formData.contact_name} onChange={handleInputChange} className="bg-secondary/50" /></div>
+              <div className="space-y-1.5"><Label>Email *</Label><Input name="email" type="email" value={formData.email} onChange={handleInputChange} className="bg-secondary/50" /></div>
+              <div className="space-y-1.5"><Label>Phone</Label><Input name="phone" value={formData.phone} onChange={handleInputChange} className="bg-secondary/50" /></div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Head Office Address</Label>
+              <AddressAutocomplete value={formData.head_office_address} onChange={(v) => setFormData(p => ({ ...p, head_office_address: v }))} onPlaceSelect={(pl) => setFormData(p => ({ ...p, head_office_address: pl.formattedAddress, head_office_lat: pl.lat, head_office_lng: pl.lng }))} placeholder="Head office address" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Factory / Depot Address</Label>
+              <AddressAutocomplete value={formData.factory_address} onChange={(v) => setFormData(p => ({ ...p, factory_address: v }))} onPlaceSelect={(pl) => setFormData(p => ({ ...p, factory_address: pl.formattedAddress, factory_lat: pl.lat, factory_lng: pl.lng }))} placeholder="Factory / depot address" />
+            </div>
+            <div className="flex gap-6">
+              <div className="flex items-center gap-2"><Switch checked={formData.email_delivery_updates} onCheckedChange={(v) => setFormData(p => ({ ...p, email_delivery_updates: v }))} /><Label>Delivery updates email</Label></div>
+              <div className="flex items-center gap-2"><Switch checked={formData.email_invoice_reminders} onCheckedChange={(v) => setFormData(p => ({ ...p, email_invoice_reminders: v }))} /><Label>Invoice reminders email</Label></div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleUpdate} disabled={updating}>{updating ? "Saving..." : "Save Changes"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── DELETE CONFIRMATION ───────────────────────────────────────────── */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Customer</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete <strong>"{deletingCustomer?.company_name}"</strong>? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeletingCustomer(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteCustomer} disabled={deleting} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {deleting ? "Deleting..." : "Delete Customer"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   );
 };
