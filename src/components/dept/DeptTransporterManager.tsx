@@ -496,9 +496,6 @@ export default function DeptTransporterManager({ orgId, role }: Props) {
                       <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700">No docs uploaded (access link)</span>
                     )}
                   </div>
-                  <p className="text-xs text-teal-600 font-medium mt-0.5">
-                    Cost if approved: {NGN((t.vehicle_count ?? 1) * VEHICLE_COST_PER_MONTH)}/month + ₦50/drop
-                  </p>
                 </div>
                 <div className="flex flex-col gap-1.5 shrink-0">
                   <Button size="sm" className="h-7 text-xs"
