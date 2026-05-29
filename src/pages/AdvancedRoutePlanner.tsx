@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { AddressAutocomplete } from "@/components/shared/AddressAutocomplete";
 import RouteInsightsTile from "@/components/routing/RouteInsightsTile";
+import { LongHaulPanel, ContainerPanel, IndustrialPanel } from "@/components/routing/RouteModeIntelligence";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import useTenantMode from "@/hooks/useTenantMode";
@@ -608,6 +609,33 @@ export default function AdvancedRoutePlanner() {
             </div>
           ))}
         </div>
+      )}
+
+      {/* ── ROUTE MODE INTELLIGENCE PANELS ──────────────────────────────────── */}
+      {longHaulMode && isHeavyMode && (
+        <LongHaulPanel
+          origin={origin.address}
+          destination={destination.address}
+          distanceKm={routeOptions[0]?.distanceKm ?? 0}
+          gvwTonnage={mode.gvwTonnage}
+          fuelPerKm={mode.fuelPerKm}
+          fuelPrice={fuelPrice}
+        />
+      )}
+      {containerMode && isHeavyMode && (
+        <ContainerPanel
+          origin={origin.address}
+          destination={destination.address}
+          estimatedArrivalDays={routeOptions[0]?.estimatedDeliveryDays ?? 0}
+        />
+      )}
+      {industrialMode && isHeavyMode && (
+        <IndustrialPanel
+          stops={stops}
+          gvwTonnage={mode.gvwTonnage}
+          origin={origin.address}
+          destination={destination.address}
+        />
       )}
 
       {/* ── COMPLIANCE BLOCKING ALERT ─────────────────────────────────────── */}
