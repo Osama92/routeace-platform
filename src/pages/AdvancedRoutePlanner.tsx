@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { useRegion } from "@/contexts/RegionContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,6 +31,7 @@ import {
   Package, CheckCircle2, XCircle, Info, Settings, ChevronRight,
   Shield, FileText, Gauge, Container, Factory, Mountain,
   Thermometer, AlertCircle, BadgeCheck, Weight, Moon, Droplets,
+  BookOpen, Car,
 } from "lucide-react";
 
 // ─── FEATURE FLAG ───────────────────────────────────────────────────────────
@@ -423,8 +425,26 @@ const generateRouteOptions = (
 export default function AdvancedRoutePlanner() {
   const { toast } = useToast();
   const { isDepartment } = useTenantMode();
-  const { user } = useAuth();
+  const { user, organizationId } = useAuth();
   const { data: liveIntel, isLoading: liveLoading } = useRoutePlannerIntelligence();
+
+  const { data: libraryRoutes = [] } = useQuery({
+    queryKey: ["route-library", organizationId],
+    enabled: !!organizationId,
+    queryFn: async () => {
+      const { data } = await supabase.from("routes").select("id, name, origin, destination, distance_km, estimated_duration_hours").eq("is_active", true).order("created_at", { ascending: false }).limit(50);
+      return data || [];
+    },
+  });
+
+  const { data: fleetVehicles = [] } = useQuery({
+    queryKey: ["fleet-vehicles", organizationId],
+    enabled: !!organizationId,
+    queryFn: async () => {
+      const { data } = await supabase.from("vehicles").select("id, registration_number, vehicle_type, truck_type, make, model, capacity_kg").eq("organization_id", organizationId!).order("registration_number").limit(50);
+      return data || [];
+    },
+  });
   // Pull region from context - drives NG vs GLOBAL feature visibility
   const { isNGMode, isGlobalMode, region } = useRegion();
 
@@ -440,7 +460,10 @@ export default function AdvancedRoutePlanner() {
   const [routeOptions, setRouteOptions] = useState<RouteOption[]>([]);
   const [selectedRoute, setSelectedRoute] = useState(0);
   const [calculating, setCalculating] = useState(false);
-  const [fuelPrice, setFuelPrice] = useState(1200);
+  const [fuelPrice, setFuelPrice] = useState(() => {
+    const saved = localStorage.getItem("routeace_fuel_diesel");
+    return saved ? Number(saved) : 1200;
+  });
   const [driverRate, setDriverRate] = useState(15000); // per trip for NG
   const [driverRateType, setDriverRateType] = useState<"per_trip" | "per_hour" | "monthly">(isNGMode ? "per_trip" : "per_hour");
   const [marginThreshold, setMarginThreshold] = useState(12);
@@ -454,6 +477,8 @@ export default function AdvancedRoutePlanner() {
   const [totalCargoWeight, setTotalCargoWeight] = useState(0);
 
   const [lastOutboundKm, setLastOutboundKm] = useState(0);
+  const [selectedLibraryRoute, setSelectedLibraryRoute] = useState<string>("");
+  const [selectedFleetVehicle, setSelectedFleetVehicle] = useState<string>("");
 
   // Heavy-duty mode toggles
   const [longHaulMode, setLongHaulMode] = useState(false);
@@ -475,6 +500,22 @@ export default function AdvancedRoutePlanner() {
     if (customVehicleNames[modeId]) return customVehicleNames[modeId];
     const map = VEHICLE_REGIONAL_NAMES[modeId];
     return map ? map[tenantRegion] : modeId;
+  };
+
+  const mapVehicleTypeToMode = (vehicleType: string, capacityKg?: number | null): string => {
+    const t = vehicleType.toLowerCase();
+    if (/bike|motor|cycle/.test(t)) return "bike";
+    if (/walk|foot|alabaru/.test(t)) return "walking";
+    if (/trailer|artic|30t/.test(t)) return "heavy_truck";
+    if (/20t|20.ton|rigid.hgv|8.wheel/.test(t)) return "20t_rigid_hgv";
+    if (/15t|15.ton|medium.heavy|6.wheel/.test(t)) return "15t_medium_heavy";
+    if (/truck/.test(t)) {
+      if (capacityKg && capacityKg >= 25000) return "heavy_truck";
+      if (capacityKg && capacityKg >= 18000) return "20t_rigid_hgv";
+      if (capacityKg && capacityKg >= 10000) return "15t_medium_heavy";
+      return "15t_medium_heavy";
+    }
+    return "van";
   };
 
   // Convert driver rate to hourly equivalent for route calc
@@ -773,6 +814,81 @@ export default function AdvancedRoutePlanner() {
         <TabsContent value="planner">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div className="lg:col-span-2 space-y-4">
+              {/* Route Library + Fleet Picker */}
+              <Card className="border-primary/30">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <BookOpen className="w-4 h-4 text-primary" />
+                    Quick Start from Library
+                  </CardTitle>
+                  <CardDescription className="text-xs">Pick a saved route and/or a fleet vehicle to pre-fill your planner</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {/* Route Library picker */}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs flex items-center gap-1"><BookOpen className="w-3 h-3" />From Route Library</Label>
+                      <select
+                        className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                        value={selectedLibraryRoute}
+                        onChange={(e) => {
+                          const routeId = e.target.value;
+                          setSelectedLibraryRoute(routeId);
+                          if (!routeId) return;
+                          const r = libraryRoutes.find((x: any) => x.id === routeId);
+                          if (!r) return;
+                          setOrigin({ address: (r as any).origin, lat: undefined, lng: undefined });
+                          setDestination({ address: (r as any).destination, lat: undefined, lng: undefined });
+                        }}
+                      >
+                        <option value="">— Select saved route —</option>
+                        {libraryRoutes.map((r: any) => (
+                          <option key={r.id} value={r.id}>{r.name} ({r.distance_km ? `${r.distance_km} km` : "dist. unknown"})</option>
+                        ))}
+                      </select>
+                      {selectedLibraryRoute && (() => {
+                        const r = libraryRoutes.find((x: any) => x.id === selectedLibraryRoute);
+                        return r ? (
+                          <p className="text-[10px] text-muted-foreground">{(r as any).origin.split(",")[0]} → {(r as any).destination.split(",")[0]}{(r as any).distance_km ? ` · ${(r as any).distance_km} km` : ""}</p>
+                        ) : null;
+                      })()}
+                    </div>
+
+                    {/* Fleet vehicle picker */}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs flex items-center gap-1"><Car className="w-3 h-3" />From Fleet</Label>
+                      <select
+                        className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                        value={selectedFleetVehicle}
+                        onChange={(e) => {
+                          const vId = e.target.value;
+                          setSelectedFleetVehicle(vId);
+                          if (!vId) return;
+                          const v = fleetVehicles.find((x: any) => x.id === vId);
+                          if (!v) return;
+                          const mappedMode = mapVehicleTypeToMode((v as any).vehicle_type || (v as any).truck_type || "", (v as any).capacity_kg);
+                          setTransportMode(mappedMode);
+                        }}
+                      >
+                        <option value="">— Select fleet vehicle —</option>
+                        {fleetVehicles.map((v: any) => (
+                          <option key={v.id} value={v.id}>{v.registration_number} · {v.make || ""} {v.model || ""} ({v.vehicle_type})</option>
+                        ))}
+                      </select>
+                      {selectedFleetVehicle && (() => {
+                        const v = fleetVehicles.find((x: any) => x.id === selectedFleetVehicle);
+                        return v ? <p className="text-[10px] text-muted-foreground">Mapped to: {getVehicleDisplayName(mapVehicleTypeToMode((v as any).vehicle_type || (v as any).truck_type || "", (v as any).capacity_kg))}</p> : null;
+                      })()}
+                    </div>
+                  </div>
+                  {selectedLibraryRoute && (
+                    <p className="text-xs text-primary flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5" />Origin and destination pre-filled from route library. Add intermediate stops below, then optimize.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">

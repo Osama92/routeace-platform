@@ -209,6 +209,16 @@ const DynamicPricingEngine = () => {
     },
   });
 
+  const { data: libraryRoutes = [] } = useQuery({
+    queryKey: ["pricing-library-routes", organizationId],
+    enabled: !!organizationId,
+    queryFn: async () => {
+      const { data } = await supabase.from("routes").select("id, name, origin, destination, distance_km, waypoints").eq("is_active", true).order("created_at", { ascending: false }).limit(50);
+      return data || [];
+    },
+  });
+  const [selectedRouteId, setSelectedRouteId] = useState("");
+
   const selectedDispatch = recentDispatches?.find(d => d.id === selectedDispatchId);
 
   useEffect(() => {
@@ -217,6 +227,19 @@ const DynamicPricingEngine = () => {
     if (dist > 0) setRouteDistance(dist);
     if (selectedDispatch.total_drops) setStopCount(Number(selectedDispatch.total_drops));
   }, [selectedDispatchId]);
+
+  const selectedLibRoute = libraryRoutes.find((r: any) => r.id === selectedRouteId);
+  useEffect(() => {
+    if (!selectedLibRoute) return;
+    const dist = Number((selectedLibRoute as any).distance_km || 0);
+    if (dist > 0) setRouteDistance(dist);
+    // waypoints count as stops
+    const wpCount = Array.isArray((selectedLibRoute as any).waypoints) ? (selectedLibRoute as any).waypoints.length : 0;
+    if (wpCount > 0) setStopCount(wpCount + 1);
+  }, [selectedRouteId]);
+
+  useEffect(() => { localStorage.setItem("routeace_fuel_diesel", String(dieselRate)); }, [dieselRate]);
+  useEffect(() => { localStorage.setItem("routeace_fuel_petrol", String(petrolRate)); }, [petrolRate]);
 
   const calculateBreakdown = () => {
     const p = profile;
@@ -301,6 +324,26 @@ const DynamicPricingEngine = () => {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Source route from library */}
+          <div className="space-y-2">
+            <Label>Source route (from Route Library)</Label>
+            <select
+              className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+              value={selectedRouteId}
+              onChange={(e) => { setSelectedRouteId(e.target.value); setSelectedDispatchId(""); }}
+            >
+              <option value="">— Select a saved route —</option>
+              {(libraryRoutes as any[]).map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name} {r.distance_km ? `· ${r.distance_km} km` : ""} · {(r.origin || "").slice(0, 20)} → {(r.destination || "").slice(0, 20)}
+                </option>
+              ))}
+            </select>
+            {selectedLibRoute && (
+              <p className="text-[10px] text-success">✓ Distance auto-filled: {(selectedLibRoute as any).distance_km} km</p>
+            )}
+          </div>
+
           {/* Source dispatch */}
           <div className="space-y-2">
             <Label>Source dispatch (optional)</Label>
