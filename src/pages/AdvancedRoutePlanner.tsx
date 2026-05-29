@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { useRegion } from "@/contexts/RegionContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,11 +29,27 @@ import {
   Target, Activity, Globe, ChevronUp, ChevronDown, Lightbulb,
   Package, CheckCircle2, XCircle, Info, Settings, ChevronRight,
   Shield, FileText, Gauge, Container, Factory, Mountain,
-  Thermometer, AlertCircle, BadgeCheck, Weight, Moon,
+  Thermometer, AlertCircle, BadgeCheck, Weight, Moon, Droplets,
 } from "lucide-react";
 
 // ─── FEATURE FLAG ───────────────────────────────────────────────────────────
 const HEAVY_VEHICLE_INTELLIGENCE_V1 = true;
+
+// ─── FUEL TYPES PER VEHICLE ──────────────────────────────────────────────────
+const VEHICLE_FUEL_TYPE: Record<string, "diesel" | "petrol" | "none"> = {
+  bike: "petrol",
+  van: "petrol",
+  "15t_medium_heavy": "diesel",
+  "20t_rigid_hgv": "diesel",
+  heavy_truck: "diesel",
+  walking: "none",
+};
+
+// NNPC retail pump prices (₦/litre) — May 2026
+const NNPC_FUEL_PRICES: Record<"diesel" | "petrol", number> = {
+  petrol: 897,   // PMS
+  diesel: 1200,  // AGO
+};
 
 // ─── REGIONAL TERMINOLOGY MAP ────────────────────────────────────────────────
 type RegionKey = "NG" | "UK" | "US" | "GLOBAL";
@@ -401,6 +417,8 @@ export default function AdvancedRoutePlanner() {
   const [customVehicleNames, setCustomVehicleNames] = useState<Record<string, string>>({});
   const [totalCargoWeight, setTotalCargoWeight] = useState(0);
 
+  const [lastOutboundKm, setLastOutboundKm] = useState(0);
+
   // Heavy-duty mode toggles
   const [longHaulMode, setLongHaulMode] = useState(false);
   const [containerMode, setContainerMode] = useState(false);
@@ -408,6 +426,14 @@ export default function AdvancedRoutePlanner() {
 
   const mode = TRANSPORT_MODES.find(m => m.id === transportMode) || TRANSPORT_MODES[2];
   const isHeavyMode = ["15t_medium_heavy", "20t_rigid_hgv", "heavy_truck"].includes(transportMode);
+  const vehicleFuelType = VEHICLE_FUEL_TYPE[transportMode] ?? "none";
+
+  // Auto-set fuel price to correct NNPC rate when vehicle changes
+  useEffect(() => {
+    if (vehicleFuelType !== "none") {
+      setFuelPrice(NNPC_FUEL_PRICES[vehicleFuelType]);
+    }
+  }, [transportMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getVehicleDisplayName = (modeId: string): string => {
     if (customVehicleNames[modeId]) return customVehicleNames[modeId];
@@ -468,6 +494,10 @@ export default function AdvancedRoutePlanner() {
         if (data?.totalDistanceKm) baseDistance = data.totalDistanceKm;
       } catch { /* use default */ }
 
+      const outboundKm = baseDistance;
+      if (returnToBase) baseDistance = outboundKm * 2;
+      setLastOutboundKm(outboundKm);
+
       const cargoWt = totalCargoWeight || stops.reduce((s, st) => s + (st.weightKg || 0), 0);
       const opts = generateRouteOptions(
         baseDistance + stops.length * (isHeavyMode ? 35 : 25),
@@ -505,7 +535,12 @@ export default function AdvancedRoutePlanner() {
         }
       } catch (e) { console.warn("route log failed", e); }
 
-      toast({ title: "✅ Routes Optimized", description: `${opts.length} options · ${isHeavyMode ? "Heavy Haul Mode" : "Standard Mode"}` });
+      toast({
+        title: "✅ Routes Optimized",
+        description: returnToBase
+          ? `${opts.length} options · Outbound ${outboundKm}km + Return ${outboundKm}km = ${outboundKm * 2}km total`
+          : `${opts.length} options · ${isHeavyMode ? "Heavy Haul Mode" : "Standard Mode"}`,
+      });
     } finally {
       setCalculating(false);
     }
@@ -588,9 +623,44 @@ export default function AdvancedRoutePlanner() {
             {["15t_medium_heavy", "20t_rigid_hgv", "heavy_truck"].includes(m.id) && (
               <Badge variant="outline" className="text-[9px] mt-1 px-1 py-0">Heavy Duty</Badge>
             )}
+            {VEHICLE_FUEL_TYPE[m.id] === "diesel" && (
+              <Badge variant="outline" className="text-[9px] mt-0.5 px-1 py-0 border-amber-500/50 text-amber-400">⛽ Diesel</Badge>
+            )}
+            {VEHICLE_FUEL_TYPE[m.id] === "petrol" && (
+              <Badge variant="outline" className="text-[9px] mt-0.5 px-1 py-0 border-green-500/50 text-green-400">⛽ Petrol</Badge>
+            )}
           </button>
         ))}
       </div>
+
+      {/* ── LIVE FUEL SUMMARY STRIP ──────────────────────────────────────────── */}
+      {vehicleFuelType !== "none" && (
+        <div className="mb-4 flex flex-wrap items-center gap-3 px-4 py-2.5 rounded-xl border border-amber-500/25 bg-amber-500/5 text-xs">
+          {vehicleFuelType === "diesel"
+            ? <Fuel className="w-4 h-4 text-amber-400 shrink-0" />
+            : <Droplets className="w-4 h-4 text-green-400 shrink-0" />}
+          <span className="font-semibold text-foreground">
+            {vehicleFuelType === "diesel" ? "AGO Diesel" : "PMS Petrol"} — ₦{fuelPrice.toLocaleString()}/litre
+          </span>
+          <span className="text-muted-foreground">·</span>
+          <span className="text-muted-foreground">
+            Consumption: <span className="text-foreground font-medium">{(mode.fuelPerKm * 100).toFixed(1)} L/100km</span>
+          </span>
+          {routeOptions.length > 0 && (
+            <>
+              <span className="text-muted-foreground">·</span>
+              <span className="text-muted-foreground">
+                Est. litres: <span className="text-foreground font-medium">{(routeOptions[0].distanceKm * mode.fuelPerKm).toFixed(1)} L</span>
+              </span>
+              <span className="text-muted-foreground">·</span>
+              <span className="text-muted-foreground">
+                Fuel cost: <span className="text-foreground font-medium">₦{routeOptions[0].fuelCost.toLocaleString()}</span>
+              </span>
+            </>
+          )}
+          <span className="ml-auto text-[10px] text-muted-foreground">NNPC retail · May 2026</span>
+        </div>
+      )}
 
       {/* ── HEAVY DUTY MODE TOGGLES ───────────────────────────────────────── */}
       {isHeavyMode && (
@@ -827,9 +897,14 @@ export default function AdvancedRoutePlanner() {
                 <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Settings className="w-4 h-4" />Cost Parameters</CardTitle></CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <Label className="text-xs flex items-center gap-1"><Fuel className="w-3 h-3" />Fuel Price (₦/litre)</Label>
+                    <Label className="text-xs flex items-center gap-1">
+                      {vehicleFuelType === "petrol" ? <Droplets className="w-3 h-3 text-green-400" /> : <Fuel className="w-3 h-3 text-amber-400" />}
+                      {vehicleFuelType === "petrol" ? "Petrol (PMS)" : vehicleFuelType === "diesel" ? "Diesel (AGO)" : "Fuel"} Price (₦/litre)
+                    </Label>
                     <Input type="number" value={fuelPrice} onChange={(e) => setFuelPrice(Number(e.target.value))} className="h-8 text-xs" min={0} />
-                    <p className="text-[10px] text-muted-foreground">Current diesel: ~₦1,200. No upper limit.</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {vehicleFuelType === "petrol" ? "PMS ~₦897 (NNPC retail). Editable." : vehicleFuelType === "diesel" ? "AGO ~₦1,200 (NNPC retail). Editable." : "No upper limit."}
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <Label className="text-xs flex items-center gap-1"><DollarSign className="w-3 h-3" />Driver Rate (₦)</Label>
@@ -946,9 +1021,14 @@ export default function AdvancedRoutePlanner() {
             <Card><CardContent className="py-16 text-center text-muted-foreground"><Route className="w-10 h-10 mx-auto mb-3 opacity-30" /><p>No routes calculated yet. Go to Route Planner tab.</p></CardContent></Card>
           ) : (
             <div className="space-y-4">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
                 <Truck className="w-4 h-4" />
                 <span>Results for <strong>{getVehicleDisplayName(transportMode)}</strong> - Heavy Haul Mode Confidence scoring</span>
+                {returnToBase && lastOutboundKm > 0 && (
+                  <Badge variant="outline" className="ml-2 text-xs border-primary/40 text-primary gap-1">
+                    ↗ {lastOutboundKm}km outbound · ↙ {lastOutboundKm}km return · {lastOutboundKm * 2}km total
+                  </Badge>
+                )}
               </div>
               {routeOptions.map((opt, i) => (
                 <Card
@@ -997,7 +1077,7 @@ export default function AdvancedRoutePlanner() {
 
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                       {[
-                        { icon: Navigation, label: "Distance", value: `${opt.distanceKm} km` },
+                        { icon: Navigation, label: "Distance", value: returnToBase && lastOutboundKm > 0 ? `${opt.distanceKm} km (↗${Math.round(opt.distanceKm/2)} + ↙${Math.round(opt.distanceKm/2)})` : `${opt.distanceKm} km` },
                         { icon: Clock, label: "Travel Time", value: `${opt.durationHours} hrs` },
                         { icon: Clock, label: "ETA (+2h/drop)", value: `${opt.estimatedDeliveryDays === 0.5 ? "~12h" : opt.estimatedDeliveryDays + (opt.estimatedDeliveryDays === 1 ? " day" : " days")}` },
                         { icon: AlertTriangle, label: "SLA Risk", value: opt.slaRisk.charAt(0).toUpperCase() + opt.slaRisk.slice(1), color: opt.slaRisk === "low" ? "text-green-500" : opt.slaRisk === "medium" ? "text-yellow-500" : "text-destructive" },
