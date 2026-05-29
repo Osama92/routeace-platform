@@ -110,7 +110,7 @@ const TRANSPORT_MODES: VehicleMode[] = [
   },
   {
     id: "van", label: "Van / Bus", icon: Bus,
-    speed: 65, fuelPerKm: 0.12, maxWeight: 3500, maxVolumeCbm: 8, maxDrops: 20,
+    speed: 65, fuelPerKm: 0.14, maxWeight: 3500, maxVolumeCbm: 8, maxDrops: 20,
     color: "text-blue-500", desc: "3.5T capacity · Urban",
     axleConfig: "4-wheel", gvwTonnage: 3.5, isLongHaulCapable: false,
     maintenancePerKm: 8, vehicleClass: "van", restIntervalHrs: 5,
@@ -118,7 +118,7 @@ const TRANSPORT_MODES: VehicleMode[] = [
   },
   {
     id: "15t_medium_heavy", label: "15T Medium Heavy", icon: Truck,
-    speed: 55, fuelPerKm: 0.22, maxWeight: 15000, maxVolumeCbm: 40, maxDrops: 7,
+    speed: 55, fuelPerKm: 0.34, maxWeight: 15000, maxVolumeCbm: 40, maxDrops: 7,
     color: "text-orange-500", desc: "15T · Regional haul · 6-Wheeler",
     axleConfig: "6-wheel (tandem)", gvwTonnage: 15, isLongHaulCapable: true,
     maintenancePerKm: 18, vehicleClass: "15T_medium_heavy", restIntervalHrs: 4,
@@ -126,7 +126,7 @@ const TRANSPORT_MODES: VehicleMode[] = [
   },
   {
     id: "20t_rigid_hgv", label: "20T Rigid HGV", icon: Truck,
-    speed: 50, fuelPerKm: 0.30, maxWeight: 20000, maxVolumeCbm: 55, maxDrops: 5,
+    speed: 50, fuelPerKm: 0.42, maxWeight: 20000, maxVolumeCbm: 55, maxDrops: 5,
     color: "text-red-500", desc: "20T · Long haul · 8-Wheeler HGV",
     axleConfig: "8-wheel rigid", gvwTonnage: 20, isLongHaulCapable: true,
     maintenancePerKm: 24, vehicleClass: "20T_rigid_hgv", restIntervalHrs: 4,
@@ -134,7 +134,7 @@ const TRANSPORT_MODES: VehicleMode[] = [
   },
   {
     id: "heavy_truck", label: "30T Heavy Truck", icon: Truck,
-    speed: 60, fuelPerKm: 0.35, maxWeight: 30000, maxVolumeCbm: 80, maxDrops: 5,
+    speed: 60, fuelPerKm: 0.50, maxWeight: 30000, maxVolumeCbm: 80, maxDrops: 5,
     color: "text-purple-500", desc: "30T capacity · Long haul",
     axleConfig: "10-wheel articulated", gvwTonnage: 30, isLongHaulCapable: true,
     maintenancePerKm: 30, vehicleClass: "heavy_truck", restIntervalHrs: 4,
@@ -234,23 +234,55 @@ const MOCK_COMPLIANCE: Record<string, ComplianceItem[]> = {};
 
 
 // ─── ROUTE GENERATION ─────────────────────────────────────────────────────────
-// Weighted confidence model per route type - no random values
-// Score = Traffic(25%) + SLA(25%) + Driver(15%) + Fuel(15%) + Border(20%)
+// Weighted confidence model — Score = Traffic(25%) + SLA(25%) + Driver(15%) + Fuel(15%) + Border(20%)
+// Base scores per algorithm type, then adjusted by real route factors
 const CORRIDOR_BASELINES: Record<string, { traffic: number; sla: number; driver: number; fuel: number; border: number }> = {
   "AI Optimized Route":  { traffic: 84, sla: 88, driver: 82, fuel: 80, border: 90 },
   "Shortest Distance":   { traffic: 72, sla: 76, driver: 79, fuel: 85, border: 88 },
   "Fastest Route":       { traffic: 68, sla: 71, driver: 80, fuel: 62, border: 86 },
 };
 
-function computeConfidenceScore(name: string): number {
+function computeConfidenceScore(
+  name: string,
+  distanceKm: number,
+  numDrops: number,
+  cargoWeight: number,
+  maxWeight: number,
+  hasComplianceIssue: boolean,
+  longHaul: boolean,
+): number {
   const b = CORRIDOR_BASELINES[name] || { traffic: 75, sla: 75, driver: 75, fuel: 75, border: 75 };
-  return Math.min(99, Math.round(
+  let score = Math.round(
     b.traffic * 0.25 +
     b.sla     * 0.25 +
     b.driver  * 0.15 +
     b.fuel    * 0.15 +
     b.border  * 0.20
-  ));
+  );
+
+  // ── Distance penalty: longer route = more uncertainty
+  if (distanceKm > 600)      score -= 10;
+  else if (distanceKm > 400) score -= 6;
+  else if (distanceKm > 200) score -= 3;
+
+  // ── Stop complexity: more drops = more execution risk
+  if (numDrops > 5)      score -= 7;
+  else if (numDrops > 2) score -= 3;
+
+  // ── Load factor: near or over max weight increases risk
+  if (cargoWeight > 0 && maxWeight > 0) {
+    const loadFactor = cargoWeight / maxWeight;
+    if (loadFactor >= 1.0)  score -= 12; // overloaded
+    else if (loadFactor >= 0.9) score -= 5;
+  }
+
+  // ── Long haul adds HOS / rest stop / border uncertainty
+  if (longHaul && distanceKm > 400) score -= 5;
+
+  // ── Compliance issues are a hard penalty
+  if (hasComplianceIssue) score -= 18;
+
+  return Math.min(99, Math.max(25, score));
 }
 
 // ETA formula: (travel_hours + drops × waitPerDrop) / 24 → round to nearest 0.5, min 0.5
@@ -344,7 +376,11 @@ const generateRouteOptions = (
     const profitMargin = Math.round((routeProfit / estimatedRevenue) * 100);
 
     // ── REAL WEIGHTED CONFIDENCE (no random) ────────────────────────────────
-    const confidence = computeConfidenceScore(name);
+    const confidence = computeConfidenceScore(
+      name, dist, numDrops, cargoWeight, mode.maxWeight,
+      false, // compliance handled outside generateRouteOptions
+      longHaulMode,
+    );
     const slaRisk: "low" | "medium" | "high" = confidence > 85 ? "low" : confidence > 70 ? "medium" : "high";
 
     const actualWeight = cargoWeight || (mode.maxWeight * 0.7);
