@@ -339,8 +339,11 @@ const DynamicPricingEngine = () => {
                 </option>
               ))}
             </select>
-            {selectedLibRoute && (
+            {selectedLibRoute && (selectedLibRoute as any).distance_km > 0 && (
               <p className="text-[10px] text-success">✓ Distance auto-filled: {(selectedLibRoute as any).distance_km} km</p>
+            )}
+            {selectedLibRoute && !((selectedLibRoute as any).distance_km > 0) && (
+              <p className="text-[10px] text-amber-500">⚠ No saved distance for this route — enter manually or recalculate in Route Planner first</p>
             )}
           </div>
 

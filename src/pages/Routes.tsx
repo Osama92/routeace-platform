@@ -901,7 +901,11 @@ const RoutesPage = () => {
                     {route.estimated_duration_hours ? (
                       <div className="flex items-center gap-2 text-muted-foreground">
                         <Clock className="w-4 h-4" />
-                        {route.estimated_duration_hours}h
+                        {route.estimated_duration_hours >= 24
+                          ? `${(route.estimated_duration_hours / 24).toFixed(1)} days`
+                          : route.estimated_duration_hours >= 1
+                          ? `${route.estimated_duration_hours}h`
+                          : `${Math.round(route.estimated_duration_hours * 60)} min`}
                       </div>
                     ) : (
                       <span className="text-muted-foreground/50">-</span>

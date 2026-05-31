@@ -15,7 +15,7 @@ import { useState } from "react";
 import {
   AlertTriangle, CheckCircle2, XCircle, Clock, FileText,
   Package, Truck, AlertCircle, Fuel, Moon, Weight,
-  Flame, ChevronDown, ChevronUp, Info, Ship, Timer, BadgeCheck, Edit3,
+  Flame, ChevronDown, ChevronUp, Info, Ship, Timer, BadgeCheck, Edit3, Factory,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
