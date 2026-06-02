@@ -57,7 +57,7 @@ const CreateDispatchDialog = () => {
   const { data: drivers } = useQuery({
     queryKey: ["ops-drivers-list"],
     queryFn: async () => {
-      const { data } = await supabase.from("drivers").select("id, full_name").eq("status", "active");
+      const { data } = await supabase.from("drivers").select("id, full_name, status").in("status", ["available", "active"]).order("full_name");
       return data || [];
     },
     enabled: open,
@@ -66,7 +66,7 @@ const CreateDispatchDialog = () => {
   const { data: vehicles } = useQuery({
     queryKey: ["ops-vehicles-list"],
     queryFn: async () => {
-      const { data } = await supabase.from("vehicles").select("id, registration_number, truck_type").eq("status", "active");
+      const { data } = await supabase.from("vehicles").select("id, registration_number, truck_type, status").in("status", ["available", "active"]).order("registration_number");
       return data || [];
     },
     enabled: open,
@@ -278,8 +278,9 @@ const CreateDispatchDialog = () => {
             <div>
               <Label>Assign Driver</Label>
               <Select value={form.driver_id} onValueChange={(v) => setForm((p) => ({ ...p, driver_id: v }))}>
-                <SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={drivers?.length ? "Select driver" : "No available drivers"} /></SelectTrigger>
                 <SelectContent>
+                  {drivers?.length === 0 && <SelectItem value="_none" disabled>No available drivers</SelectItem>}
                   {drivers?.map((d) => <SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>)}
                 </SelectContent>
               </Select>
@@ -287,9 +288,10 @@ const CreateDispatchDialog = () => {
             <div>
               <Label>Assign Vehicle</Label>
               <Select value={form.vehicle_id} onValueChange={(v) => setForm((p) => ({ ...p, vehicle_id: v }))}>
-                <SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={vehicles?.length ? "Select vehicle" : "No available vehicles"} /></SelectTrigger>
                 <SelectContent>
-                  {vehicles?.map((v) => <SelectItem key={v.id} value={v.id}>{v.registration_number} ({v.truck_type})</SelectItem>)}
+                  {vehicles?.length === 0 && <SelectItem value="_none" disabled>No available vehicles</SelectItem>}
+                  {vehicles?.map((v) => <SelectItem key={v.id} value={v.id}>{v.registration_number}{v.truck_type ? ` (${v.truck_type})` : ""}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

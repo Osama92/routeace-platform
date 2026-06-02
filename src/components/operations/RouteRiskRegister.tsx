@@ -109,7 +109,7 @@ const RouteRiskRegister = () => {
   const { data: drivers } = useQuery({
     queryKey: ["risk-drivers"],
     queryFn: async () => {
-      const { data } = await supabase.from("drivers").select("id, full_name").eq("status", "active");
+      const { data } = await supabase.from("drivers").select("id, full_name").in("status", ["available", "active"]).order("full_name");
       return data || [];
     },
     enabled: dialogOpen,
@@ -118,7 +118,7 @@ const RouteRiskRegister = () => {
   const { data: vehicles } = useQuery({
     queryKey: ["risk-vehicles"],
     queryFn: async () => {
-      const { data } = await supabase.from("vehicles").select("id, registration_number").eq("status", "active");
+      const { data } = await supabase.from("vehicles").select("id, registration_number").in("status", ["available", "active"]).order("registration_number");
       return data || [];
     },
     enabled: dialogOpen,
