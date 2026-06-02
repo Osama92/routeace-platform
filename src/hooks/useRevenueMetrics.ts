@@ -58,68 +58,76 @@ function startOfYear(): string {
 }
 
 export function useRevenueMetrics(): RevenueMetrics {
-  const { user } = useAuth();
+  const { user, organizationId } = useAuth();
   const { config } = useTenantConfig();
 
-  // All invoices
+  // Invoices scoped to this org
   const { data: invoices, isLoading: invLoading } = useQuery({
-    queryKey: ["revenue-invoices", user?.id],
+    queryKey: ["revenue-invoices", organizationId],
     queryFn: async () => {
+      if (!organizationId) return [];
       const { data } = await supabase
         .from("invoices")
         .select("id, total_amount, status, created_at, invoice_date, is_posted")
+        .eq("organization_id", organizationId)
         .order("created_at", { ascending: false })
         .limit(1000);
       return data || [];
     },
-    enabled: !!user,
+    enabled: !!user && !!organizationId,
     staleTime: 60_000,
   });
 
-  // AI credit transactions
+  // AI credit transactions scoped to this org's tenant_config
   const { data: aiTxns, isLoading: aiLoading } = useQuery({
-    queryKey: ["revenue-ai-credits", user?.id],
+    queryKey: ["revenue-ai-credits", organizationId],
     queryFn: async () => {
+      if (!organizationId) return [];
       const { data } = await supabase
         .from("ai_credit_transactions")
         .select("id, credits_consumed, credits_purchased, created_at, os_context")
+        .eq("organization_id", organizationId)
         .order("created_at", { ascending: false })
         .limit(500);
       return data || [];
     },
-    enabled: !!user,
+    enabled: !!user && !!organizationId,
     staleTime: 60_000,
   });
 
-  // Completed dispatches for per-drop revenue
+  // Completed dispatches scoped to this org
   const { data: deliveries, isLoading: delLoading } = useQuery({
-    queryKey: ["revenue-deliveries", user?.id],
+    queryKey: ["revenue-deliveries", organizationId],
     queryFn: async () => {
+      if (!organizationId) return [];
       const { data } = await supabase
         .from("dispatches")
         .select("id, cost, status, created_at, total_drops")
+        .eq("organization_id", organizationId)
         .in("status", ["delivered", "closed"])
         .order("created_at", { ascending: false })
         .limit(1000);
       return data || [];
     },
-    enabled: !!user,
+    enabled: !!user && !!organizationId,
     staleTime: 60_000,
   });
 
-  // Wallet top-ups (subscription payments)
+  // Wallet top-ups scoped to this org
   const { data: walletTxns, isLoading: walletLoading } = useQuery({
-    queryKey: ["revenue-wallet-txns", user?.id],
+    queryKey: ["revenue-wallet-txns", organizationId],
     queryFn: async () => {
+      if (!organizationId) return [];
       const { data } = await supabase
         .from("wallet_transactions")
         .select("id, amount, transaction_type, created_at")
+        .eq("organization_id", organizationId)
         .eq("transaction_type", "top_up")
         .order("created_at", { ascending: false })
         .limit(500);
       return data || [];
     },
-    enabled: !!user,
+    enabled: !!user && !!organizationId,
     staleTime: 60_000,
   });
 

@@ -17,6 +17,7 @@ import {
 } from "recharts";
 import { Users, TrendingUp, AlertTriangle, CheckCircle, Calendar, Target } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface RevenueMetrics {
   repeatClientPercentage: number;
@@ -50,14 +51,16 @@ const RevenueInsightsPanel = () => {
   const [metrics, setMetrics] = useState<RevenueMetrics | null>(null);
   const [clientRevenues, setClientRevenues] = useState<ClientRevenue[]>([]);
   const [loading, setLoading] = useState(true);
+  const { organizationId } = useAuth();
 
   useEffect(() => {
-    fetchRevenueInsights();
-  }, []);
+    if (organizationId) fetchRevenueInsights();
+  }, [organizationId]);
 
   const fetchRevenueInsights = async () => {
+    if (!organizationId) return;
     try {
-      // Fetch all paid invoices with customer data
+      // Fetch paid invoices scoped to this org
       const { data: invoices } = await supabase
         .from("invoices")
         .select(`
@@ -67,13 +70,15 @@ const RevenueInsightsPanel = () => {
           created_at,
           customers (id, company_name, created_at)
         `)
-        .eq("status", "paid");
+        .eq("status", "paid")
+        .eq("organization_id", organizationId);
 
-      // Fetch dispatches for contract length calculation
+      // Fetch dispatches scoped to this org
       const { data: dispatches } = await supabase
         .from("dispatches")
         .select("id, customer_id, created_at")
-        .eq("status", "delivered");
+        .eq("status", "delivered")
+        .eq("organization_id", organizationId);
 
       if (!invoices) {
         setMetrics(null);
