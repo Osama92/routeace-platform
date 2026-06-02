@@ -42,39 +42,47 @@ const CreateDispatchDialog = () => {
   });
 
   const { data: routes } = useQuery({
-    queryKey: ["ops-routes-list"],
+    queryKey: ["ops-routes-list", organizationId],
     queryFn: async () => {
-      const { data } = await supabase.from("routes").select("id, name, origin, destination, distance_km").eq("is_active", true).order("name");
+      if (!organizationId) return [];
+      const { data } = await supabase.from("routes").select("id, name, origin, destination, distance_km")
+        .eq("is_active", true).eq("organization_id", organizationId).order("name");
       return data || [];
     },
-    enabled: open,
+    enabled: open && !!organizationId,
   });
 
   const { data: customers } = useQuery({
-    queryKey: ["ops-customers-list"],
+    queryKey: ["ops-customers-list", organizationId],
     queryFn: async () => {
-      const { data } = await supabase.from("customers").select("id, company_name").order("company_name");
+      if (!organizationId) return [];
+      const { data } = await supabase.from("customers").select("id, company_name")
+        .eq("organization_id", organizationId).order("company_name");
       return data || [];
     },
-    enabled: open,
+    enabled: open && !!organizationId,
   });
 
   const { data: drivers } = useQuery({
-    queryKey: ["ops-drivers-list"],
+    queryKey: ["ops-drivers-list", organizationId],
     queryFn: async () => {
-      const { data } = await supabase.from("drivers").select("id, full_name, status").in("status", ["available", "active"]).order("full_name");
+      if (!organizationId) return [];
+      const { data } = await supabase.from("drivers").select("id, full_name, status")
+        .eq("organization_id", organizationId).in("status", ["available", "active"]).order("full_name");
       return data || [];
     },
-    enabled: open,
+    enabled: open && !!organizationId,
   });
 
   const { data: vehicles } = useQuery({
-    queryKey: ["ops-vehicles-list"],
+    queryKey: ["ops-vehicles-list", organizationId],
     queryFn: async () => {
-      const { data } = await supabase.from("vehicles").select("id, registration_number, truck_type, status").in("status", ["available", "active"]).order("registration_number");
+      if (!organizationId) return [];
+      const { data } = await supabase.from("vehicles").select("id, registration_number, truck_type, status")
+        .eq("organization_id", organizationId).in("status", ["available", "active"]).order("registration_number");
       return data || [];
     },
-    enabled: open,
+    enabled: open && !!organizationId,
   });
 
   const { data: transporters } = useQuery({
