@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { Plus, Loader2 } from "lucide-react";
 import { isQuotaError, emitQuotaExceeded, resourceFromError } from "@/lib/quotaErrors";
+import { AddressAutocomplete } from "@/components/shared/AddressAutocomplete";
 
 const CreateDispatchDialog = () => {
   const { toast } = useToast();
@@ -23,7 +24,11 @@ const CreateDispatchDialog = () => {
     customer_id: "",
     route_id: "",
     pickup_address: "",
+    pickup_lat: null as number | null,
+    pickup_lng: null as number | null,
     delivery_address: "",
+    delivery_lat: null as number | null,
+    delivery_lng: null as number | null,
     cargo_description: "",
     cargo_weight_kg: "",
     priority: "normal",
@@ -142,7 +147,7 @@ const CreateDispatchDialog = () => {
       queryClient.invalidateQueries({ queryKey: ["ops-today-dispatches"] });
       queryClient.invalidateQueries({ queryKey: ["waybill-dispatches"] });
       setOpen(false);
-      setForm({ customer_id: "", route_id: "", pickup_address: "", delivery_address: "", cargo_description: "", cargo_weight_kg: "", priority: "normal", scheduled_pickup: "", vehicle_id: "", driver_id: "", transporter_id: "", distance_km: "", diesel_liters: "", cost: "" });
+      setForm({ customer_id: "", route_id: "", pickup_address: "", pickup_lat: null, pickup_lng: null, delivery_address: "", delivery_lat: null, delivery_lng: null, cargo_description: "", cargo_weight_kg: "", priority: "normal", scheduled_pickup: "", vehicle_id: "", driver_id: "", transporter_id: "", distance_km: "", diesel_liters: "", cost: "" });
       setExtraDrops([]);
     } catch (err: any) {
       if (isQuotaError(err)) {
@@ -203,11 +208,21 @@ const CreateDispatchDialog = () => {
           </div>
           <div>
             <Label>Pickup Address *</Label>
-            <Input value={form.pickup_address} onChange={(e) => setForm((p) => ({ ...p, pickup_address: e.target.value }))} placeholder="Enter pickup location" />
+            <AddressAutocomplete
+              value={form.pickup_address}
+              onChange={(v) => setForm((p) => ({ ...p, pickup_address: v }))}
+              onPlaceSelect={(pl) => setForm((p) => ({ ...p, pickup_address: pl.formattedAddress, pickup_lat: pl.lat, pickup_lng: pl.lng }))}
+              placeholder="Search pickup location"
+            />
           </div>
           <div>
             <Label>Delivery Address *</Label>
-            <Input value={form.delivery_address} onChange={(e) => setForm((p) => ({ ...p, delivery_address: e.target.value }))} placeholder="Enter delivery location" />
+            <AddressAutocomplete
+              value={form.delivery_address}
+              onChange={(v) => setForm((p) => ({ ...p, delivery_address: v }))}
+              onPlaceSelect={(pl) => setForm((p) => ({ ...p, delivery_address: pl.formattedAddress, delivery_lat: pl.lat, delivery_lng: pl.lng }))}
+              placeholder="Search delivery location"
+            />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

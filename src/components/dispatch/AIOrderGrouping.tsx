@@ -100,7 +100,7 @@ const VEHICLE_CONFIGS = [
 
 // Simple distance calculation (Haversine approximation)
 const calculateDistance = (lat1?: number, lng1?: number, lat2?: number, lng2?: number): number => {
-  if (!lat1 || !lng1 || !lat2 || !lng2) return Math.random() * 50 + 10; // Mock distance
+  if (!lat1 || !lng1 || !lat2 || !lng2) return 30; // default when coords unavailable
   const R = 6371; // Earth's radius in km
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLng = (lng2 - lng1) * Math.PI / 180;
@@ -187,7 +187,7 @@ const AIOrderGrouping = ({
             // Finalize current group
             if (currentGroup.length > 0) {
               const finalVehicle = selectVehicle(currentWeight, currentVolume, currentGroup.length);
-              const estimatedDistance = 50 + Math.random() * 150;
+              const estimatedDistance = calculateDistance(currentGroup[0]?.deliveryLat, currentGroup[0]?.deliveryLng, currentGroup[currentGroup.length - 1]?.deliveryLat, currentGroup[currentGroup.length - 1]?.deliveryLng) || 80;
               const travelHours = estimatedDistance / 45;
               const waitHours = currentGroup.length * 2;
               const totalHours = travelHours + waitHours;
@@ -202,8 +202,8 @@ const AIOrderGrouping = ({
                 totalVolume: currentVolume,
                 estimatedDistance: Math.round(estimatedDistance),
                 estimatedDurationDays: estimatedDays,
-                confidenceScore: 75 + Math.random() * 20,
-                profitMargin: 15 + Math.random() * 15,
+                confidenceScore: Math.min(95, 70 + Math.round((currentWeight / finalVehicle.maxWeight) * 20)),
+                profitMargin: Math.round(15 + (currentGroup.length > 2 ? 5 : 0) + (currentWeight / finalVehicle.maxWeight) * 10),
                 utilizationPercent: Math.round((currentWeight / finalVehicle.maxWeight) * 100),
                 groupingReasons: [
                   `${currentGroup.length} orders clustered within ${area}`,
@@ -272,9 +272,9 @@ const AIOrderGrouping = ({
                          newDropCount <= group.recommendedVehicle.maxDrops;
           
           if (canFit) {
-            const incrementalDistance = 5 + Math.random() * 20;
+            const incrementalDistance = 12; // avg urban detour
             const incrementalTime = incrementalDistance / 45 / 24 + (2 / 24); // + 2hr wait
-            const newConfidence = group.confidenceScore - (Math.random() * 5);
+            const newConfidence = Math.max(60, group.confidenceScore - 3);
             const profitImpact = order.revenue * 0.2 - (incrementalDistance * 50);
             
             let recommendation: ExtraDropOpportunity["recommendation"];

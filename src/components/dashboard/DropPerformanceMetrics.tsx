@@ -16,16 +16,24 @@ interface MetricsData {
 }
 
 const DropPerformanceMetrics = ({ data }: { data?: MetricsData }) => {
-  const metrics = data || {
-    costPerDrop: 3200,
-    revenuePerKm: 450,
-    driverProductivity: 87,
-    slaCompliance: 94,
-    fleetROI: 22,
-    fuelLeakage: 3.2,
-    tripProfitability: 78,
-    totalDrops: 1247,
-  };
+  if (!data) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <BarChart3 className="w-4 h-4 text-primary" />
+            Drop Performance Metrics
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground text-center py-6">
+            Metrics will appear once dispatches are created and completed.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+  const metrics = data;
 
   const items = [
     { label: "Cost/Drop", value: `₦${metrics.costPerDrop.toLocaleString()}`, icon: Package, color: "text-primary bg-primary/10" },

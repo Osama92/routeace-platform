@@ -259,8 +259,8 @@ const DispatchRoutePlanner = ({
     } catch (error: any) {
       console.error("Route optimization error:", error);
       
-      // Fallback calculation with mock data
-      const estimatedDistance = 450 + Math.random() * 300;
+      // Fallback calculation (API unavailable)
+      const estimatedDistance = 150 + stops.length * 40;
       const estimatedTravelHours = estimatedDistance / 50;
       const totalDrops = stops.length + 1;
       const estimatedDays = calculateETADays(estimatedTravelHours, totalDrops, avgWaitTime);
