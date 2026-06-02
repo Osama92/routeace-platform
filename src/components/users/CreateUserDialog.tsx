@@ -67,6 +67,11 @@ export default function CreateUserDialog({
       toast({ title: "Missing fields", description: "Email, full name and role are required.", variant: "destructive" });
       return;
     }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      toast({ title: "Invalid email address", description: `"${email}" is not a valid email. Please enter a proper email like user@company.com`, variant: "destructive" });
+      return;
+    }
     setSubmitting(true);
     try {
       const { data, error } = await supabase.functions.invoke("admin-create-user", {
