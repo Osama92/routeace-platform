@@ -226,8 +226,8 @@ const DispatchPage = () => {
   });
   const [editDropoffs, setEditDropoffs] = useState<Dropoff[]>([]);
 
-  const canManage = hasAnyRole(["admin", "operations", "dispatcher"]);
-  const canUpdateStatus = hasAnyRole(["admin", "operations", "dispatcher", "support"]);
+  const canManage = hasAnyRole(["super_admin", "org_admin", "admin", "operations", "dispatcher"]);
+  const canUpdateStatus = hasAnyRole(["super_admin", "org_admin", "admin", "operations", "dispatcher", "support"]);
 
   const fetchData = async () => {
     try {
