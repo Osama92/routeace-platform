@@ -19,13 +19,17 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
+      - name: Link production Supabase project
+        run: npx supabase link --project-ref mbybrzggrpyhvcnxhlua
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD_PROD }}
+
       - name: Push migrations to production
         run: npx supabase db push --yes
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD_PROD }}
-        working-directory: .
-        # Linked project is mbybrzggrpyhvcnxhlua (set in supabase/config.toml)
 
   deploy:
     name: Deploy to Netlify (production)
