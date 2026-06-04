@@ -10,7 +10,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Download, CloudUpload, Loader2, FileText, Printer, Lock, Unlock, Coins } from "lucide-react";
+import { Download, CloudUpload, Loader2, FileText, Printer, Lock, Unlock, Coins, ChevronDown } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { format } from "date-fns";
 import InvoiceStablecoinPayment from "@/components/stablecoin/InvoiceStablecoinPayment";
 import jsPDF from "jspdf";
@@ -19,6 +25,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useCompanySettings } from "@/hooks/useCompanySettings";
 import { useAuth } from "@/contexts/AuthContext";
+import { useActiveErp } from "@/hooks/useActiveErp";
 
 interface Invoice {
   id: string;
@@ -90,6 +97,7 @@ export const InvoicePreviewDialog = ({ invoice, open, onClose, onStatusUpdate }:
   const { toast } = useToast();
   const { settings: companySettings, forceRefresh } = useCompanySettings();
   const { user, hasAnyRole } = useAuth();
+  const { erps: activeErps, primaryErp } = useActiveErp();
 
   useEffect(() => { if (open) forceRefresh(); }, [open, forceRefresh]);
 
@@ -268,15 +276,24 @@ export const InvoicePreviewDialog = ({ invoice, open, onClose, onStatusUpdate }:
     window.open(doc.output("bloburl"), "_blank");
   };
 
-  const handleSyncToZoho = async () => {
+  const handleSyncToErp = async (erp?: typeof primaryErp) => {
+    const target = erp ?? primaryErp;
+    if (!target) {
+      toast({ title: "No ERP Connected", description: "Go to Settings → ERP Integrations to connect an accounting system.", variant: "destructive" });
+      return;
+    }
     setSyncing(true);
     try {
-      const { data, error } = await supabase.functions.invoke("zoho-sync", { body: { action: "sync_invoice", invoiceId: invoice.id } });
+      const { data, error } = await supabase.functions.invoke(target.syncFn, {
+        body: { action: "sync_invoice", invoiceId: invoice.id },
+      });
       if (error) throw error;
-      if (data.success) { toast({ title: "Synced to Zoho", description: `Invoice ${invoice.invoice_number} synced` }); onStatusUpdate?.(); }
-      else throw new Error(data.error);
+      if (data?.success) {
+        toast({ title: `Synced to ${target.name}`, description: `Invoice ${invoice.invoice_number} pushed successfully` });
+        onStatusUpdate?.();
+      } else throw new Error(data?.error ?? "Sync failed");
     } catch (error: any) {
-      toast({ title: "Sync Error", description: error.message || "Failed to sync", variant: "destructive" });
+      toast({ title: "Sync Error", description: error.message || `Failed to sync to ${target.name}`, variant: "destructive" });
     } finally { setSyncing(false); }
   };
 
@@ -418,7 +435,9 @@ export const InvoicePreviewDialog = ({ invoice, open, onClose, onStatusUpdate }:
           )}
 
           {invoice.zoho_synced_at && (
-            <div className="mt-4 text-sm text-muted-foreground">✓ Synced to Zoho on {format(new Date(invoice.zoho_synced_at), "PPP")}</div>
+            <div className="mt-4 text-sm text-muted-foreground">
+              ✓ Synced to {primaryErp?.name ?? "Zoho Books"} on {format(new Date(invoice.zoho_synced_at), "PPP")}
+            </div>
           )}
         </div>
 
@@ -434,10 +453,32 @@ export const InvoicePreviewDialog = ({ invoice, open, onClose, onStatusUpdate }:
             {downloading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
             Download PDF
           </Button>
-          <Button onClick={handleSyncToZoho} disabled={syncing}>
-            {syncing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CloudUpload className="w-4 h-4 mr-2" />}
-            Sync to Zoho
-          </Button>
+          {activeErps.length === 0 ? (
+            <Button variant="outline" onClick={() => window.location.href = "/erp-integrations"} disabled={syncing}>
+              <CloudUpload className="w-4 h-4 mr-2" />Connect ERP
+            </Button>
+          ) : activeErps.length === 1 ? (
+            <Button onClick={() => handleSyncToErp(activeErps[0])} disabled={syncing}>
+              {syncing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CloudUpload className="w-4 h-4 mr-2" />}
+              Sync to {activeErps[0].name}
+            </Button>
+          ) : (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button disabled={syncing}>
+                  {syncing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CloudUpload className="w-4 h-4 mr-2" />}
+                  Sync to ERP <ChevronDown className="w-3 h-3 ml-1" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {activeErps.map(erp => (
+                  <DropdownMenuItem key={erp.id} onClick={() => handleSyncToErp(erp)}>
+                    <span className="mr-2">{erp.logo}</span>{erp.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           {invoice.status !== "paid" && (
             <Button variant="outline" onClick={() => setShowStablecoinPayment(true)}>
               <Coins className="w-4 h-4 mr-2" />Pay with Crypto

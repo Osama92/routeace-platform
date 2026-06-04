@@ -14,33 +14,79 @@ interface ZohoTokenResponse {
   expires_in: number;
 }
 
-async function getZohoAccessToken(): Promise<string> {
-  const clientId = Deno.env.get('ZOHO_CLIENT_ID');
-  const clientSecret = Deno.env.get('ZOHO_CLIENT_SECRET');
-  const refreshToken = Deno.env.get('ZOHO_REFRESH_TOKEN');
+interface ZohoCreds {
+  clientId: string;
+  clientSecret: string;
+  refreshToken: string;
+  zohoOrgId?: string; // Zoho organization_id (different from RouteAce org)
+}
 
-  if (!clientId || !clientSecret || !refreshToken) {
-    throw new Error('Missing Zoho credentials');
+async function getZohoCredentials(
+  admin: ReturnType<typeof createClient>,
+  routeaceOrgId: string,
+): Promise<ZohoCreds> {
+  // 1. Try org-specific config from integration_configs
+  const { data: cfg } = await admin
+    .from("integration_configs" as any)
+    .select("id, config")
+    .eq("organization_id", routeaceOrgId)
+    .eq("provider", "zoho_books")
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (cfg) {
+    const { data: secrets } = await admin.rpc("get_integration_config_secrets", {
+      _integration_config_id: (cfg as any).id,
+    });
+    const s = (secrets ?? {}) as Record<string, string>;
+    const cfgData = (cfg as any).config ?? {};
+    if (s.client_id && s.client_secret && s.refresh_token) {
+      return {
+        clientId: s.client_id,
+        clientSecret: s.client_secret,
+        refreshToken: s.refresh_token,
+        zohoOrgId: s.zoho_organization_id ?? cfgData.organization_id,
+      };
+    }
+    // OAuth flow stores tokens as access_token/refresh_token
+    if (s.refresh_token && (cfgData.client_id || Deno.env.get("ZOHO_CLIENT_ID"))) {
+      return {
+        clientId: cfgData.client_id ?? Deno.env.get("ZOHO_CLIENT_ID") ?? "",
+        clientSecret: cfgData.client_secret ?? Deno.env.get("ZOHO_CLIENT_SECRET") ?? "",
+        refreshToken: s.refresh_token,
+        zohoOrgId: s.zoho_organization_id ?? cfgData.organization_id ?? Deno.env.get("ZOHO_ORGANIZATION_ID"),
+      };
+    }
   }
 
+  // 2. Fall back to global env vars (legacy / single-org setups)
+  const clientId = Deno.env.get("ZOHO_CLIENT_ID");
+  const clientSecret = Deno.env.get("ZOHO_CLIENT_SECRET");
+  const refreshToken = Deno.env.get("ZOHO_REFRESH_TOKEN");
+  if (!clientId || !clientSecret || !refreshToken) {
+    throw new Error(
+      "No Zoho credentials found for this organization. Please connect Zoho Books in Settings → ERP Integrations.",
+    );
+  }
+  return { clientId, clientSecret, refreshToken, zohoOrgId: Deno.env.get("ZOHO_ORGANIZATION_ID") };
+}
+
+async function getZohoAccessToken(creds: ZohoCreds): Promise<string> {
   const params = new URLSearchParams({
-    refresh_token: refreshToken,
-    client_id: clientId,
-    client_secret: clientSecret,
-    grant_type: 'refresh_token',
+    refresh_token: creds.refreshToken,
+    client_id: creds.clientId,
+    client_secret: creds.clientSecret,
+    grant_type: "refresh_token",
   });
 
   const response = await fetch(`${ZOHO_ACCOUNTS_URL}/oauth/v2/token`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: params.toString(),
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error('Zoho token error:', errorText);
     throw new Error(`Failed to get Zoho access token (${response.status}): ${errorText}`);
   }
 
@@ -220,7 +266,6 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
-    const organizationId = Deno.env.get('ZOHO_ORGANIZATION_ID');
 
     // JWT Authentication - validate user is logged in
     const authHeader = req.headers.get('Authorization') ?? '';
@@ -260,10 +305,6 @@ serve(async (req) => {
       );
     }
 
-    if (!organizationId) {
-      throw new Error('Missing ZOHO_ORGANIZATION_ID');
-    }
-
     // Resolve caller's tenant org for cross-tenant isolation
     const { data: memberRow } = await authedClient
       .from('organization_members')
@@ -284,7 +325,13 @@ serve(async (req) => {
     const { action, invoiceId, expenseId, direction = 'to_zoho' } = await req.json();
     console.log('Zoho sync request:', { action, invoiceId, expenseId, direction, userId: userData.user.id });
 
-    const accessToken = await getZohoAccessToken();
+    // Load org-specific Zoho credentials (with global env fallback)
+    const creds = await getZohoCredentials(supabase, callerOrgId);
+    const organizationId = creds.zohoOrgId;
+    if (!organizationId) {
+      throw new Error('Zoho Organization ID not found. Please reconnect Zoho Books in ERP Integrations.');
+    }
+    const accessToken = await getZohoAccessToken(creds);
 
     let result: any = { success: true };
 

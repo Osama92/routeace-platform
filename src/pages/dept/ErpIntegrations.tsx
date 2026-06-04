@@ -15,24 +15,24 @@ import { toast } from "sonner";
 import { useSearchParams } from "react-router-dom";
 import { ConnectionGuide } from "./erp-connection-guides";
 
+// Providers with full backend sync support
 const PROVIDERS = [
-  { value: "jaggaer", label: "Jaggaer" },
-  { value: "sap", label: "SAP" },
-  { value: "sap_wms", label: "SAP WMS Cloud" },
-  { value: "oracle", label: "Oracle ERP" },
-  { value: "netsuite", label: "NetSuite" },
-  { value: "odoo", label: "Odoo" },
-  { value: "dynamics365", label: "Microsoft Dynamics 365" },
-  { value: "blue_yonder", label: "Blue Yonder" },
-  { value: "manhattan", label: "Manhattan Associates" },
-  { value: "infor_wms", label: "Infor WMS" },
-  { value: "cin7", label: "Cin7" },
-  { value: "zoho_inventory", label: "Zoho Inventory" },
-  { value: "fishbowl", label: "Fishbowl" },
-  { value: "sage", label: "Sage" },
-  { value: "quickbooks_online", label: "QuickBooks Online" },
-  { value: "xero", label: "Xero" },
-  { value: "zoho_books", label: "Zoho Books" },
+  { value: "zoho_books", label: "Zoho Books", category: "accounting" },
+  { value: "quickbooks_online", label: "QuickBooks Online", category: "accounting" },
+  { value: "xero", label: "Xero", category: "accounting" },
+  { value: "sap", label: "SAP", category: "erp" },
+  { value: "sap_wms", label: "SAP WMS Cloud", category: "erp" },
+  { value: "oracle", label: "Oracle ERP", category: "erp" },
+  { value: "netsuite", label: "NetSuite", category: "erp" },
+  { value: "odoo", label: "Odoo", category: "erp" },
+  { value: "dynamics365", label: "Microsoft Dynamics 365", category: "erp" },
+  { value: "jaggaer", label: "Jaggaer", category: "procurement" },
+  { value: "zoho_inventory", label: "Zoho Inventory", category: "inventory" },
+];
+
+// Providers coming soon — shown in UI but not selectable
+const COMING_SOON_PROVIDERS = [
+  "Sage", "Wave", "Cin7", "Fishbowl", "Blue Yonder", "Manhattan Associates", "Infor WMS",
 ];
 
 // Providers that support one-click OAuth
@@ -245,11 +245,27 @@ export default function ErpIntegrations() {
   const sync = async (provider: string, sync_type: "pull" | "push" | "manual" = "manual") => {
     if (!organizationId) return;
     setSyncing(`${provider}:${sync_type}`);
-    const { data, error } = await supabase.functions.invoke("erp-sync", {
-      body: { organization_id: organizationId, provider, sync_type },
-    });
+
+    // QuickBooks uses dedicated sync functions
+    const fnName = (provider === "quickbooks_online" || provider === "quickbooks")
+      ? (sync_type === "pull" ? "quickbooks-sync-pull" : "quickbooks-sync-push")
+      : "erp-sync";
+    const body = fnName === "erp-sync"
+      ? { organization_id: organizationId, provider, sync_type }
+      : { organization_id: organizationId };
+
+    const { data, error } = await supabase.functions.invoke(fnName, { body });
     setSyncing(null);
     if (error) return toast.error(error.message);
+
+    // Detect stub "not yet implemented" response and show info instead of success
+    if (data?.summary?.note?.includes("not yet implemented") || data?.note?.includes("not yet implemented")) {
+      toast.info(`${provider} sync is coming soon`, {
+        description: "This provider is connected but full sync is not yet available. We'll notify you when it launches.",
+      });
+      return;
+    }
+
     const summary: any = data?.summary ?? {};
     const resources = summary?.resources;
     if (sync_type === "pull" && resources) {
@@ -267,11 +283,11 @@ export default function ErpIntegrations() {
       if (summary.partial) {
         toast.warning(`Partial pull from ${provider}`, { description: desc });
       } else {
-        toast.success(`Pulled from ${provider}`, { description: desc });
+        toast.success(`Pulled from ${provider}`, { description: desc || `${data?.records_processed ?? 0} records` });
       }
     } else {
       const label = sync_type === "pull" ? "Pulled" : sync_type === "push" ? "Pushed" : "Synced";
-      toast.success(`${label} ${data?.status}: ${data?.records_processed ?? 0} records`);
+      toast.success(`${label} from ${provider}`, { description: `${data?.records_processed ?? data?.synced ?? 0} records` });
     }
     load();
   };
@@ -309,7 +325,14 @@ export default function ErpIntegrations() {
                 <Label>Provider</Label>
                 <Select value={form.provider} onValueChange={(v) => setForm({ ...form, provider: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{PROVIDERS.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}</SelectContent>
+                  <SelectContent>
+                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">Accounting</div>
+                    {PROVIDERS.filter(p => p.category === "accounting").map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
+                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 pt-2">ERP</div>
+                    {PROVIDERS.filter(p => p.category === "erp").map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
+                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 pt-2">Procurement & Inventory</div>
+                    {PROVIDERS.filter(p => p.category === "procurement" || p.category === "inventory").map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
+                  </SelectContent>
                 </Select>
               </div>
               {!isOAuthProvider && (
@@ -372,6 +395,21 @@ export default function ErpIntegrations() {
                 </div>
               </>
             )}
+          </CardContent>
+        </Card>
+
+        {/* Coming Soon */}
+        <Card className="border-dashed border-muted-foreground/30">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm text-muted-foreground">Coming Soon</CardTitle>
+            <CardDescription className="text-xs">These platforms will be supported in a future release. Connect your platform above to request prioritisation.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {COMING_SOON_PROVIDERS.map(name => (
+                <span key={name} className="px-2.5 py-1 text-xs rounded-full bg-muted text-muted-foreground border border-muted-foreground/20">{name}</span>
+              ))}
+            </div>
           </CardContent>
         </Card>
 
