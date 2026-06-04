@@ -25,6 +25,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +49,7 @@ import {
   TrendingUp,
   AlertTriangle,
   ArrowUpRight,
+  ExternalLink,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -100,7 +104,7 @@ const InvoicesPage = () => {
   const { hasAnyRole } = useAuth();
 
   const canManage = hasAnyRole(["admin", "operations", "finance_manager", "org_admin", "super_admin"]);
-  const activeErp = useActiveErp();
+  const { erps: activeErps, primaryErp } = useActiveErp();
 
   const fetchInvoices = async () => {
     try {
@@ -143,29 +147,24 @@ const InvoicesPage = () => {
     }
   };
 
-  const syncToErp = async (invoiceId?: string) => {
-    if (!activeErp.connected) {
-      toast({ title: "No ERP Connected", description: "Connect an accounting integration in Settings → Integrations first.", variant: "destructive" });
+  const syncToErp = async (erpId: string, invoiceId?: string) => {
+    const erp = activeErps.find(e => e.id === erpId);
+    if (!erp) {
+      toast({ title: "ERP not found", description: "That integration no longer appears to be active.", variant: "destructive" });
       return;
     }
     setSyncing(true);
     try {
-      const fnMap: Record<string, string> = {
-        quickbooks: "quickbooks-sync",
-        xero: "xero-sync",
-        zoho_books: "zoho-sync",
-      };
-      const fnName = fnMap[activeErp.id] ?? "zoho-sync";
-      const { data, error } = await supabase.functions.invoke(fnName, {
+      const { data, error } = await supabase.functions.invoke(erp.syncFn, {
         body: { action: invoiceId ? "sync_invoice" : "sync_all_invoices", invoiceId },
       });
       if (error) throw error;
       if (data?.success) {
-        toast({ title: `Synced to ${activeErp.name}`, description: invoiceId ? "Invoice synced" : `Synced ${data.synced ?? ""} invoices` });
+        toast({ title: `Synced to ${erp.name}`, description: invoiceId ? "Invoice pushed successfully" : `${data.synced ?? ""} invoices synced` });
         fetchInvoices();
       } else throw new Error(data?.error ?? "Sync failed");
     } catch (error: any) {
-      toast({ title: "Sync Error", description: error.message || "Failed to sync", variant: "destructive" });
+      toast({ title: "Sync Error", description: error.message || "Failed to sync to " + erp.name, variant: "destructive" });
     } finally { setSyncing(false); }
   };
 
@@ -250,11 +249,30 @@ const InvoicesPage = () => {
         </div>
 
         <div className="flex gap-2">
-          {hasAnyRole(["admin"]) && activeErp.connected && (
-            <Button variant="outline" size="sm" onClick={() => syncToErp()} disabled={syncing}>
-              {syncing ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <CloudUpload className="w-4 h-4 mr-2" />}
-              Sync to {activeErp.name}
-            </Button>
+          {hasAnyRole(["admin", "finance_manager", "org_admin", "super_admin"]) && activeErps.length > 0 && (
+            activeErps.length === 1 ? (
+              <Button variant="outline" size="sm" onClick={() => syncToErp(activeErps[0].id)} disabled={syncing}>
+                {syncing ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <CloudUpload className="w-4 h-4 mr-2" />}
+                Sync All to {activeErps[0].name}
+              </Button>
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" disabled={syncing}>
+                    {syncing ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <CloudUpload className="w-4 h-4 mr-2" />}
+                    Sync All to ERP
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {activeErps.map(erp => (
+                    <DropdownMenuItem key={erp.id} onClick={() => syncToErp(erp.id)}>
+                      <span className="mr-2">{erp.logo}</span>{erp.name}
+                      {erp.lastSyncAt && <span className="ml-auto text-[10px] text-muted-foreground pl-4">{new Date(erp.lastSyncAt).toLocaleDateString()}</span>}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )
           )}
           {canManage && (
             <>
@@ -286,7 +304,7 @@ const InvoicesPage = () => {
                   <TableHead className="text-muted-foreground font-medium">Amount</TableHead>
                   <TableHead className="text-muted-foreground font-medium">Status</TableHead>
                   <TableHead className="text-muted-foreground font-medium hidden md:table-cell">Due Date</TableHead>
-                  {activeErp.connected && <TableHead className="text-muted-foreground font-medium hidden lg:table-cell">{activeErp.name}</TableHead>}
+                  {activeErps.length > 0 && <TableHead className="text-muted-foreground font-medium hidden lg:table-cell">{activeErps.length === 1 ? activeErps[0].name : "ERP Sync"}</TableHead>}
                   <TableHead className="text-right text-muted-foreground font-medium">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -348,12 +366,12 @@ const InvoicesPage = () => {
                         <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
                           {invoice.due_date ? new Date(invoice.due_date).toLocaleDateString() : '-'}
                         </TableCell>
-                        {activeErp.connected && (
+                        {activeErps.length > 0 && (
                           <TableCell className="hidden lg:table-cell">
                             {invoice.zoho_invoice_id ? (
-                              <Badge variant="outline" className="text-xs text-emerald-500 border-emerald-500/30">Synced</Badge>
+                              <Badge variant="outline" className="text-xs text-emerald-500 border-emerald-500/30">✓ Synced</Badge>
                             ) : (
-                              <span className="text-muted-foreground/50 text-xs">-</span>
+                              <span className="text-muted-foreground/50 text-xs">—</span>
                             )}
                           </TableCell>
                         )}
@@ -387,10 +405,33 @@ const InvoicesPage = () => {
                                       <XCircle className="w-4 h-4 mr-2 text-destructive" />Mark as Overdue
                                     </DropdownMenuItem>
                                     <DropdownMenuSeparator />
-                                    {!invoice.zoho_invoice_id && activeErp.connected && (
-                                      <DropdownMenuItem onClick={() => syncToErp(invoice.id)}>
-                                        <CloudUpload className="w-4 h-4 mr-2" />Sync to {activeErp.name}
+                                    {activeErps.length === 0 && (
+                                      <DropdownMenuItem onClick={() => window.location.href = "/erp-integrations"}>
+                                        <ExternalLink className="w-4 h-4 mr-2 text-muted-foreground" />
+                                        <span className="text-muted-foreground">Connect ERP</span>
                                       </DropdownMenuItem>
+                                    )}
+                                    {activeErps.length === 1 && (
+                                      <DropdownMenuItem onClick={() => syncToErp(activeErps[0].id, invoice.id)} disabled={syncing}>
+                                        <CloudUpload className="w-4 h-4 mr-2" />
+                                        Sync to {activeErps[0].name}
+                                        {invoice.zoho_invoice_id && <span className="ml-auto text-[10px] text-muted-foreground">✓ synced</span>}
+                                      </DropdownMenuItem>
+                                    )}
+                                    {activeErps.length > 1 && (
+                                      <DropdownMenuSub>
+                                        <DropdownMenuSubTrigger>
+                                          <CloudUpload className="w-4 h-4 mr-2" />Sync to ERP
+                                        </DropdownMenuSubTrigger>
+                                        <DropdownMenuSubContent>
+                                          {activeErps.map(erp => (
+                                            <DropdownMenuItem key={erp.id} onClick={() => syncToErp(erp.id, invoice.id)} disabled={syncing}>
+                                              <span className="mr-2">{erp.logo}</span>{erp.name}
+                                              {erp.lastSyncAt && <span className="ml-auto text-[10px] text-muted-foreground pl-3">{new Date(erp.lastSyncAt).toLocaleDateString()}</span>}
+                                            </DropdownMenuItem>
+                                          ))}
+                                        </DropdownMenuSubContent>
+                                      </DropdownMenuSub>
                                     )}
                                   </>
                                 )}
