@@ -213,7 +213,7 @@ const DynamicPricingEngine = () => {
     queryKey: ["pricing-library-routes", organizationId],
     enabled: !!organizationId,
     queryFn: async () => {
-      const { data } = await supabase.from("routes").select("id, name, origin, destination, distance_km, waypoints").eq("is_active", true).order("created_at", { ascending: false }).limit(50);
+      const { data } = await supabase.from("routes").select("id, name, origin, destination, distance_km, waypoints").eq("organization_id", organizationId!).eq("is_active", true).order("created_at", { ascending: false }).limit(50);
       return data || [];
     },
   });

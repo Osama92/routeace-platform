@@ -107,7 +107,7 @@ const RoutesPage = () => {
   const [deleting, setDeleting] = useState(false);
   const [calculating, setCalculating] = useState(false);
   const { toast } = useToast();
-  const { user, hasAnyRole } = useAuth();
+  const { user, hasAnyRole, organizationId } = useAuth();
   const { logChange } = useAuditLog();
 
   const [formData, setFormData] = useState({
@@ -128,9 +128,11 @@ const RoutesPage = () => {
 
   const fetchRoutes = async () => {
     try {
+      if (!organizationId) return;
       const { data: routesData, error } = await supabase
         .from("routes")
         .select("*")
+        .eq("organization_id", organizationId)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -161,7 +163,7 @@ const RoutesPage = () => {
 
   useEffect(() => {
     fetchRoutes();
-  }, []);
+  }, [organizationId]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -278,13 +280,15 @@ const RoutesPage = () => {
       return;
     }
 
+    if (!organizationId) return;
     setSaving(true);
     try {
       // Duplicate-route guard - warn the user if an identical origin/destination
-      // route already exists, instead of silently creating a duplicate.
+      // route already exists within this org, instead of silently creating a duplicate.
       const { data: dupes } = await supabase
         .from("routes")
         .select("id, name")
+        .eq("organization_id", organizationId)
         .ilike("origin", formData.origin.trim())
         .ilike("destination", formData.destination.trim())
         .limit(1);
@@ -312,6 +316,7 @@ const RoutesPage = () => {
             ? parseFloat(formData.estimated_duration_hours)
             : null,
           created_by: user?.id,
+          organization_id: organizationId,
         })
         .select()
         .single();
