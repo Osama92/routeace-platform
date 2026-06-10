@@ -129,21 +129,45 @@ const RoutesPage = () => {
   const fetchRoutes = async () => {
     try {
       if (!organizationId) return;
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const userId = currentUser?.id ?? "";
+
       let { data: routesData, error } = await supabase
         .from("routes")
         .select("*")
         .eq("organization_id", organizationId)
         .order("created_at", { ascending: false });
 
-      // Migration may still be applying — fall back to unfiltered query scoped by created_by
-      if (error?.message?.includes("organization_id") && error.message.includes("schema cache")) {
+      // Case 1: migration column doesn't exist yet (schema cache miss) — fall back to created_by
+      if (error?.message?.includes("schema cache") || error?.message?.includes("organization_id")) {
         const fallback = await supabase
           .from("routes")
           .select("*")
-          .eq("created_by", (await supabase.auth.getUser()).data.user?.id ?? "")
+          .eq("created_by", userId)
           .order("created_at", { ascending: false });
         routesData = fallback.data;
         error = fallback.error;
+      }
+
+      // Case 2: migration applied but routes were created without organization_id (NULL)
+      // Detect them, show them, and backfill so future fetches work normally
+      if (!error && (!routesData || routesData.length === 0) && userId) {
+        const { data: nullOrgRoutes } = await supabase
+          .from("routes")
+          .select("*")
+          .is("organization_id", null)
+          .eq("created_by", userId)
+          .order("created_at", { ascending: false });
+
+        if (nullOrgRoutes && nullOrgRoutes.length > 0) {
+          // Backfill organization_id on routes that were created during the migration window
+          await supabase
+            .from("routes")
+            .update({ organization_id: organizationId })
+            .is("organization_id", null)
+            .eq("created_by", userId);
+          routesData = nullOrgRoutes;
+        }
       }
 
       if (error) throw error;
