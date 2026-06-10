@@ -4,12 +4,12 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogT
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { Plus, Loader2 } from "lucide-react";
+import { Plus, Loader2, Route, ArrowLeftRight, ArrowRight } from "lucide-react";
 import { isQuotaError, emitQuotaExceeded, resourceFromError } from "@/lib/quotaErrors";
 import { AddressAutocomplete } from "@/components/shared/AddressAutocomplete";
 
@@ -19,6 +19,7 @@ const CreateDispatchDialog = () => {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [returnTrip, setReturnTrip] = useState(false);
   const [extraDrops, setExtraDrops] = useState<{ address: string; notes: string }[]>([]);
   const [form, setForm] = useState({
     customer_id: "",
@@ -41,22 +42,22 @@ const CreateDispatchDialog = () => {
     cost: "",
   });
 
-  const { data: routes } = useQuery({
+  // ── Routes (org-scoped, with NULL org_id backfill for migration gap) ──────
+  const { data: routes, isLoading: routesLoading } = useQuery({
     queryKey: ["ops-routes-list", organizationId],
     queryFn: async () => {
       if (!organizationId) return [];
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       const userId = currentUser?.id ?? "";
 
-      // Try org-scoped query first
       let { data, error } = await supabase
         .from("routes")
         .select("id, name, origin, origin_lat, origin_lng, destination, destination_lat, destination_lng, distance_km")
-        .eq("is_active", true)
         .eq("organization_id", organizationId)
+        .eq("is_active", true)
         .order("name");
 
-      // Schema cache miss — migration still applying
+      // Schema cache miss — migration column not yet visible to PostgREST
       if (error?.message?.includes("schema cache") || error?.message?.includes("organization_id")) {
         const fallback = await supabase
           .from("routes")
@@ -68,7 +69,7 @@ const CreateDispatchDialog = () => {
         error = fallback.error;
       }
 
-      // Column exists but routes have NULL org_id (created during migration gap) — backfill + show
+      // Column exists but routes created during migration gap have NULL org_id — backfill + show
       if (!error && (!data || data.length === 0) && userId) {
         const { data: nullOrgRoutes } = await supabase
           .from("routes")
@@ -78,10 +79,12 @@ const CreateDispatchDialog = () => {
           .eq("created_by", userId)
           .order("name");
         if (nullOrgRoutes?.length) {
-          await supabase.from("routes")
+          // Silently backfill so future fetches use the normal path
+          supabase.from("routes")
             .update({ organization_id: organizationId })
             .is("organization_id", null)
-            .eq("created_by", userId);
+            .eq("created_by", userId)
+            .then(() => {});
           data = nullOrgRoutes;
         }
       }
@@ -91,42 +94,55 @@ const CreateDispatchDialog = () => {
     enabled: open && !!organizationId,
   });
 
+  // ── Customers (org-scoped) ────────────────────────────────────────────────
   const { data: customers } = useQuery({
     queryKey: ["ops-customers-list", organizationId],
     queryFn: async () => {
       if (!organizationId) return [];
-      const { data } = await supabase.from("customers").select("id, company_name")
-        .eq("organization_id", organizationId).order("company_name");
+      const { data } = await supabase.from("customers")
+        .select("id, company_name")
+        .eq("organization_id", organizationId)
+        .order("company_name");
       return data || [];
     },
     enabled: open && !!organizationId,
   });
 
+  // ── Drivers (org-scoped, available only) ─────────────────────────────────
   const { data: drivers } = useQuery({
     queryKey: ["ops-drivers-list", organizationId],
     queryFn: async () => {
       if (!organizationId) return [];
-      const { data } = await supabase.from("drivers").select("id, full_name, status")
-        .eq("organization_id", organizationId).in("status", ["available", "active"]).order("full_name");
+      const { data } = await supabase.from("drivers")
+        .select("id, full_name, status")
+        .eq("organization_id", organizationId)
+        .in("status", ["available", "active"])
+        .order("full_name");
       return data || [];
     },
     enabled: open && !!organizationId,
   });
 
+  // ── Vehicles (org-scoped, available only) ────────────────────────────────
   const { data: vehicles } = useQuery({
     queryKey: ["ops-vehicles-list", organizationId],
     queryFn: async () => {
       if (!organizationId) return [];
-      const { data } = await supabase.from("vehicles").select("id, registration_number, truck_type, status")
-        .eq("organization_id", organizationId).in("status", ["available", "active"]).order("registration_number");
+      const { data } = await supabase.from("vehicles")
+        .select("id, registration_number, truck_type, status")
+        .eq("organization_id", organizationId)
+        .in("status", ["available", "active"])
+        .order("registration_number");
       return data || [];
     },
     enabled: open && !!organizationId,
   });
 
+  // ── 3PL Transporters (org-scoped, approved only) ─────────────────────────
   const { data: transporters } = useQuery({
     queryKey: ["ops-transporters-approved", organizationId],
     queryFn: async () => {
+      if (!organizationId) return [];
       const { data } = await (supabase.from("ld_transporters" as any) as any)
         .select("id, company_name, email")
         .eq("organization_id", organizationId)
@@ -137,6 +153,37 @@ const CreateDispatchDialog = () => {
     enabled: open && !!organizationId,
   });
 
+  const oneWayKm = form.distance_km ? parseFloat(form.distance_km) : null;
+  const totalKm = oneWayKm ? (returnTrip ? oneWayKm * 2 : oneWayKm) : null;
+
+  const handleRouteSelect = (routeId: string) => {
+    const r = routes?.find((x: any) => x.id === routeId);
+    setForm((p) => ({
+      ...p,
+      route_id: routeId,
+      pickup_address: r?.origin ?? p.pickup_address,
+      pickup_lat: r?.origin_lat ?? p.pickup_lat,
+      pickup_lng: r?.origin_lng ?? p.pickup_lng,
+      delivery_address: r?.destination ?? p.delivery_address,
+      delivery_lat: r?.destination_lat ?? p.delivery_lat,
+      delivery_lng: r?.destination_lng ?? p.delivery_lng,
+      distance_km: r?.distance_km ? String(r.distance_km) : p.distance_km,
+    }));
+  };
+
+  const resetForm = () => {
+    setForm({
+      customer_id: "", route_id: "",
+      pickup_address: "", pickup_lat: null, pickup_lng: null,
+      delivery_address: "", delivery_lat: null, delivery_lng: null,
+      cargo_description: "", cargo_weight_kg: "", priority: "normal",
+      scheduled_pickup: "", vehicle_id: "", driver_id: "", transporter_id: "",
+      distance_km: "", diesel_liters: "", cost: "",
+    });
+    setReturnTrip(false);
+    setExtraDrops([]);
+  };
+
   const handleSubmit = async () => {
     if (!form.customer_id || !form.pickup_address || !form.delivery_address) {
       toast({ title: "Missing fields", description: "Customer, pickup & delivery addresses are required", variant: "destructive" });
@@ -145,11 +192,12 @@ const CreateDispatchDialog = () => {
 
     setSaving(true);
     try {
-      const distanceKm = form.distance_km ? parseFloat(form.distance_km) : null;
       const costValue = form.cost ? parseFloat(form.cost) : null;
       const dieselNum = form.diesel_liters ? parseFloat(form.diesel_liters) : null;
+
       const { data: disp, error } = await supabase.from("dispatches").insert([{
         dispatch_number: `DSP-${Date.now()}`,
+        organization_id: organizationId,          // org isolation
         customer_id: form.customer_id,
         route_id: form.route_id || null,
         pickup_address: form.pickup_address,
@@ -161,27 +209,35 @@ const CreateDispatchDialog = () => {
         vehicle_id: form.vehicle_id || null,
         driver_id: form.driver_id || null,
         transporter_id: form.transporter_id || null,
-        distance_km: distanceKm,
-        return_distance_km: distanceKm,
-        total_distance_km: distanceKm ? distanceKm * 2 : null,
+        distance_km: oneWayKm,
+        return_distance_km: returnTrip ? oneWayKm : null,
+        total_distance_km: totalKm,
         suggested_fuel_liters: dieselNum,
         total_drops: 1 + extraDrops.filter((d) => d.address).length,
         cost: costValue,
         status: form.driver_id || form.transporter_id ? "assigned" : "pending",
         created_by: user?.id,
         submitted_by: user?.id,
-        organization_id: organizationId,
       } as any]).select("id").single();
 
       if (error) throw error;
 
-      const drops = extraDrops.filter((d) => d.address).map((d, i) => ({ dispatch_id: disp!.id, address: d.address, sequence_order: i + 2, notes: d.notes || null }));
+      const drops = extraDrops.filter((d) => d.address).map((d, i) => ({
+        dispatch_id: disp!.id,
+        address: d.address,
+        sequence_order: i + 2,
+        notes: d.notes || null,
+      }));
       if (drops.length) await supabase.from("dispatch_dropoffs").insert(drops as any);
 
       if (form.transporter_id) {
         try {
           const { data: job } = await (supabase.from("ld_transporter_jobs" as any) as any).insert({
-            organization_id: organizationId, transporter_id: form.transporter_id, dispatch_id: disp!.id, status: "assigned", agreed_rate: costValue,
+            organization_id: organizationId,
+            transporter_id: form.transporter_id,
+            dispatch_id: disp!.id,
+            status: "assigned",
+            agreed_rate: costValue,
           }).select("id").single();
           await supabase.functions.invoke("notify-transporter-dispatch", {
             body: { dispatch_id: disp!.id, transporter_id: form.transporter_id, job_id: job?.id },
@@ -194,13 +250,12 @@ const CreateDispatchDialog = () => {
       queryClient.invalidateQueries({ queryKey: ["ops-today-dispatches"] });
       queryClient.invalidateQueries({ queryKey: ["waybill-dispatches"] });
       setOpen(false);
-      setForm({ customer_id: "", route_id: "", pickup_address: "", pickup_lat: null, pickup_lng: null, delivery_address: "", delivery_lat: null, delivery_lng: null, cargo_description: "", cargo_weight_kg: "", priority: "normal", scheduled_pickup: "", vehicle_id: "", driver_id: "", transporter_id: "", distance_km: "", diesel_liters: "", cost: "" });
-      setExtraDrops([]);
+      resetForm();
     } catch (err: any) {
       if (isQuotaError(err)) {
         emitQuotaExceeded({ resource: resourceFromError(err.message ?? ""), message: err.message ?? "" });
       } else {
-        toast({ title: "Error", description: err.message, variant: "destructive" });
+        toast({ title: "Error creating dispatch", description: err.message, variant: "destructive" });
       }
     } finally {
       setSaving(false);
@@ -208,15 +263,54 @@ const CreateDispatchDialog = () => {
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
       <DialogTrigger asChild>
         <Button size="sm"><Plus className="w-3 h-3 mr-1" />New Dispatch</Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Create New Dispatch</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
+
+        <div className="space-y-5">
+
+          {/* ── Route Selection ─────────────────────────────────────────── */}
+          <div className="rounded-lg border border-dashed border-primary/40 bg-primary/5 p-3 space-y-2">
+            <div className="flex items-center gap-2 text-sm font-semibold text-primary">
+              <Route className="w-4 h-4" />
+              Quick-fill from Route Library
+            </div>
+            <Select
+              value={form.route_id}
+              onValueChange={handleRouteSelect}
+            >
+              <SelectTrigger className="bg-white">
+                <SelectValue placeholder={
+                  routesLoading ? "Loading routes…" :
+                  routes?.length ? "Select a saved route to auto-fill addresses" :
+                  "No routes saved yet — add one in Routes Library"
+                } />
+              </SelectTrigger>
+              <SelectContent>
+                {routes?.map((r: any) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    <span className="font-medium">{r.name}</span>
+                    <span className="text-muted-foreground ml-1 text-xs">
+                      {r.origin?.split(",")[0]} → {r.destination?.split(",")[0]}
+                      {r.distance_km ? ` · ${r.distance_km} km` : ""}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {form.route_id && (
+              <p className="text-xs text-emerald-600 font-medium">
+                ✓ Pickup, delivery & distance auto-filled — you can still edit below
+              </p>
+            )}
+          </div>
+
+          {/* ── Customer ────────────────────────────────────────────────── */}
           <div>
             <Label>Customer *</Label>
             <Select value={form.customer_id} onValueChange={(v) => setForm((p) => ({ ...p, customer_id: v }))}>
@@ -226,44 +320,10 @@ const CreateDispatchDialog = () => {
               </SelectContent>
             </Select>
           </div>
+
+          {/* ── Addresses ───────────────────────────────────────────────── */}
           <div>
-            <Label>Route (from Route Planner)</Label>
-            <Select
-              value={form.route_id}
-              onValueChange={(v) => {
-                const r = routes?.find((x: any) => x.id === v);
-                setForm((p) => ({
-                  ...p,
-                  route_id: v,
-                  pickup_address: r?.origin ?? p.pickup_address,
-                  pickup_lat: r?.origin_lat ?? p.pickup_lat,
-                  pickup_lng: r?.origin_lng ?? p.pickup_lng,
-                  delivery_address: r?.destination ?? p.delivery_address,
-                  delivery_lat: r?.destination_lat ?? p.delivery_lat,
-                  delivery_lng: r?.destination_lng ?? p.delivery_lng,
-                  distance_km: r?.distance_km ? String(r.distance_km) : p.distance_km,
-                }));
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={routes?.length ? "Pick a saved route" : "No routes yet — add one in Routes Library"} />
-              </SelectTrigger>
-              <SelectContent>
-                {routes?.map((r: any) => (
-                  <SelectItem key={r.id} value={r.id}>
-                    {r.name} · {r.origin} → {r.destination}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <Label>Pickup Address *</Label>
-              {form.route_id && form.pickup_address && (
-                <span className="text-xs text-emerald-600 font-medium">auto-filled from route</span>
-              )}
-            </div>
+            <Label>Pickup Address *</Label>
             <AddressAutocomplete
               value={form.pickup_address}
               onChange={(v) => setForm((p) => ({ ...p, pickup_address: v }))}
@@ -272,12 +332,7 @@ const CreateDispatchDialog = () => {
             />
           </div>
           <div>
-            <div className="flex items-center justify-between mb-1">
-              <Label>Delivery Address *</Label>
-              {form.route_id && form.delivery_address && (
-                <span className="text-xs text-emerald-600 font-medium">auto-filled from route</span>
-              )}
-            </div>
+            <Label>Delivery Address *</Label>
             <AddressAutocomplete
               value={form.delivery_address}
               onChange={(v) => setForm((p) => ({ ...p, delivery_address: v }))}
@@ -285,6 +340,42 @@ const CreateDispatchDialog = () => {
               placeholder="Search delivery location"
             />
           </div>
+
+          {/* ── Distance & Return Trip ───────────────────────────────────── */}
+          <div className="rounded-lg border p-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                {returnTrip ? <ArrowLeftRight className="w-4 h-4 text-primary" /> : <ArrowRight className="w-4 h-4 text-muted-foreground" />}
+                Trip Distance
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Return trip (to & fro)</span>
+                <Switch checked={returnTrip} onCheckedChange={setReturnTrip} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs text-muted-foreground">One-way distance (km)</Label>
+                <Input
+                  type="number"
+                  value={form.distance_km}
+                  onChange={(e) => setForm((p) => ({ ...p, distance_km: e.target.value }))}
+                  placeholder="e.g. 350"
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Total distance (km)</Label>
+                <div className="flex h-10 items-center rounded-md border bg-muted px-3 text-sm font-semibold">
+                  {totalKm ? `${totalKm} km` : "—"}
+                  {returnTrip && oneWayKm && (
+                    <span className="ml-1 text-xs font-normal text-muted-foreground">({oneWayKm} × 2)</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Cargo & Priority ─────────────────────────────────────────── */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Cargo Description</Label>
@@ -295,7 +386,7 @@ const CreateDispatchDialog = () => {
               <Input type="number" value={form.cargo_weight_kg} onChange={(e) => setForm((p) => ({ ...p, cargo_weight_kg: e.target.value }))} placeholder="e.g. 5000" />
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Priority</Label>
               <Select value={form.priority} onValueChange={(v) => setForm((p) => ({ ...p, priority: v }))}>
@@ -309,14 +400,12 @@ const CreateDispatchDialog = () => {
               </Select>
             </div>
             <div>
-              <Label>Total Distance (km)</Label>
-              <Input type="number" value={form.distance_km} onChange={(e) => setForm((p) => ({ ...p, distance_km: e.target.value }))} placeholder="e.g. 350" />
-            </div>
-            <div>
-              <Label>Trip Cost (₦) *</Label>
+              <Label>Trip Cost (₦)</Label>
               <Input type="number" value={form.cost} onChange={(e) => setForm((p) => ({ ...p, cost: e.target.value }))} placeholder="e.g. 150000" />
             </div>
           </div>
+
+          {/* ── Fuel & 3PL ───────────────────────────────────────────────── */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Diesel (liters)</Label>
@@ -325,13 +414,15 @@ const CreateDispatchDialog = () => {
             <div>
               <Label>3PL Transporter</Label>
               <Select value={form.transporter_id} onValueChange={(v) => setForm((p) => ({ ...p, transporter_id: v }))}>
-                <SelectTrigger><SelectValue placeholder={transporters?.length ? "Optional - select 3PL" : "No approved 3PLs"} /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={transporters?.length ? "Optional — select 3PL" : "No approved 3PLs"} /></SelectTrigger>
                 <SelectContent>
                   {transporters?.map((t: any) => <SelectItem key={t.id} value={t.id}>{t.company_name}{t.email ? ` · ${t.email}` : ""}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
           </div>
+
+          {/* ── Extra Drops ───────────────────────────────────────────────── */}
           <div className="space-y-2 border rounded-lg p-3">
             <div className="flex items-center justify-between">
               <Label className="text-sm">Extra Drop Lines</Label>
@@ -346,6 +437,8 @@ const CreateDispatchDialog = () => {
               </div>
             ))}
           </div>
+
+          {/* ── Schedule & Assignments ────────────────────────────────────── */}
           <div>
             <Label>Scheduled Pickup</Label>
             <Input type="datetime-local" value={form.scheduled_pickup} onChange={(e) => setForm((p) => ({ ...p, scheduled_pickup: e.target.value }))} />
@@ -372,9 +465,11 @@ const CreateDispatchDialog = () => {
               </Select>
             </div>
           </div>
+
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+
+        <DialogFooter className="mt-4">
+          <Button variant="outline" onClick={() => { setOpen(false); resetForm(); }}>Cancel</Button>
           <Button onClick={handleSubmit} disabled={saving}>
             {saving && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
             Create Dispatch
