@@ -285,41 +285,62 @@ const RoutesPage = () => {
     try {
       // Duplicate-route guard - warn the user if an identical origin/destination
       // route already exists within this org, instead of silently creating a duplicate.
-      const { data: dupes } = await supabase
+      // Skip the org filter if the column doesn't exist yet (migration in flight).
+      let dupeQuery = supabase
         .from("routes")
         .select("id, name")
-        .eq("organization_id", organizationId)
         .ilike("origin", formData.origin.trim())
         .ilike("destination", formData.destination.trim())
         .limit(1);
-      if (dupes && dupes.length > 0) {
-        toast({
-          title: "Duplicate route detected",
-          description: `A route from "${formData.origin}" to "${formData.destination}" already exists ("${dupes[0].name}"). Update the existing route instead of creating a duplicate.`,
-          variant: "destructive",
-        });
-        setSaving(false);
-        return;
+      const { data: dupes, error: dupeErr } = await dupeQuery;
+      // If org column already exists, narrow to this org only
+      if (!dupeErr) {
+        const { data: orgDupes } = await supabase
+          .from("routes")
+          .select("id, name")
+          .eq("organization_id", organizationId)
+          .ilike("origin", formData.origin.trim())
+          .ilike("destination", formData.destination.trim())
+          .limit(1);
+        if (orgDupes && orgDupes.length > 0) {
+          toast({
+            title: "Duplicate route detected",
+            description: `A route from "${formData.origin}" to "${formData.destination}" already exists ("${orgDupes[0].name}"). Update the existing route instead of creating a duplicate.`,
+            variant: "destructive",
+          });
+          setSaving(false);
+          return;
+        }
       }
-      const { data: routeData, error } = await supabase
+      const routePayload: Record<string, any> = {
+        name: formData.name,
+        origin: formData.origin,
+        origin_lat: formData.origin_lat,
+        origin_lng: formData.origin_lng,
+        destination: formData.destination,
+        destination_lat: formData.destination_lat,
+        destination_lng: formData.destination_lng,
+        distance_km: formData.distance_km ? parseFloat(formData.distance_km) : null,
+        estimated_duration_hours: formData.estimated_duration_hours
+          ? parseFloat(formData.estimated_duration_hours)
+          : null,
+        created_by: user?.id,
+        organization_id: organizationId,
+      };
+
+      let { data: routeData, error } = await supabase
         .from("routes")
-        .insert({
-          name: formData.name,
-          origin: formData.origin,
-          origin_lat: formData.origin_lat,
-          origin_lng: formData.origin_lng,
-          destination: formData.destination,
-          destination_lat: formData.destination_lat,
-          destination_lng: formData.destination_lng,
-          distance_km: formData.distance_km ? parseFloat(formData.distance_km) : null,
-          estimated_duration_hours: formData.estimated_duration_hours
-            ? parseFloat(formData.estimated_duration_hours)
-            : null,
-          created_by: user?.id,
-          organization_id: organizationId,
-        })
+        .insert(routePayload)
         .select()
         .single();
+
+      // If the DB migration hasn't applied yet (schema cache miss), retry without the new column
+      if (error?.message?.includes("organization_id") && error.message.includes("schema cache")) {
+        const { organization_id: _omit, ...legacyPayload } = routePayload;
+        const fallback = await supabase.from("routes").insert(legacyPayload).select().single();
+        routeData = fallback.data;
+        error = fallback.error;
+      }
 
       if (error) throw error;
 
