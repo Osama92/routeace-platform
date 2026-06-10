@@ -45,8 +45,47 @@ const CreateDispatchDialog = () => {
     queryKey: ["ops-routes-list", organizationId],
     queryFn: async () => {
       if (!organizationId) return [];
-      const { data } = await supabase.from("routes").select("id, name, origin, destination, distance_km")
-        .eq("is_active", true).eq("organization_id", organizationId).order("name");
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const userId = currentUser?.id ?? "";
+
+      // Try org-scoped query first
+      let { data, error } = await supabase
+        .from("routes")
+        .select("id, name, origin, origin_lat, origin_lng, destination, destination_lat, destination_lng, distance_km")
+        .eq("is_active", true)
+        .eq("organization_id", organizationId)
+        .order("name");
+
+      // Schema cache miss — migration still applying
+      if (error?.message?.includes("schema cache") || error?.message?.includes("organization_id")) {
+        const fallback = await supabase
+          .from("routes")
+          .select("id, name, origin, origin_lat, origin_lng, destination, destination_lat, destination_lng, distance_km")
+          .eq("is_active", true)
+          .eq("created_by", userId)
+          .order("name");
+        data = fallback.data;
+        error = fallback.error;
+      }
+
+      // Column exists but routes have NULL org_id (created during migration gap) — backfill + show
+      if (!error && (!data || data.length === 0) && userId) {
+        const { data: nullOrgRoutes } = await supabase
+          .from("routes")
+          .select("id, name, origin, origin_lat, origin_lng, destination, destination_lat, destination_lng, distance_km")
+          .eq("is_active", true)
+          .is("organization_id", null)
+          .eq("created_by", userId)
+          .order("name");
+        if (nullOrgRoutes?.length) {
+          await supabase.from("routes")
+            .update({ organization_id: organizationId })
+            .is("organization_id", null)
+            .eq("created_by", userId);
+          data = nullOrgRoutes;
+        }
+      }
+
       return data || [];
     },
     enabled: open && !!organizationId,
@@ -196,14 +235,18 @@ const CreateDispatchDialog = () => {
                 setForm((p) => ({
                   ...p,
                   route_id: v,
-                  pickup_address: r?.origin || p.pickup_address,
-                  delivery_address: r?.destination || p.delivery_address,
+                  pickup_address: r?.origin ?? p.pickup_address,
+                  pickup_lat: r?.origin_lat ?? p.pickup_lat,
+                  pickup_lng: r?.origin_lng ?? p.pickup_lng,
+                  delivery_address: r?.destination ?? p.delivery_address,
+                  delivery_lat: r?.destination_lat ?? p.delivery_lat,
+                  delivery_lng: r?.destination_lng ?? p.delivery_lng,
                   distance_km: r?.distance_km ? String(r.distance_km) : p.distance_km,
                 }));
               }}
             >
               <SelectTrigger>
-                <SelectValue placeholder={routes?.length ? "Pick a logged route" : "No routes yet - create in Route Planner"} />
+                <SelectValue placeholder={routes?.length ? "Pick a saved route" : "No routes yet — add one in Routes Library"} />
               </SelectTrigger>
               <SelectContent>
                 {routes?.map((r: any) => (
@@ -215,7 +258,12 @@ const CreateDispatchDialog = () => {
             </Select>
           </div>
           <div>
-            <Label>Pickup Address *</Label>
+            <div className="flex items-center justify-between mb-1">
+              <Label>Pickup Address *</Label>
+              {form.route_id && form.pickup_address && (
+                <span className="text-xs text-emerald-600 font-medium">auto-filled from route</span>
+              )}
+            </div>
             <AddressAutocomplete
               value={form.pickup_address}
               onChange={(v) => setForm((p) => ({ ...p, pickup_address: v }))}
@@ -224,7 +272,12 @@ const CreateDispatchDialog = () => {
             />
           </div>
           <div>
-            <Label>Delivery Address *</Label>
+            <div className="flex items-center justify-between mb-1">
+              <Label>Delivery Address *</Label>
+              {form.route_id && form.delivery_address && (
+                <span className="text-xs text-emerald-600 font-medium">auto-filled from route</span>
+              )}
+            </div>
             <AddressAutocomplete
               value={form.delivery_address}
               onChange={(v) => setForm((p) => ({ ...p, delivery_address: v }))}
