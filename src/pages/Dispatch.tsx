@@ -38,7 +38,11 @@ import {
   XCircle,
   Clock,
   AlertTriangle,
+  Route as RouteIcon,
+  ArrowLeftRight,
+  ArrowRight,
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -166,6 +170,8 @@ const DispatchPage = () => {
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [savedRoutes, setSavedRoutes] = useState<any[]>([]);
+  const [returnTrip, setReturnTrip] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -192,6 +198,7 @@ const DispatchPage = () => {
 
   const [formData, setFormData] = useState({
     customer_id: "",
+    route_id: "",
     pickup_address: "",
     delivery_address: "",
     cargo_description: "",
@@ -268,11 +275,22 @@ const DispatchPage = () => {
         .select("id, company_name")
         .eq("organization_id", orgFilter);
 
-      const [dispatchesRes, driversRes, customersRes, vehiclesRes] = await Promise.all([
+      // Routes: org-scoped OR NULL-org created by this user (handles migration gap)
+      const routesQ = organizationId && user?.id
+        ? supabase
+            .from("routes")
+            .select("id, name, origin, origin_lat, origin_lng, destination, destination_lat, destination_lng, distance_km")
+            .eq("is_active", true)
+            .or(`organization_id.eq.${organizationId},and(organization_id.is.null,created_by.eq.${user.id})`)
+            .order("name")
+        : null;
+
+      const [dispatchesRes, driversRes, customersRes, vehiclesRes, routesRes] = await Promise.all([
         dispatchesQ,
         driversQ,
         customersQ,
         vehiclesQ,
+        routesQ ?? Promise.resolve({ data: [], error: null }),
       ]);
 
       if (dispatchesRes.error) throw dispatchesRes.error;
@@ -284,6 +302,7 @@ const DispatchPage = () => {
       setDrivers(driversRes.data || []);
       setCustomers(customersRes.data || []);
       setVehicles(vehiclesRes.data || []);
+      setSavedRoutes((routesRes.data as any[]) || []);
     } catch (error: any) {
       toast({
         title: "Error",
@@ -568,10 +587,13 @@ const DispatchPage = () => {
         ? calculateSuggestedFuel(formData.vehicle_id, distanceKm) 
         : null;
 
+      const totalDistanceKm = distanceKm ? (returnTrip ? distanceKm * 2 : distanceKm) : null;
+
       const insertData = {
         dispatch_number: `DSP-${Date.now()}`,
         organization_id: organizationId ?? null,
         customer_id: formData.customer_id,
+        route_id: formData.route_id || null,
         pickup_address: formData.pickup_address,
         delivery_address: formData.delivery_address,
         cargo_description: formData.cargo_description || null,
@@ -581,8 +603,8 @@ const DispatchPage = () => {
         vehicle_id: formData.vehicle_id || null,
         driver_id: formData.driver_id || null,
         distance_km: distanceKm,
-        return_distance_km: distanceKm,
-        total_distance_km: distanceKm ? distanceKm * 2 : null,
+        return_distance_km: returnTrip ? distanceKm : null,
+        total_distance_km: totalDistanceKm,
         suggested_fuel_liters: suggestedFuel,
         approval_status: isAdmin ? "approved" : "pending",
         submitted_by: user?.id,
@@ -624,6 +646,7 @@ const DispatchPage = () => {
       setIsDialogOpen(false);
       setFormData({
         customer_id: "",
+        route_id: "",
         pickup_address: "",
         delivery_address: "",
         cargo_description: "",
@@ -634,6 +657,7 @@ const DispatchPage = () => {
         driver_id: "",
         distance_km: "",
       });
+      setReturnTrip(false);
       setDropoffs([]);
       fetchData();
     } catch (error: any) {
@@ -1030,6 +1054,53 @@ const DispatchPage = () => {
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
+
+                {/* ── Route Library Quick-fill ─────────────────────────── */}
+                <div className="rounded-lg border border-dashed border-primary/40 bg-primary/5 p-3 space-y-2">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-primary">
+                    <RouteIcon className="w-4 h-4" />
+                    Quick-fill from Route Library
+                  </div>
+                  <Select
+                    value={formData.route_id}
+                    onValueChange={(routeId) => {
+                      const r = savedRoutes.find((x) => x.id === routeId);
+                      setFormData((prev) => ({
+                        ...prev,
+                        route_id: routeId,
+                        pickup_address: r?.origin ?? prev.pickup_address,
+                        delivery_address: r?.destination ?? prev.delivery_address,
+                        distance_km: r?.distance_km ? String(r.distance_km) : prev.distance_km,
+                      }));
+                    }}
+                  >
+                    <SelectTrigger className="bg-white">
+                      <SelectValue placeholder={
+                        savedRoutes.length
+                          ? "Select a saved route to auto-fill addresses"
+                          : "No saved routes — add one in Routes Library"
+                      } />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {savedRoutes.map((r) => (
+                        <SelectItem key={r.id} value={r.id}>
+                          <span className="font-medium">{r.name}</span>
+                          <span className="text-muted-foreground ml-1 text-xs">
+                            {r.origin?.split(",")[0]} → {r.destination?.split(",")[0]}
+                            {r.distance_km ? ` · ${r.distance_km} km` : ""}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {formData.route_id && (
+                    <p className="text-xs text-emerald-600 font-medium">
+                      ✓ Pickup, delivery & distance auto-filled — edit below if needed
+                    </p>
+                  )}
+                </div>
+
+                {/* ── Customer ─────────────────────────────────────────── */}
                 <div className="space-y-2">
                   <Label htmlFor="customer_id">Customer *</Label>
                   <Select
@@ -1048,6 +1119,8 @@ const DispatchPage = () => {
                     </SelectContent>
                   </Select>
                 </div>
+
+                {/* ── Addresses ────────────────────────────────────────── */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="pickup_address">Pickup Address *</Label>
@@ -1070,8 +1143,8 @@ const DispatchPage = () => {
                       placeholder="Delivery location"
                       className="bg-secondary/50"
                     />
-                   </div>
-                 </div>
+                  </div>
+                </div>
 
                  {/* Pricing Recommendation */}
                  <PricingRecommendation
@@ -1178,18 +1251,47 @@ const DispatchPage = () => {
                   </div>
                 </div>
 
-                {/* Distance & Fuel Planning */}
-                <div className="space-y-2">
-                  <Label htmlFor="distance_km">One-Way Distance (km)</Label>
-                  <Input
-                    id="distance_km"
-                    name="distance_km"
-                    type="number"
-                    value={formData.distance_km}
-                    onChange={handleInputChange}
-                    placeholder="e.g., 450"
-                    className="bg-secondary/50"
-                  />
+                {/* Distance & Return Trip Toggle */}
+                <div className="rounded-lg border p-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      {returnTrip
+                        ? <ArrowLeftRight className="w-4 h-4 text-primary" />
+                        : <ArrowRight className="w-4 h-4 text-muted-foreground" />}
+                      Trip Distance
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">Return trip (to & fro)</span>
+                      <Switch checked={returnTrip} onCheckedChange={setReturnTrip} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">One-way distance (km)</Label>
+                      <Input
+                        id="distance_km"
+                        name="distance_km"
+                        type="number"
+                        value={formData.distance_km}
+                        onChange={handleInputChange}
+                        placeholder="e.g., 450"
+                        className="bg-secondary/50"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Total distance (km)</Label>
+                      <div className="flex h-10 items-center rounded-md border bg-muted px-3 text-sm font-semibold">
+                        {formData.distance_km
+                          ? `${returnTrip ? parseFloat(formData.distance_km) * 2 : parseFloat(formData.distance_km)} km`
+                          : "—"}
+                        {returnTrip && formData.distance_km && (
+                          <span className="ml-1 text-xs font-normal text-muted-foreground">
+                            ({formData.distance_km} × 2)
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 {formData.vehicle_id && formData.distance_km && (
@@ -1200,8 +1302,10 @@ const DispatchPage = () => {
                     </div>
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div>
-                        <p className="text-muted-foreground">Total Distance (To & Fro)</p>
-                        <p className="font-semibold">{(parseFloat(formData.distance_km) * 2).toFixed(0)} km</p>
+                        <p className="text-muted-foreground">Total Distance {returnTrip ? "(To & Fro)" : "(One-way)"}</p>
+                        <p className="font-semibold">
+                          {(parseFloat(formData.distance_km) * (returnTrip ? 2 : 1)).toFixed(0)} km
+                        </p>
                       </div>
                       <div>
                         <p className="text-muted-foreground">Suggested Diesel</p>
