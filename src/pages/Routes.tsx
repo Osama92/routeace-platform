@@ -128,17 +128,16 @@ const RoutesPage = () => {
 
   const fetchRoutes = async () => {
     try {
-      if (!organizationId) return;
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      const userId = currentUser?.id ?? "";
+      if (!organizationId || !user?.id) return;
+      const userId = user.id;
 
       let { data: routesData, error } = await supabase
         .from("routes")
         .select("*")
-        .eq("organization_id", organizationId)
+        .or(`organization_id.eq.${organizationId},and(organization_id.is.null,created_by.eq.${userId})`)
         .order("created_at", { ascending: false });
 
-      // Case 1: migration column doesn't exist yet (schema cache miss) — fall back to created_by
+      // Schema cache miss — column not yet visible to PostgREST
       if (error?.message?.includes("schema cache") || error?.message?.includes("organization_id")) {
         const fallback = await supabase
           .from("routes")
@@ -149,28 +148,17 @@ const RoutesPage = () => {
         error = fallback.error;
       }
 
-      // Case 2: migration applied but routes were created without organization_id (NULL)
-      // Detect them, show them, and backfill so future fetches work normally
-      if (!error && (!routesData || routesData.length === 0) && userId) {
-        const { data: nullOrgRoutes } = await supabase
-          .from("routes")
-          .select("*")
-          .is("organization_id", null)
-          .eq("created_by", userId)
-          .order("created_at", { ascending: false });
-
-        if (nullOrgRoutes && nullOrgRoutes.length > 0) {
-          // Backfill organization_id on routes that were created during the migration window
-          await supabase
-            .from("routes")
-            .update({ organization_id: organizationId })
-            .is("organization_id", null)
-            .eq("created_by", userId);
-          routesData = nullOrgRoutes;
-        }
-      }
-
       if (error) throw error;
+
+      // Backfill any NULL-org routes found by the OR clause
+      const needsBackfill = (routesData || []).some((r: any) => !r.organization_id);
+      if (needsBackfill) {
+        await supabase
+          .from("routes")
+          .update({ organization_id: organizationId })
+          .is("organization_id", null)
+          .eq("created_by", userId);
+      }
 
       // Fetch waypoints for each route
       const routesWithWaypoints = await Promise.all(

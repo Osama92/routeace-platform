@@ -42,26 +42,30 @@ const CreateDispatchDialog = () => {
     cost: "",
   });
 
-  // ── Routes (org-scoped, with NULL org_id backfill for migration gap) ──────
+  // ── Routes ───────────────────────────────────────────────────────────────
+  // Single OR query: matches org-scoped routes AND legacy NULL-org routes
+  // created by this user (migration gap backfill). Falls back to created_by
+  // filter only if the organization_id column doesn't exist yet (schema cache).
   const { data: routes, isLoading: routesLoading } = useQuery({
-    queryKey: ["ops-routes-list", organizationId],
+    queryKey: ["ops-routes-list", organizationId, user?.id],
     queryFn: async () => {
-      if (!organizationId) return [];
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      const userId = currentUser?.id ?? "";
+      if (!organizationId || !user?.id) return [];
+      const userId = user.id;
+
+      const ROUTE_COLS = "id, name, origin, origin_lat, origin_lng, destination, destination_lat, destination_lng, distance_km";
 
       let { data, error } = await supabase
         .from("routes")
-        .select("id, name, origin, origin_lat, origin_lng, destination, destination_lat, destination_lng, distance_km")
-        .eq("organization_id", organizationId)
+        .select(ROUTE_COLS)
         .eq("is_active", true)
+        .or(`organization_id.eq.${organizationId},and(organization_id.is.null,created_by.eq.${userId})`)
         .order("name");
 
-      // Schema cache miss — migration column not yet visible to PostgREST
+      // Schema cache miss — organization_id column not yet in PostgREST cache
       if (error?.message?.includes("schema cache") || error?.message?.includes("organization_id")) {
         const fallback = await supabase
           .from("routes")
-          .select("id, name, origin, origin_lat, origin_lng, destination, destination_lat, destination_lng, distance_km")
+          .select(ROUTE_COLS)
           .eq("is_active", true)
           .eq("created_by", userId)
           .order("name");
@@ -69,29 +73,21 @@ const CreateDispatchDialog = () => {
         error = fallback.error;
       }
 
-      // Column exists but routes created during migration gap have NULL org_id — backfill + show
-      if (!error && (!data || data.length === 0) && userId) {
-        const { data: nullOrgRoutes } = await supabase
-          .from("routes")
-          .select("id, name, origin, origin_lat, origin_lng, destination, destination_lat, destination_lng, distance_km")
-          .eq("is_active", true)
+      if (error) return [];
+
+      // Silently backfill any NULL-org routes so future queries find them via org filter
+      const needsBackfill = (data || []).some((r: any) => !r.organization_id);
+      if (needsBackfill) {
+        supabase.from("routes")
+          .update({ organization_id: organizationId })
           .is("organization_id", null)
           .eq("created_by", userId)
-          .order("name");
-        if (nullOrgRoutes?.length) {
-          // Silently backfill so future fetches use the normal path
-          supabase.from("routes")
-            .update({ organization_id: organizationId })
-            .is("organization_id", null)
-            .eq("created_by", userId)
-            .then(() => {});
-          data = nullOrgRoutes;
-        }
+          .then(() => {});
       }
 
       return data || [];
     },
-    enabled: open && !!organizationId,
+    enabled: open && !!organizationId && !!user?.id,
   });
 
   // ── Customers (org-scoped) ────────────────────────────────────────────────
