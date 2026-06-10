@@ -275,22 +275,18 @@ const DispatchPage = () => {
         .select("id, company_name")
         .eq("organization_id", orgFilter);
 
-      // Routes: org-scoped OR NULL-org created by this user (handles migration gap)
-      const routesQ = organizationId && user?.id
-        ? supabase
-            .from("routes")
-            .select("id, name, origin, origin_lat, origin_lng, destination, destination_lat, destination_lng, distance_km")
-            .eq("is_active", true)
-            .or(`organization_id.eq.${organizationId},and(organization_id.is.null,created_by.eq.${user.id})`)
-            .order("name")
-        : null;
+      // Routes: two simple queries merged — avoids complex OR syntax issues
+      // Q1: org-scoped routes | Q2: routes created by this user (creator access + migration gap)
+      const ROUTE_COLS = "id, name, origin, origin_lat, origin_lng, destination, destination_lat, destination_lng, distance_km";
+      const routesOrgQ = organizationId
+        ? supabase.from("routes").select(ROUTE_COLS).eq("is_active", true).eq("organization_id", organizationId)
+        : Promise.resolve({ data: [] as any[], error: null });
+      const routesCreatorQ = user?.id
+        ? supabase.from("routes").select(ROUTE_COLS).eq("is_active", true).eq("created_by", user.id)
+        : Promise.resolve({ data: [] as any[], error: null });
 
-      const [dispatchesRes, driversRes, customersRes, vehiclesRes, routesRes] = await Promise.all([
-        dispatchesQ,
-        driversQ,
-        customersQ,
-        vehiclesQ,
-        routesQ ?? Promise.resolve({ data: [], error: null }),
+      const [dispatchesRes, driversRes, customersRes, vehiclesRes, routesOrgRes, routesCreatorRes] = await Promise.all([
+        dispatchesQ, driversQ, customersQ, vehiclesQ, routesOrgQ, routesCreatorQ,
       ]);
 
       if (dispatchesRes.error) throw dispatchesRes.error;
@@ -298,11 +294,25 @@ const DispatchPage = () => {
       if (customersRes.error) throw customersRes.error;
       if (vehiclesRes.error) throw vehiclesRes.error;
 
+      // Merge and dedupe by id
+      const routeMap = new Map<string, any>();
+      [...(routesOrgRes.data || []), ...(routesCreatorRes.data || [])].forEach((r) => routeMap.set(r.id, r));
+      const mergedRoutes = Array.from(routeMap.values()).sort((a, b) => a.name?.localeCompare(b.name));
+
+      // Silently backfill org on any routes that are missing it
+      if (organizationId && user?.id) {
+        const needsBackfill = mergedRoutes.filter((r) => !r.organization_id);
+        if (needsBackfill.length) {
+          supabase.from("routes").update({ organization_id: organizationId })
+            .is("organization_id", null).eq("created_by", user.id).then(() => {});
+        }
+      }
+
       setDispatches(dispatchesRes.data || []);
       setDrivers(driversRes.data || []);
       setCustomers(customersRes.data || []);
       setVehicles(vehiclesRes.data || []);
-      setSavedRoutes((routesRes.data as any[]) || []);
+      setSavedRoutes(mergedRoutes);
     } catch (error: any) {
       toast({
         title: "Error",

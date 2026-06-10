@@ -432,7 +432,14 @@ export default function AdvancedRoutePlanner() {
     queryKey: ["route-library", organizationId],
     enabled: !!organizationId,
     queryFn: async () => {
-      const { data } = await supabase.from("routes").select("id, name, origin, destination, distance_km, estimated_duration_hours").eq("organization_id", organizationId!).eq("is_active", true).order("created_at", { ascending: false }).limit(50);
+      const COLS = "id, name, origin, destination, distance_km, estimated_duration_hours";
+      const [orgRes, creatorRes] = await Promise.all([
+        supabase.from("routes").select(COLS).eq("is_active", true).eq("organization_id", organizationId!).limit(50),
+        supabase.from("routes").select(COLS).eq("is_active", true).eq("created_by", (await supabase.auth.getUser()).data.user?.id ?? "").limit(50),
+      ]);
+      const routeMap = new Map<string, any>();
+      [...(orgRes.data || []), ...(creatorRes.data || [])].forEach((r) => routeMap.set(r.id, r));
+      const data = Array.from(routeMap.values());
       return data || [];
     },
   });

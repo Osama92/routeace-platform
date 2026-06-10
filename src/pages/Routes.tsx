@@ -131,33 +131,27 @@ const RoutesPage = () => {
       if (!organizationId || !user?.id) return;
       const userId = user.id;
 
-      let { data: routesData, error } = await supabase
-        .from("routes")
-        .select("*")
-        .or(`organization_id.eq.${organizationId},and(organization_id.is.null,created_by.eq.${userId})`)
-        .order("created_at", { ascending: false });
+      // Two simple queries merged: org-scoped + creator access (handles super_admin + migration gap)
+      const [orgRes, creatorRes] = await Promise.all([
+        supabase.from("routes").select("*").eq("organization_id", organizationId).order("created_at", { ascending: false }),
+        supabase.from("routes").select("*").eq("created_by", userId).order("created_at", { ascending: false }),
+      ]);
 
-      // Schema cache miss — column not yet visible to PostgREST
-      if (error?.message?.includes("schema cache") || error?.message?.includes("organization_id")) {
-        const fallback = await supabase
-          .from("routes")
-          .select("*")
-          .eq("created_by", userId)
-          .order("created_at", { ascending: false });
-        routesData = fallback.data;
-        error = fallback.error;
-      }
+      // Merge and dedupe by id
+      const routeMap = new Map<string, any>();
+      [...(orgRes.data || []), ...(creatorRes.data || [])].forEach((r) => routeMap.set(r.id, r));
+      let routesData = Array.from(routeMap.values()).sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
 
+      const error = orgRes.error && creatorRes.error ? orgRes.error : null;
       if (error) throw error;
 
-      // Backfill any NULL-org routes found by the OR clause
-      const needsBackfill = (routesData || []).some((r: any) => !r.organization_id);
+      // Backfill org on routes missing it
+      const needsBackfill = routesData.some((r: any) => !r.organization_id);
       if (needsBackfill) {
-        await supabase
-          .from("routes")
-          .update({ organization_id: organizationId })
-          .is("organization_id", null)
-          .eq("created_by", userId);
+        await supabase.from("routes").update({ organization_id: organizationId })
+          .is("organization_id", null).eq("created_by", userId);
       }
 
       // Fetch waypoints for each route

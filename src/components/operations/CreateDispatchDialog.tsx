@@ -54,38 +54,25 @@ const CreateDispatchDialog = () => {
 
       const ROUTE_COLS = "id, name, origin, origin_lat, origin_lng, destination, destination_lat, destination_lng, distance_km";
 
-      let { data, error } = await supabase
-        .from("routes")
-        .select(ROUTE_COLS)
-        .eq("is_active", true)
-        .or(`organization_id.eq.${organizationId},and(organization_id.is.null,created_by.eq.${userId})`)
-        .order("name");
+      // Two simple queries merged: org-scoped + creator access (handles super_admin + migration gap)
+      const [orgRes, creatorRes] = await Promise.all([
+        supabase.from("routes").select(ROUTE_COLS).eq("is_active", true).eq("organization_id", organizationId).order("name"),
+        supabase.from("routes").select(ROUTE_COLS).eq("is_active", true).eq("created_by", userId).order("name"),
+      ]);
 
-      // Schema cache miss — organization_id column not yet in PostgREST cache
-      if (error?.message?.includes("schema cache") || error?.message?.includes("organization_id")) {
-        const fallback = await supabase
-          .from("routes")
-          .select(ROUTE_COLS)
-          .eq("is_active", true)
-          .eq("created_by", userId)
-          .order("name");
-        data = fallback.data;
-        error = fallback.error;
-      }
+      // Merge and dedupe by id
+      const routeMap = new Map<string, any>();
+      [...(orgRes.data || []), ...(creatorRes.data || [])].forEach((r) => routeMap.set(r.id, r));
+      const merged = Array.from(routeMap.values()).sort((a, b) => a.name?.localeCompare(b.name));
 
-      if (error) return [];
-
-      // Silently backfill any NULL-org routes so future queries find them via org filter
-      const needsBackfill = (data || []).some((r: any) => !r.organization_id);
+      // Silently backfill any routes missing organization_id
+      const needsBackfill = merged.some((r: any) => !r.organization_id);
       if (needsBackfill) {
-        supabase.from("routes")
-          .update({ organization_id: organizationId })
-          .is("organization_id", null)
-          .eq("created_by", userId)
-          .then(() => {});
+        supabase.from("routes").update({ organization_id: organizationId })
+          .is("organization_id", null).eq("created_by", userId).then(() => {});
       }
 
-      return data || [];
+      return merged;
     },
     enabled: open && !!organizationId && !!user?.id,
   });
