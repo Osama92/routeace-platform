@@ -129,11 +129,22 @@ const RoutesPage = () => {
   const fetchRoutes = async () => {
     try {
       if (!organizationId) return;
-      const { data: routesData, error } = await supabase
+      let { data: routesData, error } = await supabase
         .from("routes")
         .select("*")
         .eq("organization_id", organizationId)
         .order("created_at", { ascending: false });
+
+      // Migration may still be applying — fall back to unfiltered query scoped by created_by
+      if (error?.message?.includes("organization_id") && error.message.includes("schema cache")) {
+        const fallback = await supabase
+          .from("routes")
+          .select("*")
+          .eq("created_by", (await supabase.auth.getUser()).data.user?.id ?? "")
+          .order("created_at", { ascending: false });
+        routesData = fallback.data;
+        error = fallback.error;
+      }
 
       if (error) throw error;
 
