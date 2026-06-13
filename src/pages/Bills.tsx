@@ -125,14 +125,35 @@ export default function BillsPage() {
     },
   });
 
-  // Vendors from vendor_partners table, scoped to the current org
+  // Vendors: merge 3PL transport roster (ld_transporters) + vendor_partners
+  // ld_transporters covers Logistics Department tenants (3PL roster)
+  // vendor_partners covers Logistics Company tenants
   const { data: vendors } = useQuery({
     queryKey: ["vendor-names", organizationId],
     queryFn: async () => {
-      let q = supabase.from("vendor_partners").select("id, business_name").order("business_name").limit(500);
-      if (organizationId) q = q.eq("organization_id", organizationId);
-      const { data } = await q;
-      return (data || []).map(v => v.business_name).filter(Boolean).sort() as string[];
+      const names: string[] = [];
+      if (!organizationId) return names;
+
+      const [ldRes, vpRes] = await Promise.all([
+        supabase
+          .from("ld_transporters")
+          .select("company_name")
+          .eq("organization_id", organizationId)
+          .eq("onboarding_status", "approved")
+          .order("company_name")
+          .limit(500),
+        supabase
+          .from("vendor_partners")
+          .select("business_name")
+          .eq("organization_id", organizationId)
+          .order("business_name")
+          .limit(500),
+      ]);
+
+      (ldRes.data || []).forEach(r => { if (r.company_name) names.push(r.company_name); });
+      (vpRes.data || []).forEach(r => { if (r.business_name) names.push(r.business_name); });
+
+      return [...new Set(names)].sort();
     },
   });
 
