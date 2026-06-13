@@ -1624,63 +1624,7 @@ const DispatchPage = () => {
             </DialogDescription>
           </DialogHeader>
 
-          {/* Timeline of previous updates */}
-          {statusHistory.length > 0 && (
-            <div className="mt-1 mb-2">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">Status History</p>
-              <div className="relative pl-5">
-                {/* vertical line */}
-                <div className="absolute left-2 top-2 bottom-2 w-px bg-border" />
-                <div className="space-y-4">
-                  {statusHistory.map((upd, idx) => {
-                    const isLast = idx === statusHistory.length - 1;
-                    const dotColor =
-                      upd.status === "delivered" ? "bg-green-500" :
-                      upd.status === "cancelled" ? "bg-red-500" :
-                      upd.status === "delayed" ? "bg-yellow-500" :
-                      upd.status === "in_transit" ? "bg-blue-500" :
-                      upd.status === "picked_up" ? "bg-cyan-500" :
-                      "bg-muted-foreground";
-                    const statusLabel: Record<string, string> = {
-                      assigned: "Assigned to Driver",
-                      picked_up: "Picked Up",
-                      in_transit: "In Transit",
-                      delayed: "Delayed",
-                      delivered: "Delivered",
-                      cancelled: "Cancelled",
-                    };
-                    return (
-                      <div key={upd.id} className="relative">
-                        {/* dot */}
-                        <div className={`absolute -left-[13px] top-1 w-3 h-3 rounded-full border-2 border-background ${dotColor} ${isLast ? "ring-2 ring-primary/30" : ""}`} />
-                        <div className={`rounded-lg p-3 text-sm ${isLast ? "bg-primary/5 border border-primary/20" : "bg-muted/40"}`}>
-                          <div className="flex items-center justify-between gap-2 flex-wrap">
-                            <span className="font-semibold text-foreground">{statusLabel[upd.status] ?? upd.status}</span>
-                            <span className="text-[11px] text-muted-foreground whitespace-nowrap">
-                              {new Date(upd.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
-                              {" · "}
-                              {new Date(upd.created_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
-                            </span>
-                          </div>
-                          {upd.location && (
-                            <div className="flex items-center gap-1 mt-1 text-muted-foreground">
-                              <MapPin className="w-3 h-3 shrink-0" />
-                              <span className="truncate text-xs">{upd.location}</span>
-                            </div>
-                          )}
-                          {upd.notes && (
-                            <p className="mt-1 text-xs text-muted-foreground/80 italic">{upd.notes}</p>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="my-4 border-t border-dashed border-border" />
-            </div>
-          )}
-
+          {/* Form fields */}
           <div className="grid gap-4 pb-2">
             <div className="space-y-2">
               <Label>New Status</Label>
@@ -1692,16 +1636,37 @@ const DispatchPage = () => {
                   <SelectValue placeholder="Select status" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="assigned">Assigned to Driver</SelectItem>
-                  <SelectItem value="picked_up">Picked Up</SelectItem>
-                  <SelectItem value="in_transit">In Transit</SelectItem>
-                  <SelectItem value="delivered">Delivered</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                  {/* Only show statuses ahead of the current dispatch status.
+                      Order: assigned → picked_up → in_transit → delivered.
+                      cancelled is always available. delayed can repeat. */}
+                  {(() => {
+                    const order = ["assigned", "picked_up", "in_transit", "delivered"];
+                    const cur = selectedDispatch?.status ?? "";
+                    const curIdx = order.indexOf(cur);
+                    const all = [
+                      { value: "assigned", label: "Assigned to Driver" },
+                      { value: "picked_up", label: "Picked Up" },
+                      { value: "in_transit", label: "In Transit" },
+                      { value: "delayed", label: "Delayed" },
+                      { value: "delivered", label: "Delivered" },
+                      { value: "cancelled", label: "Cancelled" },
+                    ];
+                    return all
+                      .filter(({ value }) => {
+                        if (value === "cancelled") return true;
+                        if (value === "delayed") return cur !== "delivered" && cur !== "cancelled";
+                        const idx = order.indexOf(value);
+                        return idx > curIdx;
+                      })
+                      .map(({ value, label }) => (
+                        <SelectItem key={value} value={value}>{label}</SelectItem>
+                      ));
+                  })()}
                 </SelectContent>
               </Select>
             </div>
 
-            {/* Location with Google Places autocomplete */}
+            {/* Location with autocomplete */}
             <div className="space-y-2">
               <Label>Current Location</Label>
               <div className="relative">
@@ -1757,7 +1722,63 @@ const DispatchPage = () => {
               />
             </div>
           </div>
-          <DialogFooter>
+
+          {/* Timeline of previous updates — below the form */}
+          {statusHistory.length > 0 && (
+            <div className="mt-2">
+              <div className="border-t border-dashed border-border mb-4" />
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">Journey So Far</p>
+              <div className="relative pl-5">
+                <div className="absolute left-2 top-2 bottom-2 w-px bg-border" />
+                <div className="space-y-4">
+                  {statusHistory.map((upd, idx) => {
+                    const isLast = idx === statusHistory.length - 1;
+                    const dotColor =
+                      upd.status === "delivered" ? "bg-green-500" :
+                      upd.status === "cancelled" ? "bg-red-500" :
+                      upd.status === "delayed" ? "bg-yellow-500" :
+                      upd.status === "in_transit" ? "bg-blue-500" :
+                      upd.status === "picked_up" ? "bg-cyan-500" :
+                      "bg-muted-foreground";
+                    const statusLabel: Record<string, string> = {
+                      assigned: "Assigned to Driver",
+                      picked_up: "Picked Up",
+                      in_transit: "In Transit",
+                      delayed: "Delayed",
+                      delivered: "Delivered",
+                      cancelled: "Cancelled",
+                    };
+                    return (
+                      <div key={upd.id} className="relative">
+                        <div className={`absolute -left-[13px] top-1 w-3 h-3 rounded-full border-2 border-background ${dotColor} ${isLast ? "ring-2 ring-primary/30" : ""}`} />
+                        <div className={`rounded-lg p-3 text-sm ${isLast ? "bg-primary/5 border border-primary/20" : "bg-muted/40"}`}>
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <span className="font-semibold text-foreground">{statusLabel[upd.status] ?? upd.status}</span>
+                            <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                              {new Date(upd.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                              {" · "}
+                              {new Date(upd.created_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                          </div>
+                          {upd.location && (
+                            <div className="flex items-center gap-1 mt-1 text-muted-foreground">
+                              <MapPin className="w-3 h-3 shrink-0" />
+                              <span className="truncate text-xs">{upd.location}</span>
+                            </div>
+                          )}
+                          {upd.notes && (
+                            <p className="mt-1 text-xs text-muted-foreground/80 italic">{upd.notes}</p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="mt-4">
             <Button variant="outline" onClick={() => setIsStatusDialogOpen(false)}>
               Cancel
             </Button>
