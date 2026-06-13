@@ -32,15 +32,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import {
   Search,
   Filter,
   Download,
@@ -52,7 +43,6 @@ import {
   XCircle,
   Eye,
   Plus,
-  RefreshCw,
   CloudUpload,
   DollarSign,
   TrendingUp,
@@ -110,10 +100,7 @@ const InvoicesPage = () => {
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [isEditOpen, setIsEditOpen] = useState(false);
-  const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
-  const [editForm, setEditForm] = useState({ due_date: "", notes: "" });
-  const [editSaving, setEditSaving] = useState(false);
+  const [editInvoiceId, setEditInvoiceId] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const { toast } = useToast();
   const { hasAnyRole } = useAuth();
@@ -159,39 +146,6 @@ const InvoicesPage = () => {
       setSelectedInvoice(null);
     } catch (error: any) {
       toast({ title: "Error", description: "Failed to update status", variant: "destructive" });
-    }
-  };
-
-  const openEditDialog = (invoice: Invoice) => {
-    setEditingInvoice(invoice);
-    setEditForm({
-      due_date: invoice.due_date ? invoice.due_date.slice(0, 10) : "",
-      notes: invoice.notes || "",
-    });
-    setIsEditOpen(true);
-  };
-
-  const saveEditedInvoice = async () => {
-    if (!editingInvoice) return;
-    setEditSaving(true);
-    try {
-      const { error } = await supabase
-        .from("invoices")
-        .update({
-          due_date: editForm.due_date || null,
-          notes: editForm.notes || null,
-          status_updated_at: new Date().toISOString(),
-        })
-        .eq("id", editingInvoice.id);
-      if (error) throw error;
-      toast({ title: "Invoice Updated", description: `${editingInvoice.invoice_number} saved.` });
-      setIsEditOpen(false);
-      setEditingInvoice(null);
-      fetchInvoices();
-    } catch (error: any) {
-      toast({ title: "Error", description: error.message || "Failed to save invoice", variant: "destructive" });
-    } finally {
-      setEditSaving(false);
     }
   };
 
@@ -340,7 +294,6 @@ const InvoicesPage = () => {
                 <Plus className="w-4 h-4 mr-2" />
                 Create Invoice
               </Button>
-              <InvoiceCreationDialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen} onSuccess={fetchInvoices} />
             </>
           )}
           <Button variant="outline" size="sm"><Download className="w-4 h-4 mr-2" />Export</Button>
@@ -449,7 +402,7 @@ const InvoicesPage = () => {
                               <DropdownMenuContent align="end">
                                 {canManage && (
                                   <>
-                                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openEditDialog(invoice); }}>
+                                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setEditInvoiceId(invoice.id); }}>
                                       <Pencil className="w-4 h-4 mr-2" />Edit Invoice
                                     </DropdownMenuItem>
                                     <DropdownMenuItem onClick={() => toast({ title: "Invoice Sent", description: `Sent to ${invoice.customers?.company_name}` })}>
@@ -528,44 +481,20 @@ const InvoicesPage = () => {
         onStatusUpdate={fetchInvoices}
       />
 
-      {/* Edit Invoice Dialog */}
-      <Dialog open={isEditOpen} onOpenChange={(open) => { if (!open) { setIsEditOpen(false); setEditingInvoice(null); } }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Edit Invoice — {editingInvoice?.invoice_number}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-due-date">Due Date</Label>
-              <Input
-                id="edit-due-date"
-                type="date"
-                value={editForm.due_date}
-                onChange={(e) => setEditForm(f => ({ ...f, due_date: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-notes">Notes</Label>
-              <Textarea
-                id="edit-notes"
-                rows={4}
-                value={editForm.notes}
-                onChange={(e) => setEditForm(f => ({ ...f, notes: e.target.value }))}
-                placeholder="Internal notes for this invoice…"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setIsEditOpen(false); setEditingInvoice(null); }}>
-              Cancel
-            </Button>
-            <Button onClick={saveEditedInvoice} disabled={editSaving}>
-              {editSaving ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : null}
-              Save Changes
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Create Invoice */}
+      <InvoiceCreationDialog
+        open={isCreateDialogOpen}
+        onOpenChange={setIsCreateDialogOpen}
+        onSuccess={fetchInvoices}
+      />
+
+      {/* Edit Invoice — reuses the full creation dialog in edit mode */}
+      <InvoiceCreationDialog
+        open={!!editInvoiceId}
+        onOpenChange={(open) => { if (!open) setEditInvoiceId(null); }}
+        onSuccess={fetchInvoices}
+        editInvoiceId={editInvoiceId}
+      />
     </DashboardLayout>
   );
 };

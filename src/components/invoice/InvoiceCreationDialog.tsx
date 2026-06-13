@@ -59,6 +59,8 @@ interface InvoiceCreationDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
+  /** When set, the dialog opens in Edit mode pre-loaded with this invoice's data */
+  editInvoiceId?: string | null;
 }
 
 const TONNAGE_OPTIONS = ["1T", "3T", "5T", "10T", "15T", "20T", "30T", "40T", "Container 20ft", "Container 40ft", "Flatbed", "Other"];
@@ -93,14 +95,19 @@ export const InvoiceCreationDialog = ({
   open,
   onOpenChange,
   onSuccess,
+  editInvoiceId,
 }: InvoiceCreationDialogProps) => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [dispatches, setDispatches] = useState<Dispatch[]>([]);
   const [saving, setSaving] = useState(false);
+  const [loadingEdit, setLoadingEdit] = useState(false);
+  const [editInvoiceNumber, setEditInvoiceNumber] = useState<string>("");
   const { toast } = useToast();
   const { user, userRole, organizationId } = useAuth();
   const { logChange } = useAuditLog();
   const { settings: companySettings, forceRefresh } = useCompanySettings();
+
+  const isEditMode = !!editInvoiceId;
 
   useEffect(() => {
     if (open) forceRefresh();
@@ -156,7 +163,73 @@ export const InvoiceCreationDialog = ({
       fetchCustomers();
       fetchDispatches();
     }
+    if (!open) {
+      // Reset edit state when dialog closes
+      setEditInvoiceNumber("");
+    }
   }, [open]);
+
+  // Load existing invoice data when editing
+  useEffect(() => {
+    if (!open || !editInvoiceId) return;
+
+    const loadInvoice = async () => {
+      setLoadingEdit(true);
+      try {
+        const [{ data: inv }, { data: items }] = await Promise.all([
+          supabase
+            .from("invoices")
+            .select("*")
+            .eq("id", editInvoiceId)
+            .single(),
+          supabase
+            .from("invoice_line_items")
+            .select("*")
+            .eq("invoice_id", editInvoiceId)
+            .order("sequence_order"),
+        ]);
+
+        if (!inv) return;
+
+        setEditInvoiceNumber(inv.invoice_number);
+        setFormData({
+          invoice_number: inv.invoice_number,
+          auto_number: false,
+          invoice_date: inv.invoice_date ? inv.invoice_date.slice(0, 10) : new Date().toISOString().split("T")[0],
+          payment_terms: inv.payment_terms || "net_30",
+          due_date: inv.due_date ? inv.due_date.slice(0, 10) : "",
+          customer_id: inv.customer_id || "",
+          dispatch_id: inv.dispatch_id || "",
+          notes: inv.notes || "",
+          shipping_charge: inv.shipping_charge || 0,
+          shipping_vat_applicable: (inv.shipping_vat_rate || 0) > 0,
+          shipping_vat_rate: inv.shipping_vat_rate || 7.5,
+        });
+
+        if (items && items.length > 0) {
+          setLineItems(items.map((item: any) => ({
+            id: crypto.randomUUID(),
+            description: item.description || "",
+            item_type: (item.item_type as LineItem["item_type"]) || "service",
+            tonnage: item.tonnage || "",
+            quantity: item.quantity || 1,
+            rate: item.rate || item.unit_price || 0,
+            vat_rate: item.vat_rate || 0,
+            vat_amount: item.vat_amount || 0,
+            line_total: item.line_total || 0,
+            dropoff_address: item.dropoff_address || undefined,
+            dispatch_id: item.dispatch_id || undefined,
+          })));
+        }
+      } catch (err) {
+        console.error("Failed to load invoice for editing", err);
+      } finally {
+        setLoadingEdit(false);
+      }
+    };
+
+    loadInvoice();
+  }, [open, editInvoiceId]);
 
   const fetchCustomers = async () => {
     const { data } = await supabase.from("customers").select("id, company_name").order("company_name");
@@ -257,6 +330,75 @@ export const InvoiceCreationDialog = ({
     return `${prefix}${seq.toString().padStart(4, "0")}`;
   };
 
+  const handleEditSubmit = async () => {
+    if (!editInvoiceId) return;
+    setSaving(true);
+    try {
+      const { subtotal, totalVat, shippingVat, grandTotal } = calculateTotals();
+
+      const updateData: Record<string, unknown> = {
+        customer_id: formData.customer_id,
+        dispatch_id: formData.dispatch_id || null,
+        invoice_date: formData.invoice_date,
+        due_date: formData.due_date || null,
+        payment_terms: formData.payment_terms,
+        notes: formData.notes || null,
+        shipping_charge: formData.shipping_charge,
+        shipping_vat_rate: formData.shipping_vat_applicable ? formData.shipping_vat_rate : 0,
+        shipping_vat_amount: shippingVat,
+        amount: subtotal,
+        subtotal,
+        tax_amount: totalVat + shippingVat,
+        total_amount: grandTotal,
+        balance_due: grandTotal,
+        status_updated_at: new Date().toISOString(),
+      };
+
+      const { error: updateError } = await supabase
+        .from("invoices")
+        .update(updateData as never)
+        .eq("id", editInvoiceId);
+      if (updateError) throw updateError;
+
+      // Replace all line items
+      await supabase.from("invoice_line_items").delete().eq("invoice_id", editInvoiceId);
+      const lineItemsToInsert = lineItems.map((item, index) => ({
+        invoice_id: editInvoiceId,
+        description: item.description,
+        item_type: item.item_type,
+        tonnage: item.tonnage || null,
+        quantity: item.quantity,
+        unit_price: item.rate,
+        rate: item.rate,
+        amount: item.quantity * item.rate,
+        vat_rate: item.vat_rate,
+        vat_amount: item.vat_amount,
+        line_total: item.line_total,
+        dropoff_address: item.dropoff_address || null,
+        dispatch_id: item.dispatch_id || null,
+        sequence_order: index + 1,
+      }));
+      await supabase.from("invoice_line_items").insert(lineItemsToInsert);
+
+      await logChange({
+        table_name: "invoices",
+        record_id: editInvoiceId,
+        action: "update",
+        new_data: { ...updateData, line_items_count: lineItemsToInsert.length },
+      });
+
+      toast({ title: "Invoice Updated", description: `${editInvoiceNumber} saved successfully.` });
+      onOpenChange(false);
+      resetForm();
+      onSuccess();
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : "Failed to update invoice";
+      toast({ title: "Error", description: msg, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!formData.customer_id) {
       toast({ title: "Validation Error", description: "Please select a customer", variant: "destructive" });
@@ -264,6 +406,11 @@ export const InvoiceCreationDialog = ({
     }
     if (lineItems.every((item) => item.rate === 0)) {
       toast({ title: "Validation Error", description: "Please add at least one line item with a rate", variant: "destructive" });
+      return;
+    }
+
+    if (isEditMode) {
+      await handleEditSubmit();
       return;
     }
 
@@ -436,10 +583,14 @@ export const InvoiceCreationDialog = ({
         <DialogHeader>
           <DialogTitle className="font-heading flex items-center gap-2">
             <FileText className="w-5 h-5" />
-            Create New Invoice
+            {isEditMode ? `Edit Invoice — ${editInvoiceNumber}` : "Create New Invoice"}
           </DialogTitle>
           <DialogDescription>
-            {isOperations ? "Invoice will be submitted for admin approval." : "Generate an ERP-grade invoice with itemized charges."}
+            {isEditMode
+              ? "Update invoice details, line items, and amounts."
+              : isOperations
+                ? "Invoice will be submitted for admin approval."
+                : "Generate an ERP-grade invoice with itemized charges."}
           </DialogDescription>
         </DialogHeader>
 
@@ -451,23 +602,30 @@ export const InvoiceCreationDialog = ({
               <div className="p-4 bg-secondary/30 rounded-lg space-y-3">
                 <div className="flex items-center justify-between">
                   <Label className="font-semibold">Invoice Number</Label>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Auto-generate</span>
-                    <Switch
-                      checked={formData.auto_number}
-                      onCheckedChange={(checked) => setFormData((p) => ({ ...p, auto_number: checked }))}
-                    />
-                  </div>
+                  {!isEditMode && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">Auto-generate</span>
+                      <Switch
+                        checked={formData.auto_number}
+                        onCheckedChange={(checked) => setFormData((p) => ({ ...p, auto_number: checked }))}
+                      />
+                    </div>
+                  )}
                 </div>
-                {!formData.auto_number && (
+                {isEditMode ? (
+                  <div className="flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-muted-foreground" />
+                    <span className="font-mono text-sm font-medium">{editInvoiceNumber}</span>
+                    <span className="text-xs text-muted-foreground">(Invoice number cannot be changed)</span>
+                  </div>
+                ) : !formData.auto_number ? (
                   <Input
                     value={formData.invoice_number}
                     onChange={(e) => setFormData((p) => ({ ...p, invoice_number: e.target.value }))}
                     placeholder="e.g. RA-2026-0001"
                     className="bg-background/50"
                   />
-                )}
-                {formData.auto_number && (
+                ) : (
                   <p className="text-xs text-muted-foreground">Number will be auto-generated on creation (RA-YYYY-XXXX)</p>
                 )}
               </div>
@@ -674,7 +832,7 @@ export const InvoiceCreationDialog = ({
                   {companySettings?.tagline && <p className="text-[10px] text-muted-foreground">{companySettings.tagline}</p>}
                 </div>
                 <div className="text-right">
-                  <Badge variant="outline" className="text-[10px] mb-1">DRAFT</Badge>
+                  <Badge variant="outline" className="text-[10px] mb-1">{isEditMode ? "EDITING" : "DRAFT"}</Badge>
                   <p className="font-mono text-xs font-medium">
                     {formData.auto_number ? `INV-${new Date().getFullYear()}-####` : formData.invoice_number || "-"}
                   </p>
@@ -759,8 +917,16 @@ export const InvoiceCreationDialog = ({
         {/* Footer */}
         <div className="flex justify-end gap-2 pt-4 border-t border-border">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={saving}>
-            {saving ? "Creating..." : isOperations ? "Submit for Approval" : "Create Draft Invoice"}
+          <Button onClick={handleSubmit} disabled={saving || loadingEdit}>
+            {loadingEdit
+              ? "Loading…"
+              : saving
+                ? isEditMode ? "Saving…" : "Creating…"
+                : isEditMode
+                  ? "Save Changes"
+                  : isOperations
+                    ? "Submit for Approval"
+                    : "Create Draft Invoice"}
           </Button>
         </div>
       </DialogContent>
