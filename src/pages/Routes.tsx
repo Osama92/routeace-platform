@@ -878,12 +878,12 @@ const RoutesPage = () => {
         <Table>
           <TableHeader>
             <TableRow className="border-border/50 hover:bg-transparent">
-              <TableHead className="text-muted-foreground">Route Name</TableHead>
-              <TableHead className="text-muted-foreground">Origin</TableHead>
+              <TableHead className="text-muted-foreground min-w-[160px]">Route Name</TableHead>
+              <TableHead className="text-muted-foreground min-w-[120px]">Origin</TableHead>
               <TableHead className="text-muted-foreground">Stops</TableHead>
-              <TableHead className="text-muted-foreground">Destination</TableHead>
-              <TableHead className="text-muted-foreground">Distance</TableHead>
-              <TableHead className="text-muted-foreground">Duration</TableHead>
+              <TableHead className="text-muted-foreground min-w-[120px]">Destination</TableHead>
+              <TableHead className="text-muted-foreground whitespace-nowrap min-w-[100px]">Distance</TableHead>
+              <TableHead className="text-muted-foreground whitespace-nowrap min-w-[100px]">Duration</TableHead>
               <TableHead className="text-muted-foreground">Status</TableHead>
               <TableHead className="text-muted-foreground w-10"></TableHead>
             </TableRow>
@@ -916,13 +916,13 @@ const RoutesPage = () => {
                       <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
                         <Route className="w-5 h-5 text-primary" />
                       </div>
-                      <span className="font-medium text-foreground">{route.name}</span>
+                      <span className="font-medium text-foreground truncate max-w-[150px] block" title={route.name}>{route.name}</span>
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <div className="w-2 h-2 rounded-full bg-success" />
-                      {route.origin.split(",")[0]}
+                    <div className="flex items-center gap-2 text-muted-foreground min-w-0">
+                      <div className="w-2 h-2 rounded-full bg-success shrink-0" />
+                      <span className="truncate" title={route.origin}>{route.origin.split(",")[0]}</span>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -931,19 +931,19 @@ const RoutesPage = () => {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <ArrowRight className="w-4 h-4" />
-                      <div className="w-2 h-2 rounded-full bg-destructive" />
-                      {route.destination.split(",")[0]}
+                    <div className="flex items-center gap-2 text-muted-foreground min-w-0">
+                      <ArrowRight className="w-4 h-4 shrink-0" />
+                      <div className="w-2 h-2 rounded-full bg-destructive shrink-0" />
+                      <span className="truncate" title={route.destination}>{route.destination.split(",")[0]}</span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell className="text-muted-foreground whitespace-nowrap tabular-nums">
                     {route.distance_km ? `${route.distance_km.toLocaleString()} km` : "-"}
                   </TableCell>
                   <TableCell>
                     {route.estimated_duration_hours ? (
-                      <div className="flex items-center gap-2 text-muted-foreground">
-                        <Clock className="w-4 h-4" />
+                      <div className="flex items-center gap-2 text-muted-foreground whitespace-nowrap">
+                        <Clock className="w-4 h-4 shrink-0" />
                         {route.estimated_duration_hours >= 24
                           ? `${(route.estimated_duration_hours / 24).toFixed(1)} days`
                           : route.estimated_duration_hours >= 1

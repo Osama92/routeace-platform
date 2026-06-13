@@ -702,22 +702,21 @@ export const InvoiceCreationDialog = ({
                   </div>
                 </div>
 
-                {/* Table Header */}
+                {/* Table Header — 12-col grid: 2 tonnage | 3 desc | 1 qty | 2 rate | 1 vat% | 2 total | 1 del */}
                 <div className="grid grid-cols-12 gap-2 text-xs text-muted-foreground font-medium px-3">
                   <div className="col-span-2">Tonnage</div>
                   <div className="col-span-3">Description</div>
                   <div className="col-span-1">Qty</div>
-                  <div className="col-span-2">Rate</div>
-                  <div className="col-span-1">VAT %</div>
-                  <div className="col-span-1">VAT</div>
-                  <div className="col-span-1">Total</div>
+                  <div className="col-span-2">Rate (₦)</div>
+                  <div className="col-span-1">VAT%</div>
+                  <div className="col-span-2 text-right">Total (₦)</div>
                   <div className="col-span-1"></div>
                 </div>
 
                 {lineItems.map((item) => (
                   <div key={item.id} className="p-3 bg-secondary/20 rounded-lg space-y-2">
                     <div className="grid grid-cols-12 gap-2 items-center">
-                      <div className="col-span-2">
+                      <div className="col-span-2 min-w-0">
                         <Select value={item.tonnage} onValueChange={(v) => updateLineItem(item.id, { tonnage: v })}>
                           <SelectTrigger className="bg-background/50 text-xs h-8"><SelectValue placeholder="Tonnage" /></SelectTrigger>
                           <SelectContent>
@@ -725,16 +724,16 @@ export const InvoiceCreationDialog = ({
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="col-span-3">
-                        <Input value={item.description} onChange={(e) => updateLineItem(item.id, { description: e.target.value })} className="bg-background/50 text-xs h-8" placeholder="Description" />
+                      <div className="col-span-3 min-w-0">
+                        <Input value={item.description} onChange={(e) => updateLineItem(item.id, { description: e.target.value })} className="bg-background/50 text-xs h-8 w-full" placeholder="Description" />
                       </div>
-                      <div className="col-span-1">
-                        <Input type="number" value={item.quantity} onChange={(e) => updateLineItem(item.id, { quantity: parseInt(e.target.value) || 1 })} className="bg-background/50 text-xs h-8" />
+                      <div className="col-span-1 min-w-0">
+                        <Input type="number" value={item.quantity} onChange={(e) => updateLineItem(item.id, { quantity: parseInt(e.target.value) || 1 })} className="bg-background/50 text-xs h-8 w-full" />
                       </div>
-                      <div className="col-span-2">
-                        <Input type="number" value={item.rate || ""} onChange={(e) => updateLineItem(item.id, { rate: parseFloat(e.target.value) || 0 })} className="bg-background/50 text-xs h-8" placeholder="Rate" />
+                      <div className="col-span-2 min-w-0">
+                        <Input type="number" value={item.rate || ""} onChange={(e) => updateLineItem(item.id, { rate: parseFloat(e.target.value) || 0 })} className="bg-background/50 text-xs h-8 w-full" placeholder="0" />
                       </div>
-                      <div className="col-span-1">
+                      <div className="col-span-1 min-w-0">
                         <Select value={String(item.vat_rate)} onValueChange={(v) => updateLineItem(item.id, { vat_rate: parseFloat(v) })}>
                           <SelectTrigger className="bg-background/50 text-xs h-8"><SelectValue /></SelectTrigger>
                           <SelectContent>
@@ -745,11 +744,13 @@ export const InvoiceCreationDialog = ({
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="col-span-1 text-xs text-right font-medium text-muted-foreground">
-                        {item.vat_amount > 0 ? `₦${item.vat_amount.toLocaleString()}` : "-"}
-                      </div>
-                      <div className="col-span-1 text-xs text-right font-semibold">
+                      <div className="col-span-2 text-xs text-right font-semibold tabular-nums whitespace-nowrap pr-1">
                         ₦{item.line_total.toLocaleString()}
+                        {item.vat_amount > 0 && (
+                          <span className="block text-[10px] font-normal text-muted-foreground">
+                            +₦{item.vat_amount.toLocaleString()} VAT
+                          </span>
+                        )}
                       </div>
                       <div className="col-span-1 flex justify-end">
                         {lineItems.length > 1 && (
@@ -857,23 +858,23 @@ export const InvoiceCreationDialog = ({
                 <table className="w-full text-[10px]">
                   <thead className="bg-muted/50">
                     <tr>
-                      <th className="text-left p-1.5">Tonnage</th>
-                      <th className="text-left p-1.5">Description</th>
-                      <th className="text-right p-1.5">Qty</th>
-                      <th className="text-right p-1.5">Rate</th>
-                      <th className="text-right p-1.5">VAT</th>
-                      <th className="text-right p-1.5">Total</th>
+                      <th className="text-left p-1.5 whitespace-nowrap">Tonnage</th>
+                      <th className="text-left p-1.5 w-full">Description</th>
+                      <th className="text-right p-1.5 whitespace-nowrap">Qty</th>
+                      <th className="text-right p-1.5 whitespace-nowrap">Rate</th>
+                      <th className="text-right p-1.5 whitespace-nowrap">VAT</th>
+                      <th className="text-right p-1.5 whitespace-nowrap">Total</th>
                     </tr>
                   </thead>
                   <tbody>
                     {lineItems.map((item) => (
                       <tr key={item.id} className="border-t border-border/50">
-                        <td className="p-1.5">{item.tonnage || "-"}</td>
-                        <td className="p-1.5">{item.description}</td>
-                        <td className="p-1.5 text-right">{item.quantity}</td>
-                        <td className="p-1.5 text-right">₦{item.rate.toLocaleString()}</td>
-                        <td className="p-1.5 text-right">{item.vat_rate > 0 ? `${item.vat_rate}%` : "-"}</td>
-                        <td className="p-1.5 text-right font-medium">₦{item.line_total.toLocaleString()}</td>
+                        <td className="p-1.5 whitespace-nowrap">{item.tonnage || "-"}</td>
+                        <td className="p-1.5 max-w-[120px] break-words">{item.description}</td>
+                        <td className="p-1.5 text-right whitespace-nowrap">{item.quantity}</td>
+                        <td className="p-1.5 text-right whitespace-nowrap tabular-nums">₦{item.rate.toLocaleString()}</td>
+                        <td className="p-1.5 text-right whitespace-nowrap">{item.vat_rate > 0 ? `${item.vat_rate}%` : "-"}</td>
+                        <td className="p-1.5 text-right font-medium whitespace-nowrap tabular-nums">₦{item.line_total.toLocaleString()}</td>
                       </tr>
                     ))}
                   </tbody>

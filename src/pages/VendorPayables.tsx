@@ -475,11 +475,11 @@ const VendorPayables = () => {
             <TableRow className="border-border/50">
               <TableHead>Vendor</TableHead>
               <TableHead>Invoice #</TableHead>
-              <TableHead className="text-right">Amount</TableHead>
-              <TableHead className="text-right">Paid</TableHead>
-              <TableHead className="text-right">Balance</TableHead>
+              <TableHead className="text-right whitespace-nowrap min-w-[110px]">Amount</TableHead>
+              <TableHead className="text-right whitespace-nowrap min-w-[100px]">Paid</TableHead>
+              <TableHead className="text-right whitespace-nowrap min-w-[100px]">Balance</TableHead>
               <TableHead className="text-center">Status</TableHead>
-              <TableHead>Due Date</TableHead>
+              <TableHead className="whitespace-nowrap min-w-[100px]">Due Date</TableHead>
               <TableHead className="w-24"></TableHead>
             </TableRow>
           </TableHeader>
@@ -510,16 +510,16 @@ const VendorPayables = () => {
                       </div>
                     </TableCell>
                     <TableCell className="text-muted-foreground">{payable.invoice_number || "-"}</TableCell>
-                    <TableCell className="text-right font-medium">{formatCurrency(payable.amount)}</TableCell>
-                    <TableCell className="text-right text-success">{formatCurrency(payable.paid_amount)}</TableCell>
-                    <TableCell className="text-right text-warning">{formatCurrency(balance)}</TableCell>
+                    <TableCell className="text-right font-medium whitespace-nowrap tabular-nums">{formatCurrency(payable.amount)}</TableCell>
+                    <TableCell className="text-right text-success whitespace-nowrap tabular-nums">{formatCurrency(payable.paid_amount)}</TableCell>
+                    <TableCell className="text-right text-warning whitespace-nowrap tabular-nums">{formatCurrency(balance)}</TableCell>
                     <TableCell className="text-center">
                       <Badge className={config?.className}>
                         <StatusIcon className="w-3 h-3 mr-1" />
                         {config?.label}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
+                    <TableCell className="text-muted-foreground whitespace-nowrap">
                       {payable.due_date ? format(new Date(payable.due_date), "dd MMM yyyy") : "-"}
                     </TableCell>
                     <TableCell>

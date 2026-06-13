@@ -405,7 +405,7 @@ const InvoiceApprovalsPage = () => {
               <TableRow>
                 <TableHead>Invoice #</TableHead>
                 <TableHead>Customer</TableHead>
-                <TableHead>Amount</TableHead>
+                <TableHead className="whitespace-nowrap min-w-[110px]">Amount</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Submitted</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -420,7 +420,7 @@ const InvoiceApprovalsPage = () => {
                   <TableRow key={invoice.id}>
                     <TableCell className="font-medium">{invoice.invoice_number}</TableCell>
                     <TableCell>{invoice.customers?.company_name || "-"}</TableCell>
-                    <TableCell className="font-semibold">{formatCurrency(invoice.total_amount)}</TableCell>
+                    <TableCell className="font-semibold whitespace-nowrap tabular-nums">{formatCurrency(invoice.total_amount)}</TableCell>
                     <TableCell>
                       <Badge className={statusInfo.className}>
                         <StatusIcon className="w-3 h-3 mr-1" />

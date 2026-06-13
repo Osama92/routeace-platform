@@ -388,10 +388,10 @@ const InvoiceReports = () => {
                   <TableRow className="border-border/50">
                     <TableHead>Invoice #</TableHead>
                     <TableHead>Customer</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead className="text-right whitespace-nowrap min-w-[110px]">Amount</TableHead>
                     <TableHead className="text-center">Status</TableHead>
-                    <TableHead>Due Date</TableHead>
-                    <TableHead>Created</TableHead>
+                    <TableHead className="whitespace-nowrap min-w-[100px]">Due Date</TableHead>
+                    <TableHead className="whitespace-nowrap min-w-[100px]">Created</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -406,9 +406,9 @@ const InvoiceReports = () => {
                       <TableRow key={inv.id} className="border-border/50">
                         <TableCell className="font-medium">{inv.invoice_number}</TableCell>
                         <TableCell>{inv.customers?.company_name || "N/A"}</TableCell>
-                        <TableCell className="text-right font-medium">{formatCurrency(inv.total_amount)}</TableCell>
+                        <TableCell className="text-right font-medium whitespace-nowrap tabular-nums">{formatCurrency(inv.total_amount)}</TableCell>
                         <TableCell className="text-center">{getStatusBadge(inv.status)}</TableCell>
-                        <TableCell className="text-muted-foreground">
+                        <TableCell className="text-muted-foreground whitespace-nowrap">
                           {inv.due_date ? format(new Date(inv.due_date), "dd MMM yyyy") : "-"}
                         </TableCell>
                         <TableCell className="text-muted-foreground">
@@ -434,10 +434,10 @@ const InvoiceReports = () => {
                   <TableRow className="border-border/50">
                     <TableHead>Invoice #</TableHead>
                     <TableHead>Customer</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead className="text-right whitespace-nowrap min-w-[110px]">Amount</TableHead>
                     <TableHead className="text-center">Status</TableHead>
-                    <TableHead>Paid Date</TableHead>
-                    <TableHead>Created</TableHead>
+                    <TableHead className="whitespace-nowrap min-w-[100px]">Paid Date</TableHead>
+                    <TableHead className="whitespace-nowrap min-w-[100px]">Created</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -452,12 +452,12 @@ const InvoiceReports = () => {
                       <TableRow key={inv.id} className="border-border/50">
                         <TableCell className="font-medium">{inv.invoice_number}</TableCell>
                         <TableCell>{inv.customers?.company_name || "N/A"}</TableCell>
-                        <TableCell className="text-right font-medium text-success">{formatCurrency(inv.total_amount)}</TableCell>
+                        <TableCell className="text-right font-medium text-success whitespace-nowrap tabular-nums">{formatCurrency(inv.total_amount)}</TableCell>
                         <TableCell className="text-center">{getStatusBadge(inv.status)}</TableCell>
-                        <TableCell className="text-muted-foreground">
+                        <TableCell className="text-muted-foreground whitespace-nowrap">
                           {inv.paid_date ? format(new Date(inv.paid_date), "dd MMM yyyy") : "-"}
                         </TableCell>
-                        <TableCell className="text-muted-foreground">
+                        <TableCell className="text-muted-foreground whitespace-nowrap">
                           {format(new Date(inv.created_at), "dd MMM yyyy")}
                         </TableCell>
                       </TableRow>

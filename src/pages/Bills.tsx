@@ -363,9 +363,9 @@ export default function BillsPage() {
                   <TableHead className="text-xs text-primary">Bill #</TableHead>
                   <TableHead className="text-xs text-primary">Bill Date</TableHead>
                   <TableHead className="text-xs text-primary">Due Date</TableHead>
-                  <TableHead className="text-xs text-primary text-right">Amount</TableHead>
-                  <TableHead className="text-xs text-primary text-right">Paid</TableHead>
-                  <TableHead className="text-xs text-primary text-right">Balance</TableHead>
+                  <TableHead className="text-xs text-primary text-right whitespace-nowrap min-w-[110px]">Amount</TableHead>
+                  <TableHead className="text-xs text-primary text-right whitespace-nowrap min-w-[100px]">Paid</TableHead>
+                  <TableHead className="text-xs text-primary text-right whitespace-nowrap min-w-[100px]">Balance</TableHead>
                   <TableHead className="text-xs text-primary">Status</TableHead>
                   {activeErp.connected && <TableHead className="text-xs text-primary">{activeErp.name}</TableHead>}
                   <TableHead className="text-xs text-primary">Actions</TableHead>
@@ -386,11 +386,11 @@ export default function BillsPage() {
                       <TableRow key={bill.id}>
                         <TableCell className="text-xs font-medium">{bill.vendor_name}</TableCell>
                         <TableCell className="text-xs font-mono">{bill.bill_number}</TableCell>
-                        <TableCell className="text-xs">{bill.bill_date ? format(new Date(bill.bill_date), "MM/dd/yyyy") : "-"}</TableCell>
-                        <TableCell className="text-xs">{bill.due_date ? format(new Date(bill.due_date), "MM/dd/yyyy") : "-"}</TableCell>
-                        <TableCell className="text-xs text-right font-mono">₦{(bill.total_amount || 0).toLocaleString()}</TableCell>
-                        <TableCell className="text-xs text-right font-mono text-emerald-500">₦{paidAmt.toLocaleString()}</TableCell>
-                        <TableCell className="text-xs text-right font-mono">{balance > 0 ? `₦${balance.toLocaleString()}` : "-"}</TableCell>
+                        <TableCell className="text-xs whitespace-nowrap">{bill.bill_date ? format(new Date(bill.bill_date), "MM/dd/yyyy") : "-"}</TableCell>
+                        <TableCell className="text-xs whitespace-nowrap">{bill.due_date ? format(new Date(bill.due_date), "MM/dd/yyyy") : "-"}</TableCell>
+                        <TableCell className="text-xs text-right font-mono whitespace-nowrap tabular-nums">₦{(bill.total_amount || 0).toLocaleString()}</TableCell>
+                        <TableCell className="text-xs text-right font-mono whitespace-nowrap tabular-nums text-emerald-500">₦{paidAmt.toLocaleString()}</TableCell>
+                        <TableCell className="text-xs text-right font-mono whitespace-nowrap tabular-nums">{balance > 0 ? `₦${balance.toLocaleString()}` : "-"}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className={`text-[10px] ${STATUS_COLORS[displayStatus] || ""}`}>{displayStatus}</Badge>
                         </TableCell>
@@ -474,10 +474,10 @@ export default function BillsPage() {
                     <TableHead className="text-xs text-primary min-w-[120px]">Account</TableHead>
                     <TableHead className="text-xs text-primary min-w-[90px]">Tonnage</TableHead>
                     <TableHead className="text-xs text-primary w-16">Qty</TableHead>
-                    <TableHead className="text-xs text-primary w-24">Rate (₦)</TableHead>
+                    <TableHead className="text-xs text-primary min-w-[120px]">Rate (₦)</TableHead>
                     <TableHead className="text-xs text-primary min-w-[90px]">VAT</TableHead>
                     <TableHead className="text-xs text-primary min-w-[120px]">Customer</TableHead>
-                    <TableHead className="text-xs text-primary text-right w-24">Amount</TableHead>
+                    <TableHead className="text-xs text-primary text-right min-w-[110px] whitespace-nowrap">Amount</TableHead>
                     <TableHead className="w-8"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -503,7 +503,7 @@ export default function BillsPage() {
                         <Input type="number" className="h-8 text-xs border-0 bg-transparent w-14" value={line.quantity} onChange={e => updateLine(line.id, "quantity", Number(e.target.value))} />
                       </TableCell>
                       <TableCell className="p-1">
-                        <Input type="number" className="h-8 text-xs border-0 bg-transparent w-20" value={line.rate} onChange={e => updateLine(line.id, "rate", Number(e.target.value))} />
+                        <Input type="number" className="h-8 text-xs border-0 bg-transparent min-w-[100px]" value={line.rate} onChange={e => updateLine(line.id, "rate", Number(e.target.value))} />
                       </TableCell>
                       <TableCell className="p-1">
                         <Select value={line.vat_type} onValueChange={v => updateLine(line.id, "vat_type", v)}>
@@ -517,7 +517,7 @@ export default function BillsPage() {
                           <SelectContent>{(customers || []).map((c: any) => <SelectItem key={c.id} value={c.id} className="text-xs">{c.company_name}</SelectItem>)}</SelectContent>
                         </Select>
                       </TableCell>
-                      <TableCell className="p-1 text-right text-xs font-mono">₦{calcLineAmount(line).toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                      <TableCell className="p-1 text-right text-xs font-mono whitespace-nowrap tabular-nums">₦{calcLineAmount(line).toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
                       <TableCell className="p-1">
                         {lines.length > 1 && (
                           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setLines(prev => prev.filter(l => l.id !== line.id))}>

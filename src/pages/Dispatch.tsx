@@ -1392,7 +1392,7 @@ const DispatchPage = () => {
                       {dispatch.priority}
                     </span>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1">
+                  <p className="text-xs text-muted-foreground mt-1 truncate">
                     {dispatch.pickup_address?.split(",")[0]} → {dispatch.delivery_address?.split(",")[0]}
                   </p>
                   <div className="flex items-center gap-2 mt-2">

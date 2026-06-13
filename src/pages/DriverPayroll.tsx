@@ -1375,10 +1375,10 @@ const DriverPayrollPage = () => {
                     <TableRow>
                       <TableHead>Period</TableHead>
                       <TableHead className="text-center">Drivers</TableHead>
-                      <TableHead className="text-right">Total Gross</TableHead>
-                      <TableHead className="text-right">Total Tax</TableHead>
-                      <TableHead className="text-right">Total Net</TableHead>
-                      <TableHead>Processed Date</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[110px]">Total Gross</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[100px]">Total Tax</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[100px]">Total Net</TableHead>
+                      <TableHead className="whitespace-nowrap min-w-[120px]">Processed Date</TableHead>
                       <TableHead></TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1389,10 +1389,10 @@ const DriverPayrollPage = () => {
                         <TableCell className="text-center">
                           <Badge variant="secondary">{batch.driversCount}</Badge>
                         </TableCell>
-                        <TableCell className="text-right">{formatCurrency(batch.totalGross)}</TableCell>
-                        <TableCell className="text-right text-destructive">-{formatCurrency(batch.totalTax)}</TableCell>
-                        <TableCell className="text-right font-semibold text-success">{formatCurrency(batch.totalNet)}</TableCell>
-                        <TableCell className="text-muted-foreground">
+                        <TableCell className="text-right whitespace-nowrap tabular-nums">{formatCurrency(batch.totalGross)}</TableCell>
+                        <TableCell className="text-right text-destructive whitespace-nowrap tabular-nums">-{formatCurrency(batch.totalTax)}</TableCell>
+                        <TableCell className="text-right font-semibold text-success whitespace-nowrap tabular-nums">{formatCurrency(batch.totalNet)}</TableCell>
+                        <TableCell className="text-muted-foreground whitespace-nowrap">
                           {format(parseISO(batch.processedAt), "PPP")}
                         </TableCell>
                         <TableCell>
@@ -1612,9 +1612,9 @@ const DriverPayrollPage = () => {
                   <TableRow>
                     <TableHead>Driver</TableHead>
                     <TableHead>Type</TableHead>
-                    <TableHead className="text-right">Gross</TableHead>
-                    <TableHead className="text-right">Tax</TableHead>
-                    <TableHead className="text-right">Net</TableHead>
+                    <TableHead className="text-right whitespace-nowrap min-w-[100px]">Gross</TableHead>
+                    <TableHead className="text-right whitespace-nowrap min-w-[100px]">Tax</TableHead>
+                    <TableHead className="text-right whitespace-nowrap min-w-[100px]">Net</TableHead>
                     <TableHead>Status</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1627,11 +1627,11 @@ const DriverPayrollPage = () => {
                           {record.salary_type.replace("_", " ")}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right">{formatCurrency(record.gross_amount)}</TableCell>
-                      <TableCell className="text-right text-destructive">
+                      <TableCell className="text-right whitespace-nowrap tabular-nums">{formatCurrency(record.gross_amount)}</TableCell>
+                      <TableCell className="text-right text-destructive whitespace-nowrap tabular-nums">
                         -{formatCurrency(record.tax_amount || 0)}
                       </TableCell>
-                      <TableCell className="text-right font-semibold text-success">
+                      <TableCell className="text-right font-semibold text-success whitespace-nowrap tabular-nums">
                         {formatCurrency(record.net_amount || 0)}
                       </TableCell>
                       <TableCell>

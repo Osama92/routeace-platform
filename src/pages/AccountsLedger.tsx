@@ -205,11 +205,11 @@ const AccountsLedger = () => {
                     <TableRow className="border-border/50">
                       <TableHead>Invoice</TableHead>
                       <TableHead>Customer</TableHead>
-                      <TableHead className="text-right">Amount Due</TableHead>
-                      <TableHead className="text-right">Paid</TableHead>
-                      <TableHead className="text-right">Balance</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[110px]">Amount Due</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[100px]">Paid</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[100px]">Balance</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead>Posted</TableHead>
+                      <TableHead className="whitespace-nowrap min-w-[100px]">Posted</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -220,11 +220,11 @@ const AccountsLedger = () => {
                       <TableRow key={entry.id} className="border-border/50">
                         <TableCell className="font-medium">{entry.invoices?.invoice_number || "-"}</TableCell>
                         <TableCell>{entry.invoices?.customers?.company_name || "-"}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(entry.amount_due)}</TableCell>
-                        <TableCell className="text-right text-success">{formatCurrency(entry.amount_paid)}</TableCell>
-                        <TableCell className="text-right font-semibold">{formatCurrency(entry.balance)}</TableCell>
+                        <TableCell className="text-right whitespace-nowrap tabular-nums">{formatCurrency(entry.amount_due)}</TableCell>
+                        <TableCell className="text-right text-success whitespace-nowrap tabular-nums">{formatCurrency(entry.amount_paid)}</TableCell>
+                        <TableCell className="text-right font-semibold whitespace-nowrap tabular-nums">{formatCurrency(entry.balance)}</TableCell>
                         <TableCell>{statusBadge(entry.status)}</TableCell>
-                        <TableCell className="text-muted-foreground text-xs">{format(new Date(entry.posting_date), "dd MMM yyyy")}</TableCell>
+                        <TableCell className="text-muted-foreground text-xs whitespace-nowrap">{format(new Date(entry.posting_date), "dd MMM yyyy")}</TableCell>
                         <TableCell className="text-right">
                           {entry.status !== "paid" && entry.status !== "cancelled" && (
                             <Button size="sm" variant="outline" onClick={() => { setSelectedAr(entry); setPaymentDialog(true); }}>
@@ -252,11 +252,11 @@ const AccountsLedger = () => {
                     <TableHead>Vendor</TableHead>
                     <TableHead>Reference</TableHead>
                     <TableHead>Category</TableHead>
-                    <TableHead className="text-right">Amount Due</TableHead>
-                    <TableHead className="text-right">Paid</TableHead>
-                    <TableHead className="text-right">Balance</TableHead>
+                    <TableHead className="text-right whitespace-nowrap min-w-[110px]">Amount Due</TableHead>
+                    <TableHead className="text-right whitespace-nowrap min-w-[100px]">Paid</TableHead>
+                    <TableHead className="text-right whitespace-nowrap min-w-[100px]">Balance</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Due Date</TableHead>
+                    <TableHead className="whitespace-nowrap min-w-[100px]">Due Date</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -267,11 +267,11 @@ const AccountsLedger = () => {
                       <TableCell className="font-medium">{entry.vendor_name}</TableCell>
                       <TableCell>{entry.reference_number || "-"}</TableCell>
                       <TableCell>{entry.category || "-"}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(entry.amount_due)}</TableCell>
-                      <TableCell className="text-right text-success">{formatCurrency(entry.amount_paid)}</TableCell>
-                      <TableCell className="text-right font-semibold">{formatCurrency(entry.balance)}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap tabular-nums">{formatCurrency(entry.amount_due)}</TableCell>
+                      <TableCell className="text-right text-success whitespace-nowrap tabular-nums">{formatCurrency(entry.amount_paid)}</TableCell>
+                      <TableCell className="text-right font-semibold whitespace-nowrap tabular-nums">{formatCurrency(entry.balance)}</TableCell>
                       <TableCell>{statusBadge(entry.status)}</TableCell>
-                      <TableCell className="text-muted-foreground text-xs">{entry.due_date ? format(new Date(entry.due_date), "dd MMM yyyy") : "-"}</TableCell>
+                      <TableCell className="text-muted-foreground text-xs whitespace-nowrap">{entry.due_date ? format(new Date(entry.due_date), "dd MMM yyyy") : "-"}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -292,8 +292,8 @@ const AccountsLedger = () => {
                     <TableHead>Type</TableHead>
                     <TableHead>Account</TableHead>
                     <TableHead>Description</TableHead>
-                    <TableHead className="text-right">Debit</TableHead>
-                    <TableHead className="text-right">Credit</TableHead>
+                    <TableHead className="text-right whitespace-nowrap min-w-[100px]">Debit</TableHead>
+                    <TableHead className="text-right whitespace-nowrap min-w-[100px]">Credit</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -301,12 +301,12 @@ const AccountsLedger = () => {
                     <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No ledger entries. Post an invoice to generate entries.</TableCell></TableRow>
                   ) : ledgerEntries.map((entry) => (
                     <TableRow key={entry.id} className="border-border/50">
-                      <TableCell className="text-xs text-muted-foreground">{format(new Date(entry.entry_date), "dd MMM yyyy")}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{format(new Date(entry.entry_date), "dd MMM yyyy")}</TableCell>
                       <TableCell><Badge variant="outline" className="text-[10px]">{entry.reference_type}</Badge></TableCell>
                       <TableCell className="font-medium text-xs">{entry.account_name.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{entry.description}</TableCell>
-                      <TableCell className="text-right text-xs">{entry.debit > 0 ? formatCurrency(entry.debit) : "-"}</TableCell>
-                      <TableCell className="text-right text-xs">{entry.credit > 0 ? formatCurrency(entry.credit) : "-"}</TableCell>
+                      <TableCell className="text-right text-xs whitespace-nowrap tabular-nums">{entry.debit > 0 ? formatCurrency(entry.debit) : "-"}</TableCell>
+                      <TableCell className="text-right text-xs whitespace-nowrap tabular-nums">{entry.credit > 0 ? formatCurrency(entry.credit) : "-"}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

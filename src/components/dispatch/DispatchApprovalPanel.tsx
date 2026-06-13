@@ -183,29 +183,29 @@ const DispatchApprovalPanel = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Plan #</TableHead>
+                  <TableHead className="whitespace-nowrap">Plan #</TableHead>
                   <TableHead>Submitted By</TableHead>
                   <TableHead>Orders</TableHead>
-                  <TableHead>Est. Distance</TableHead>
-                  <TableHead>Est. Cost</TableHead>
-                  <TableHead>Submitted</TableHead>
+                  <TableHead className="whitespace-nowrap min-w-[100px]">Est. Distance</TableHead>
+                  <TableHead className="whitespace-nowrap min-w-[110px]">Est. Cost</TableHead>
+                  <TableHead className="whitespace-nowrap">Submitted</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {pendingPlans.map((plan) => (
                   <TableRow key={plan.id}>
-                    <TableCell className="font-mono">{plan.plan_number}</TableCell>
-                    <TableCell>{(plan.profiles as any)?.full_name || "Unknown"}</TableCell>
+                    <TableCell className="font-mono whitespace-nowrap">{plan.plan_number}</TableCell>
+                    <TableCell className="whitespace-nowrap">{(plan.profiles as any)?.full_name || "Unknown"}</TableCell>
                     <TableCell>
                       <Badge variant="outline">
                         <Package className="w-3 h-3 mr-1" />
                         {plan.total_orders}
                       </Badge>
                     </TableCell>
-                    <TableCell>{plan.total_distance_km?.toFixed(0) || 0} km</TableCell>
-                    <TableCell className="font-medium">₦{(plan.total_cost || 0).toLocaleString()}</TableCell>
-                    <TableCell>{format(new Date(plan.created_at), "MMM d, HH:mm")}</TableCell>
+                    <TableCell className="whitespace-nowrap tabular-nums">{plan.total_distance_km?.toFixed(0) || 0} km</TableCell>
+                    <TableCell className="font-medium whitespace-nowrap tabular-nums">₦{(plan.total_cost || 0).toLocaleString()}</TableCell>
+                    <TableCell className="whitespace-nowrap">{format(new Date(plan.created_at), "MMM d, HH:mm")}</TableCell>
                     <TableCell>
                       <div className="flex gap-1">
                         <Button size="sm" variant="outline" onClick={() => openDetails(plan)}>

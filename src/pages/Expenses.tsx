@@ -954,9 +954,9 @@ const Expenses = () => {
             <TableRow className="border-border/50 hover:bg-transparent">
               <TableHead className="text-muted-foreground">Date</TableHead>
               <TableHead className="text-muted-foreground">Category</TableHead>
-              <TableHead className="text-muted-foreground">Description</TableHead>
+              <TableHead className="text-muted-foreground max-w-[220px]">Description</TableHead>
               <TableHead className="text-muted-foreground">Type</TableHead>
-              <TableHead className="text-muted-foreground">Amount</TableHead>
+              <TableHead className="text-muted-foreground whitespace-nowrap min-w-[120px]">Amount</TableHead>
               <TableHead className="text-muted-foreground">Status</TableHead>
               <TableHead className="text-muted-foreground">Receipt</TableHead>
               {isAdmin && <TableHead className="text-muted-foreground">Actions</TableHead>}
@@ -984,7 +984,7 @@ const Expenses = () => {
                 const CatIcon = catInfo.icon;
                 return (
                   <TableRow key={expense.id} className="border-border/50">
-                    <TableCell className="font-medium">
+                    <TableCell className="font-medium whitespace-nowrap">
                       {format(new Date(expense.expense_date), "MMM dd, yyyy")}
                     </TableCell>
                     <TableCell>
@@ -993,7 +993,7 @@ const Expenses = () => {
                         <span className="capitalize">{expense.category.replace("_", " ")}</span>
                       </div>
                     </TableCell>
-                    <TableCell>{expense.description}</TableCell>
+                    <TableCell className="max-w-[220px]"><p className="truncate" title={expense.description}>{expense.description}</p></TableCell>
                     <TableCell>
                       <span
                         className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -1005,7 +1005,7 @@ const Expenses = () => {
                         {expense.is_cogs ? "COGS" : "OPEX"}
                       </span>
                     </TableCell>
-                    <TableCell className="font-semibold text-destructive">
+                    <TableCell className="font-semibold text-destructive whitespace-nowrap tabular-nums">
                       {formatCurrency(expense.amount)}
                     </TableCell>
                     <TableCell>

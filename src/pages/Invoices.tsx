@@ -314,7 +314,7 @@ const InvoicesPage = () => {
                   <TableHead className="text-muted-foreground font-medium">Invoice</TableHead>
                   <TableHead className="text-muted-foreground font-medium">Client</TableHead>
                   <TableHead className="text-muted-foreground font-medium hidden lg:table-cell">Route</TableHead>
-                  <TableHead className="text-muted-foreground font-medium">Amount</TableHead>
+                  <TableHead className="text-muted-foreground font-medium whitespace-nowrap min-w-[130px]">Amount</TableHead>
                   <TableHead className="text-muted-foreground font-medium">Status</TableHead>
                   <TableHead className="text-muted-foreground font-medium hidden md:table-cell">Due Date</TableHead>
                   {activeErps.length > 0 && <TableHead className="text-muted-foreground font-medium hidden lg:table-cell">{activeErps.length === 1 ? activeErps[0].name : "ERP Sync"}</TableHead>}
@@ -368,7 +368,7 @@ const InvoicesPage = () => {
                           ) : <span className="text-muted-foreground/50">-</span>}
                         </TableCell>
                         <TableCell>
-                          <p className="font-bold text-sm">{formatCurrency(invoice.total_amount)}</p>
+                          <p className="font-bold text-sm whitespace-nowrap tabular-nums">{formatCurrency(invoice.total_amount)}</p>
                         </TableCell>
                         <TableCell>
                           <Badge className={`${status.bg} ${status.color} border-0 font-medium`}>
