@@ -88,7 +88,7 @@ const calcLineAmount = (line: LineItem) => {
 
 export default function BillsPage() {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, organizationId } = useAuth();
   const qc = useQueryClient();
   const activeErp = useActiveErp();
   const [createOpen, setCreateOpen] = useState(false);
@@ -125,13 +125,14 @@ export default function BillsPage() {
     },
   });
 
-  // Vendors (unique from bills + accounts_payable)
+  // Vendors from vendor_partners table, scoped to the current org
   const { data: vendors } = useQuery({
-    queryKey: ["vendor-names"],
+    queryKey: ["vendor-names", organizationId],
     queryFn: async () => {
-      const { data } = await supabase.from("accounts_payable").select("vendor_name").limit(500);
-      const unique = [...new Set((data || []).map(v => v.vendor_name))].sort();
-      return unique;
+      let q = supabase.from("vendor_partners").select("id, business_name").order("business_name").limit(500);
+      if (organizationId) q = q.eq("organization_id", organizationId);
+      const { data } = await q;
+      return (data || []).map(v => v.business_name).filter(Boolean).sort() as string[];
     },
   });
 

@@ -32,8 +32,8 @@ const DispatchApprovalPanel = () => {
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
 
-  // Check if user can approve (Admin or Super Admin only)
-  const canApprove = userRole === "admin" || userRole === "super_admin";
+  // Check if user can approve (Admin, Super Admin, or Org Admin)
+  const canApprove = userRole === "admin" || userRole === "super_admin" || userRole === "org_admin";
 
   // Fetch pending dispatch plans
   const { data: pendingPlans, isLoading } = useQuery({
@@ -175,7 +175,7 @@ const DispatchApprovalPanel = () => {
           <CardDescription>
             {canApprove 
               ? "Review and approve or reject dispatch plans from Operations Managers"
-              : "View pending dispatch plans (approval requires Admin/Super Admin role)"}
+              : "View pending dispatch plans (approval requires Admin, Super Admin, or Org Admin role)"}
           </CardDescription>
         </CardHeader>
         <CardContent>
