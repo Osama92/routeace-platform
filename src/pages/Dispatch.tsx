@@ -1554,7 +1554,14 @@ const DispatchPage = () => {
                     className="flex-1"
                     onClick={() => {
                       setSelectedDispatch(dispatch);
-                      setStatusUpdate({ status: "", location: "", notes: "" });
+                      // Pre-select the current status so repeatable states (in_transit, delayed)
+                      // don't force the user to re-pick what's already active
+                      const repeatableStatuses = ["in_transit", "delayed", "picked_up", "assigned"];
+                      setStatusUpdate({
+                        status: repeatableStatuses.includes(dispatch.status) ? dispatch.status : "",
+                        location: "",
+                        notes: "",
+                      });
                       setStatusHistory([]);
                       setLocationSuggestions([]);
                       setShowLocationDropdown(false);
@@ -1654,7 +1661,9 @@ const DispatchPage = () => {
                     return all
                       .filter(({ value }) => {
                         if (value === "cancelled") return true;
+                        // Repeatable: delayed and in_transit can be posted again (location checkpoint)
                         if (value === "delayed") return cur !== "delivered" && cur !== "cancelled";
+                        if (value === "in_transit") return cur !== "delivered" && cur !== "cancelled" && cur !== "assigned";
                         const idx = order.indexOf(value);
                         return idx > curIdx;
                       })
