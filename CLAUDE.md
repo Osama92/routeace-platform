@@ -140,74 +140,53 @@ The service worker file itself is `public/sw.js`. Web push uses VAPID keys fetch
 
 ---
 
-## Connecting the Lovable-Purchased Domain
+## Deployment — Cloudflare Pages
 
-The domain `routeace.app` was originally purchased through Lovable. It is fully portable — you own the domain and can point it at any host. Below are step-by-step instructions for each deployment target.
+**Active host:** Cloudflare Pages (`routeace-platform` project).  
+Netlify has been removed. `netlify.toml` is deleted; `wrangler.toml` is the deploy config.
 
-### Step 1 — Identify your DNS registrar
+CI/CD deploys automatically on push:
+- `master` → production (`routeace.app`) via `.github/workflows/deploy-production.yml`
+- `develop` → staging preview via `.github/workflows/deploy-develop.yml`
 
-Lovable purchases domains via a registrar on your behalf. Check your email inbox for a domain registration confirmation. The registrar is usually **Porkbun** or **Cloudflare**. Log in to that registrar with your Lovable account email.
+### GitHub Actions secrets required
 
-Alternatively, look up the registrar:
-```
-whois routeace.app
-```
+Add these in your GitHub repo → Settings → Secrets and variables → Actions:
 
-### Step 2 — Build the project
+| Secret | Value |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API token with **Cloudflare Pages: Edit** permission |
+| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account ID (Cloudflare dashboard → right sidebar) |
+| `VITE_SUPABASE_PUBLISHABLE_KEY_PROD` | Supabase anon/publishable key for production project |
+| `VITE_SUPABASE_PUBLISHABLE_KEY_DEV` | Supabase anon/publishable key for dev/staging project |
+| `VITE_GOOGLE_MAPS_API_KEY` | Google Maps + Places API key |
+| `SUPABASE_ACCESS_TOKEN` | Supabase CLI access token (for migration pushes) |
+| `SUPABASE_DB_PASSWORD_PROD` | DB password for production Supabase project |
+| `SUPABASE_DB_PASSWORD_DEV` | DB password for dev/staging Supabase project |
 
-```sh
-npm run build
-# Output is in dist/
-```
+### First-time Cloudflare Pages setup (one-off)
 
-### Step 3A — Deploy to Netlify (recommended for simplicity)
-
-1. Go to https://app.netlify.com → New site → Deploy manually
-2. Drag and drop the `dist/` folder
-3. Add environment variables in Site Settings → Environment Variables
-4. Go to Site Settings → Domain Management → Add custom domain → enter `routeace.app`
-5. Netlify will show you the DNS records to set:
-   - CNAME `www` → `<your-netlify-site>.netlify.app`
-   - A record `@` → Netlify's IP (shown in the UI)
-6. In your registrar, update the DNS records as shown
-7. SSL will provision automatically within minutes
-8. Add `_redirects` file in `public/` for SPA routing:
-   ```
-   /* /index.html 200
-   ```
-
-### Step 3B — Deploy to Cloudflare Pages
-
-1. Go to https://dash.cloudflare.com → Workers & Pages → Create application → Pages
-2. Connect your Git repo OR upload `dist/` directly
+1. Go to [dash.cloudflare.com](https://dash.cloudflare.com) → Workers & Pages → Create → Pages
+2. Connect this GitHub repo, select branch `master`
 3. Set build command: `npm run build`, output directory: `dist`
-4. Add environment variables
-5. Go to the Pages project → Custom domains → Add domain → `routeace.app`
-6. If your domain's nameservers are already Cloudflare, the domain auto-connects
-7. If not, update your registrar's nameservers to Cloudflare's (shown in the Cloudflare UI)
+4. Project name: `routeace-platform` (must match `wrangler.toml` and the workflow `--project-name` flag)
+5. Add environment variables (Production environment):
+   - `VITE_SUPABASE_URL` = `https://mbybrzggrpyhvcnxhlua.supabase.co`
+   - `VITE_SUPABASE_PROJECT_ID` = `mbybrzggrpyhvcnxhlua`
+   - `VITE_SUPABASE_PUBLISHABLE_KEY` = your anon key
+6. Go to the project → Custom domains → Add → `routeace.app`
+   - If `routeace.app` nameservers are already on Cloudflare, it connects automatically
+   - Otherwise point your registrar's NS records to Cloudflare
 
-### Step 3C — Deploy to Vercel
+### SPA routing
 
-1. `npm i -g vercel && vercel --prod`
-2. In Vercel dashboard → Domains → Add `routeace.app`
-3. Set DNS CNAME record: `@` → `cname.vercel-dns.com`
-4. Add `vercel.json` in the project root for SPA routing:
-   ```json
-   { "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }] }
-   ```
+`wrangler.toml` sets `not_found_handling = "single-page-application"` — all 404s serve `index.html`. No `_redirects` file needed.
 
-### Step 4 — Update Supabase CORS
+### Update Supabase CORS + Auth (after DNS change)
 
-After DNS propagates (usually 5–30 minutes):
-1. Supabase Dashboard → Project Settings → API → Allowed Origins
-2. Ensure `https://routeace.app` and `https://www.routeace.app` are listed
-3. Update `ALLOWED_ORIGIN` secret in Edge Functions secrets
-
-### Step 5 — Update Supabase Auth Redirect URLs
-
-1. Supabase Dashboard → Authentication → URL Configuration
-2. Set **Site URL** to `https://routeace.app`
-3. Add to **Redirect URLs**: `https://routeace.app/**`
+1. Supabase Dashboard → Project Settings → API → Allowed Origins: ensure `https://routeace.app` and `https://www.routeace.app`
+2. Update `ALLOWED_ORIGIN` secret in Supabase Edge Function secrets
+3. Supabase Dashboard → Authentication → URL Configuration → Site URL: `https://routeace.app`, Redirect URLs: `https://routeace.app/**`
 
 ---
 
