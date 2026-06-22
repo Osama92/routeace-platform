@@ -12,6 +12,9 @@ const PRIVILEGED_ROLES = new Set([
   "operations",
   "core_founder",
   "core_cofounder",
+  "core_builder",
+  "core_product",
+  "core_engineer",
   "internal_team",
 ]);
 

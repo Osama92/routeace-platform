@@ -128,29 +128,21 @@ serve(async (req) => {
 
     // AI narrative
     let narrative = "";
-    if (ANTHROPIC_API_KEY) {
+    if (Deno.env.get("GEMINI_API_KEY")) {
       try {
-        const r = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: { "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-          body: JSON.stringify({
-            model: mapModel("google/gemini-2.5-flash-lite"),
-            messages: [{
-              role: "user",
-              content: `You are the AI Investor advisor. In 3 sentences, write an investor briefing.
+        narrative = await callAnthropic({
+          model: mapModel("google/gemini-2.5-flash-lite"),
+          messages: [{
+            role: "user",
+            content: `You are the AI Investor advisor. In 3 sentences, write an investor briefing.
 - Stage: ${stage}, Readiness: ${readiness}/100
 - Annual revenue: ₦${(annualRev / 1e6).toFixed(1)}M, MoM growth: ${revGrowth.toFixed(1)}%
 - Margin: ${margin.toFixed(1)}%, Runway: ${runwayMonths.toFixed(1)}mo
 - Recommended action: ${recommendedAction}, raise: ₦${(recommendedRaise / 1e6).toFixed(0)}M
 - Valuation: ₦${(valLow / 1e6).toFixed(0)}M – ₦${(valHigh / 1e6).toFixed(0)}M
 Be direct. No fluff.`,
-            }],
-          }),
+          }],
         });
-        if (r.ok) {
-          const d = await r.json();
-          narrative = d.choices?.[0]?.message?.content || "";
-        }
       } catch (e) {
         console.error("narrative error", e);
       }

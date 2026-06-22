@@ -155,7 +155,8 @@ Deno.serve(async (req) => {
     // Generate AI optimization recommendations
     let aiRecommendations: any[] = [];
 
-    if (anthropicApiKey) {
+    const geminiKey = Deno.env.get("GEMINI_API_KEY");
+    if (geminiKey) {
       try {
         const aiPrompt = `You are a fleet financial intelligence AI. Analyze these fleet CCC metrics and provide 4 actionable recommendations:
 
@@ -166,26 +167,13 @@ AR Aging - Current: ${arAging.current}, 30d: ${arAging.days30}, 60d: ${arAging.d
 
 Return JSON array with objects: { "title": string, "description": string, "impact": "high"|"medium"|"low", "category": "dso"|"dpo"|"dio"|"ccc", "estimatedImprovement": string }`;
 
-        const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            model: mapModel("google/gemini-2.5-flash"),
-            messages: [{ role: "user", content: aiPrompt }]
-          }),
+        const content = await callAnthropic({
+          model: mapModel("google/gemini-2.5-flash"),
+          messages: [{ role: "user", content: aiPrompt }],
         });
-
-        if (aiResp.ok) {
-          const aiData = await aiResp.json();
-          const content = aiData.content?.[0]?.text || "";
-          const jsonMatch = content.match(/\[[\s\S]*\]/);
-          if (jsonMatch) {
-            aiRecommendations = JSON.parse(jsonMatch[0]);
-          }
+        const jsonMatch = content.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          aiRecommendations = JSON.parse(jsonMatch[0]);
         }
       } catch (e) {
         console.error("AI recommendation error:", e);

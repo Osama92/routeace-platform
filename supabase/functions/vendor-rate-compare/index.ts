@@ -51,24 +51,15 @@ Deno.serve(async (req) => {
 
     // AI recommendation via Lovable AI
     let aiRecommendation = `${cheapest.vendor_name} offers the lowest rate (₦${cheapest.rate_ngn.toLocaleString()}) with ${cheapest.sla_days}-day SLA.`;
-    const lovableKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (lovableKey && cards.length > 1) {
+    if (Deno.env.get("GEMINI_API_KEY") && cards.length > 1) {
       try {
-        const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: { "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-          body: JSON.stringify({
-            model: mapModel("google/gemini-2.5-flash"),
-            messages: [
-              { role: "system", content: "You are a logistics procurement analyst. Recommend the best vendor balancing cost and SLA. Reply in 2 sentences max." },
-              { role: "user", content: `Route ${route_from}→${route_to}, vehicle ${vehicle_type}. Options: ${JSON.stringify(alternatives)}. Recommend the best.` },
-            ],
-          }),
-        });
-        if (aiResp.ok) {
-          const aiData = await aiResp.json();
-          aiRecommendation = aiData.content?.[0]?.text ?? aiRecommendation;
-        }
+        aiRecommendation = await callAnthropic({
+          model: mapModel("google/gemini-2.5-flash"),
+          messages: [
+            { role: "system", content: "You are a logistics procurement analyst. Recommend the best vendor balancing cost and SLA. Reply in 2 sentences max." },
+            { role: "user", content: `Route ${route_from}→${route_to}, vehicle ${vehicle_type}. Options: ${JSON.stringify(alternatives)}. Recommend the best.` },
+          ],
+        }) || aiRecommendation;
       } catch (e) {
         console.error("AI call failed:", e);
       }

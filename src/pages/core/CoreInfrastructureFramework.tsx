@@ -238,7 +238,7 @@ const MODULES: InfraModule[] = [
     summary:
       "Classifies, prioritizes, and applies first-response runbooks to incoming alerts.",
     pointerNotes: [
-      "Use Lovable AI Gateway (`google/gemini-2.5-flash`) - already wired via `LOVABLE_API_KEY`.",
+      "Use Gemini API (`gemini-2.0-flash`) via the `_shared/anthropic.ts` helper — set `GEMINI_API_KEY` in Supabase Edge Function secrets.",
       "Input: alert payload + last 200 log lines. Output: severity (critical/medium/low), category, suggested runbook step.",
       "Store in `incident_classifications` and link to PagerDuty incident id.",
       "Never auto-execute destructive actions - always require human approval for db writes / restarts.",

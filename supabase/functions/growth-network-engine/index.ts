@@ -81,42 +81,33 @@ serve(async (req) => {
     const regions = ["Lagos", "Ogun", "Ibadan", "Abuja", "Port Harcourt", "Kano"];
     const newLeads: any[] = [];
 
-    if (ANTHROPIC_API_KEY) {
+    if (Deno.env.get("GEMINI_API_KEY")) {
       try {
-        const r = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: { "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-          body: JSON.stringify({
-            model: mapModel("google/gemini-2.5-flash-lite"),
-            messages: [{
-              role: "user",
-              content: `Generate 5 realistic Nigerian B2B logistics prospect recommendations as JSON array. Each with:
+        const raw = await callAnthropic({
+          model: mapModel("google/gemini-2.5-flash-lite"),
+          messages: [{
+            role: "user",
+            content: `Generate 5 realistic Nigerian B2B logistics prospect recommendations as JSON array. Each with:
 {"target_name": "company name", "segment": "one of: FMCG Distributor / 3PL Operator / Fleet Aggregator / E-commerce / Manufacturer", "region": "Nigerian city", "opportunity_score": 60-95 number, "estimated_monthly_value": 500000-15000000 number, "pain_signals": ["short pain 1","short pain 2"], "recommended_pitch": "1-sentence data-backed pitch using estimated savings"}
 
 Return ONLY a JSON object {"leads": [...]}. No prose.`,
-            }],
-            response_format: { type: "json_object" },
-          }),
+          }],
         });
-        if (r.ok) {
-          const d = await r.json();
-          const raw = d.choices?.[0]?.message?.content || "{}";
-          const parsed = JSON.parse(raw);
-          const leads = parsed.leads || [];
-          for (const lead of leads.slice(0, 5)) {
-            const { data } = await supabase.from("growth_lead_signals").insert({
-              target_name: lead.target_name,
-              segment: lead.segment,
-              region: lead.region,
-              opportunity_score: lead.opportunity_score,
-              estimated_monthly_value: lead.estimated_monthly_value,
-              pain_signals: lead.pain_signals || [],
-              recommended_pitch: lead.recommended_pitch,
-              source: "ai_demand_engine",
-              status: "new",
-            }).select().single();
-            if (data) newLeads.push(data);
-          }
+        const parsed = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || "{}");
+        const leads = parsed.leads || [];
+        for (const lead of leads.slice(0, 5)) {
+          const { data } = await supabase.from("growth_lead_signals").insert({
+            target_name: lead.target_name,
+            segment: lead.segment,
+            region: lead.region,
+            opportunity_score: lead.opportunity_score,
+            estimated_monthly_value: lead.estimated_monthly_value,
+            pain_signals: lead.pain_signals || [],
+            recommended_pitch: lead.recommended_pitch,
+            source: "ai_demand_engine",
+            status: "new",
+          }).select().single();
+          if (data) newLeads.push(data);
         }
       } catch (e) {
         console.error("lead gen error", e);

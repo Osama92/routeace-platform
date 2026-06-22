@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { checkAndDeductCredits } from "../_shared/ai-credits.ts";
-import { callAnthropic, mapModel } from "../_shared/anthropic.ts";
+import { callGemini, mapModel } from "../_shared/anthropic.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { requireAuth } from "../_shared/require-auth.ts";
 
@@ -35,9 +35,10 @@ serve(async (req) => {
     const { type } = await req.json();
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    
-    if (!ANTHROPIC_API_KEY) {
-      throw new Error("ANTHROPIC_API_KEY is not configured");
+
+    const geminiKey = Deno.env.get("GEMINI_API_KEY");
+    if (!geminiKey) {
+      throw new Error("GEMINI_API_KEY is not configured");
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -84,8 +85,8 @@ serve(async (req) => {
         .select("status, created_at, actual_delivery, scheduled_delivery")
         .gte("created_at", oneWeekAgo.toISOString());
 
-      const onTimeCount = currentDispatches?.filter(d => 
-        d.actual_delivery && d.scheduled_delivery && 
+      const onTimeCount = currentDispatches?.filter(d =>
+        d.actual_delivery && d.scheduled_delivery &&
         new Date(d.actual_delivery) <= new Date(d.scheduled_delivery)
       ).length || 0;
 
@@ -128,7 +129,7 @@ serve(async (req) => {
         }
       };
 
-      // Generate AI insights
+      // Generate AI insights via Gemini
       const prompt = `You are an AI analyst for RouteAce, a logistics management platform. Analyze these weekly metrics and provide actionable insights.
 
 METRICS THIS WEEK:
@@ -156,39 +157,18 @@ Provide exactly 4 insight cards in this JSON format:
 
 Focus on: User growth, Revenue changes, Churn signals, Ops efficiency. Be specific and actionable.`;
 
-      const aiResponse = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!,
-          "anthropic-version": "2023-06-01",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          model: mapModel("google/gemini-3-flash-preview"),
-          messages: [
-            { role: "system", content: "You are a business intelligence analyst. Always respond with valid JSON only." },
-            { role: "user", content: prompt }
-          ]
-        }),
+      const aiText = await callGemini({
+        model: mapModel("google/gemini-3-flash-preview"),
+        messages: [
+          { role: "system", content: "You are a business intelligence analyst. Always respond with valid JSON only." },
+          { role: "user", content: prompt }
+        ],
+        maxTokens: 1024,
       });
 
-      if (!aiResponse.ok) {
-        if (aiResponse.status === 429) {
-          return new Response(JSON.stringify({ error: "Rate limit exceeded. Please try again later." }), {
-            status: 429,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-        throw new Error(`AI gateway error: ${aiResponse.status}`);
-      }
-
-      const aiData = await aiResponse.json();
-      const content = aiData.content?.[0]?.text || "{}";
-      
-      // Parse JSON from response
       let insights;
       try {
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        const jsonMatch = aiText.match(/\{[\s\S]*\}/);
         insights = jsonMatch ? JSON.parse(jsonMatch[0]) : { insights: [] };
       } catch (_e) {
         insights = { insights: [] };
@@ -236,7 +216,7 @@ Focus on: User growth, Revenue changes, Churn signals, Ops efficiency. Be specif
       // Calculate metrics for AI
       const totalRevenue = invoices?.filter(i => i.status === "paid")
         .reduce((sum, i) => sum + (i.total_amount || 0), 0) || 0;
-      
+
       const totalExpenses = expenses?.reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
       const monthlyBurn = totalExpenses / 3; // Approximate monthly burn
 
@@ -245,7 +225,7 @@ Focus on: User growth, Revenue changes, Churn signals, Ops efficiency. Be specif
         customerDispatchCounts[d.customer_id] = (customerDispatchCounts[d.customer_id] || 0) + 1;
       });
 
-      const lowEngagementCustomers = customers?.filter(c => 
+      const lowEngagementCustomers = customers?.filter(c =>
         (customerDispatchCounts[c.id] || 0) < 2
       ).length || 0;
 
@@ -301,38 +281,18 @@ Generate predictive KPIs in this JSON format:
 
 Be realistic with estimates based on the data provided. Use the revenue data to project growth.`;
 
-      const aiResponse = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!,
-          "anthropic-version": "2023-06-01",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          model: mapModel("google/gemini-3-flash-preview"),
-          messages: [
-            { role: "system", content: "You are a business intelligence analyst specializing in logistics. Always respond with valid JSON only." },
-            { role: "user", content: prompt }
-          ]
-        }),
+      const aiText = await callGemini({
+        model: mapModel("google/gemini-3-flash-preview"),
+        messages: [
+          { role: "system", content: "You are a business intelligence analyst specializing in logistics. Always respond with valid JSON only." },
+          { role: "user", content: prompt }
+        ],
+        maxTokens: 1024,
       });
 
-      if (!aiResponse.ok) {
-        if (aiResponse.status === 429) {
-          return new Response(JSON.stringify({ error: "Rate limit exceeded. Please try again later." }), {
-            status: 429,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-        throw new Error(`AI gateway error: ${aiResponse.status}`);
-      }
-
-      const aiData = await aiResponse.json();
-      const content = aiData.content?.[0]?.text || "{}";
-      
       let predictions;
       try {
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        const jsonMatch = aiText.match(/\{[\s\S]*\}/);
         predictions = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
       } catch (_e) {
         predictions = {};
@@ -362,8 +322,8 @@ Be realistic with estimates based on the data provided. Use the revenue data to 
 
   } catch (error) {
     console.error("Core AI Insights error:", error);
-    return new Response(JSON.stringify({ 
-      error: error instanceof Error ? error.message : "Unknown error" 
+    return new Response(JSON.stringify({
+      error: error instanceof Error ? error.message : "Unknown error"
     }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

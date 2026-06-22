@@ -27,7 +27,7 @@ serve(async (req) => {
     if (route === "/scan" && req.method === "POST") {
       // Detect prospects from existing customer base (high fleet, high spend)
       const { data: customers } = await supabase.from("customers").select("id, customer_name, total_spent, total_invoices").order("total_spent", { ascending: false, nullsFirst: false }).limit(10);
-      const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
+      const apiKey = Deno.env.get("GEMINI_API_KEY");
       const created: string[] = [];
 
       for (const c of customers || []) {
@@ -42,26 +42,18 @@ serve(async (req) => {
 
         if (apiKey) {
           try {
-            const r = await fetch("https://api.anthropic.com/v1/messages", {
-              method: "POST",
-              headers: { "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-              body: JSON.stringify({
-                model: mapModel("google/gemini-2.5-flash"),
-                messages: [
-                  { role: "system", content: "You are a B2B logistics sales strategist. Reply with concise, data-backed pitches. JSON only." },
-                  { role: "user", content: `Generate a personalized enterprise sales pitch for ${c.customer_name} (estimated ${fleetSize} trucks, ₦${monthlyLoss}/mo loss). Return JSON: {pitch:string, objections:[{objection,response}]}` },
-                ],
-              }),
+            const txt = await callAnthropic({
+              model: mapModel("google/gemini-2.5-flash"),
+              messages: [
+                { role: "system", content: "You are a B2B logistics sales strategist. Reply with concise, data-backed pitches. JSON only." },
+                { role: "user", content: `Generate a personalized enterprise sales pitch for ${c.customer_name} (estimated ${fleetSize} trucks, ₦${monthlyLoss}/mo loss). Return JSON: {pitch:string, objections:[{objection,response}]}` },
+              ],
             });
-            if (r.ok) {
-              const j = await r.json();
-              const txt = j.choices?.[0]?.message?.content || "";
-              const m = txt.match(/\{[\s\S]*\}/);
-              if (m) {
-                const parsed = JSON.parse(m[0]);
-                if (parsed.pitch) pitch = parsed.pitch;
-                if (Array.isArray(parsed.objections)) objections = parsed.objections;
-              }
+            const m = txt.match(/\{[\s\S]*\}/);
+            if (m) {
+              const parsed = JSON.parse(m[0]);
+              if (parsed.pitch) pitch = parsed.pitch;
+              if (Array.isArray(parsed.objections)) objections = parsed.objections;
             }
           } catch (_) { /* fall back to heuristic */ }
         }

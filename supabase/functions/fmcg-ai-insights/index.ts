@@ -47,74 +47,19 @@ serve(async (req) => {
       ? `Given this operational context: ${JSON.stringify(context)}. Generate role-specific AI insights now.`
       : `Generate role-specific AI insights for today's operations. Use realistic African FMCG distribution scenarios.`;
 
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: mapModel("google/gemini-3-flash-preview"),
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: "return_insights",
-              description: "Return AI-generated distribution insights",
-              parameters: {
-                type: "object",
-                properties: {
-                  insights: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        title: { type: "string" },
-                        description: { type: "string" },
-                        severity: { type: "string", enum: ["high", "medium", "low"] },
-                        suggested_action: { type: "string" },
-                      },
-                      required: ["title", "description", "severity", "suggested_action"],
-                      additionalProperties: false,
-                    },
-                  },
-                },
-                required: ["insights"],
-                additionalProperties: false,
-              },
-            },
-          },
-        ],
-        tool_choice: { type: "function", function: { name: "return_insights" } },
-      }),
+    const jsonPrompt = userPrompt + `\n\nReturn ONLY a JSON object: {"insights": [{"title": string, "description": string, "severity": "high"|"medium"|"low", "suggested_action": string}]}`;
+
+    const aiText = await callAnthropic({
+      model: mapModel("google/gemini-3-flash-preview"),
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: jsonPrompt },
+      ],
     });
 
-    if (!response.ok) {
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limit exceeded. Please try again shortly." }), {
-          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "AI credits exhausted. Please top up." }), {
-          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      const t = await response.text();
-      console.error("AI gateway error:", response.status, t);
-      throw new Error("AI gateway error");
-    }
-
-    const data = await response.json();
-    const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
-    if (!toolCall) throw new Error("No tool call in response");
-
-    const parsed = JSON.parse(toolCall.function.arguments);
+    const match = aiText.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error("No JSON in response");
+    const parsed = JSON.parse(match[0]);
     return new Response(JSON.stringify(parsed), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

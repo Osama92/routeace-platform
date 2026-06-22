@@ -40,23 +40,17 @@ serve(async (req) => {
         "delivery services",
       ];
 
-      // Use Lovable AI to draft hero + services copy
+      // Use Gemini AI to draft hero + services copy
       let aiCopy: any = {};
-      if (ANTHROPIC_API_KEY) {
-        const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: { "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-          body: JSON.stringify({
+      if (Deno.env.get("GEMINI_API_KEY")) {
+        try {
+          const txt = await callAnthropic({
             model: mapModel("google/gemini-3-flash-preview"),
             messages: [
               { role: "system", content: "You are a logistics marketing copywriter. Return ONLY JSON." },
               { role: "user", content: `Write website copy for "${company_name}" - a ${brand_style} ${services.join(", ") || "logistics"} company serving ${cities_served.join(", ") || "Nigeria"}, fleet of ${fleet_size || "growing"} vehicles, targeting ${target_clients.join(", ") || "businesses"}. Return JSON: { "hero_headline": "", "hero_sub": "", "value_props": ["","",""], "services_intro": "", "about_us": "", "cta": "" }` },
             ],
-          }),
-        });
-        try {
-          const aiJ = await aiResp.json();
-          const txt = aiJ?.choices?.[0]?.message?.content || "{}";
+          });
           aiCopy = JSON.parse(txt.replace(/```json|```/g, "").trim());
         } catch (_e) { aiCopy = {}; }
       }

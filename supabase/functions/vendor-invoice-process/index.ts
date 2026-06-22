@@ -8,7 +8,7 @@ import { buildCors } from "../_shared/cors.ts";
 let corsHeaders: Record<string, string> = buildCors();
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
+const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY")!;
 
 Deno.serve(async (req) => {
   corsHeaders = buildCors(req);
@@ -58,18 +58,12 @@ ${extractedText.slice(0, 30000)}`;
 
     let parsed: any = {};
     try {
-      const aiRes = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-        body: JSON.stringify({
-          model: mapModel("google/gemini-2.5-flash"),
-          messages: [{ role: "user", content: aiPrompt }],
-          response_format: { type: "json_object" },
-        }),
+      const aiText = await callAnthropic({
+        model: mapModel("google/gemini-2.5-flash"),
+        messages: [{ role: "user", content: aiPrompt }],
       });
-      const aiJson = await aiRes.json();
-      const content = aiJson?.choices?.[0]?.message?.content || "{}";
-      parsed = JSON.parse(content);
+      const match = aiText.match(/\{[\s\S]*\}/);
+      parsed = match ? JSON.parse(match[0]) : {};
     } catch (e) {
       console.error("AI parse failed", e);
     }

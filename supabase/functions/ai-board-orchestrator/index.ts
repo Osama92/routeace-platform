@@ -90,27 +90,13 @@ Be specific with ₦ amounts. Survival > profit > scale.`;
 
     const userPrompt = `${snapshot}\n\nDecision Question: ${question}\n\n${context ? `Additional context: ${JSON.stringify(context)}` : ""}`;
 
-    const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({
-        model: mapModel("google/gemini-2.5-flash"),
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        response_format: { type: "json_object" },
-      }),
-    });
-
-    if (!aiResp.ok) {
-      if (aiResp.status === 429) return new Response(JSON.stringify({ error: "Rate limited" }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      if (aiResp.status === 402) return new Response(JSON.stringify({ error: "AI credits exhausted" }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      throw new Error(`AI gateway ${aiResp.status}`);
-    }
-
-    const aiData = await aiResp.json();
-    const raw = aiData.content?.[0]?.text || "{}";
+    const raw = await callAnthropic({
+      model: mapModel("google/gemini-2.5-flash"),
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+    }) || "{}";
     let parsed: any = {};
     try {
       parsed = JSON.parse(raw);

@@ -191,7 +191,7 @@ serve(async (req) => {
     // ── 9. AI Narrative ──────────────────────────────────
     let aiNarrative = "";
 
-    if (ANTHROPIC_API_KEY) {
+    if (Deno.env.get("GEMINI_API_KEY")) {
       try {
         const prompt = `You are the AI CEO of a logistics company. Based on these metrics, give a 3-sentence executive briefing:
 - Revenue: ₦${(totalRevenue30d/1e6).toFixed(1)}M (${revenueGrowth > 0 ? "+" : ""}${revenueGrowth.toFixed(1)}% MoM)
@@ -205,19 +205,10 @@ serve(async (req) => {
 - Open Support Tickets: ${(supportTickets || []).length}
 Be direct, specific with ₦ amounts, and actionable. No fluff.`;
 
-        const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: { "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-          body: JSON.stringify({
-            model: mapModel("google/gemini-3-flash-preview"),
-            messages: [{ role: "user", content: prompt }],
-          }),
+        aiNarrative = await callAnthropic({
+          model: mapModel("google/gemini-3-flash-preview"),
+          messages: [{ role: "user", content: prompt }],
         });
-
-        if (aiResp.ok) {
-          const aiData = await aiResp.json();
-          aiNarrative = aiData.content?.[0]?.text || "";
-        }
       } catch (e) {
         console.error("AI narrative failed:", e);
       }

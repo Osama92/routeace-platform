@@ -54,42 +54,15 @@ ${orchestratorDecision.reasoning.map((r: string) => `- ${r}`).join('\n')}
 
 Based on the above, provide your analysis.`;
 
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: mapModel("google/gemini-3-flash-preview"),
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-      }),
+    const aiText = await callAnthropic({
+      model: mapModel("google/gemini-3-flash-preview"),
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
     });
 
-    if (!response.ok) {
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limited. Try again shortly." }), {
-          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "AI credits exhausted. Please add funds." }), {
-          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      const errorText = await response.text();
-      console.error("AI gateway error:", response.status, errorText);
-      return new Response(JSON.stringify({ error: "AI analysis failed" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const result = await response.json();
-    const analysis = result.content?.[0]?.text || "Analysis unavailable.";
+    const analysis = aiText || "Analysis unavailable.";
 
     return new Response(JSON.stringify({ analysis, timestamp: new Date().toISOString() }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

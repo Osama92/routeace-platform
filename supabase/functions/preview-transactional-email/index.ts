@@ -5,15 +5,15 @@ import { corsHeaders } from '../_shared/cors.ts'
 import { TEMPLATES } from '../_shared/transactional-email-templates/registry.ts'
 
 // Renders all registered templates with their previewData.
-// Gated by ANTHROPIC_API_KEY - only the Go API calls this.
+// Gated by WEBHOOK_SECRET - only internal tooling calls this.
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
 
-  const apiKey = Deno.env.get('ANTHROPIC_API_KEY')
-  if (!apiKey) {
+  const secret = Deno.env.get('WEBHOOK_SECRET')
+  if (!secret) {
     return new Response(
       JSON.stringify({ error: 'Server configuration error' }),
       {
@@ -23,10 +23,10 @@ Deno.serve(async (req) => {
     )
   }
 
-  // Verify the caller is authorized with ANTHROPIC_API_KEY
+  // Verify the caller is authorized with WEBHOOK_SECRET
   const authHeader = req.headers.get('Authorization')
   const token = authHeader?.replace(/^Bearer\s+/i, '')
-  if (token !== apiKey) {
+  if (token !== secret) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
