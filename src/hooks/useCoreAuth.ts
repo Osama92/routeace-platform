@@ -35,14 +35,14 @@ export function useCoreAuth() {
         return false;
       }
 
-      const { data: roleData } = await supabase
+      const { data: rolesData } = await supabase
         .from("user_roles")
         .select("role")
-        .eq("user_id", user.id)
-        .single();
+        .eq("user_id", user.id);
 
-      const role = roleData?.role as string;
-      const isCoreTeam = role?.startsWith("core_") || role === "internal_team";
+      const roles = (rolesData ?? []).map((r: any) => r.role as string);
+      const role = roles.find((r) => r.startsWith("core_") || r === "internal_team") ?? roles[0];
+      const isCoreTeam = roles.some((r) => r.startsWith("core_") || r === "internal_team");
 
       if (!isCoreTeam) {
         setState(prev => ({ ...prev, loading: false, isAuthenticated: false }));

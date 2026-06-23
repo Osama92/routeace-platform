@@ -46,15 +46,15 @@ const CoreLogin = () => {
       }
 
       // Check if user has a core team role
-      const { data: roleData, error: roleError } = await supabase
+      const { data: rolesData, error: roleError } = await supabase
         .from("user_roles")
         .select("role")
-        .eq("user_id", authData.user.id)
-        .single();
+        .eq("user_id", authData.user.id);
 
-      const role = roleData?.role as string;
-      const isCoreTeam = role?.startsWith("core_") || role === "internal_team";
-      
+      const roles = (rolesData ?? []).map((r: any) => r.role as string);
+      const role = roles.find((r) => r.startsWith("core_") || r === "internal_team") ?? roles[0];
+      const isCoreTeam = roles.some((r) => r.startsWith("core_") || r === "internal_team");
+
       if (roleError || !isCoreTeam) {
         // Sign out if not core team
         await supabase.auth.signOut();
