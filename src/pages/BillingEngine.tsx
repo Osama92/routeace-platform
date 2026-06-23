@@ -2,9 +2,11 @@
  * BillingEngine - Unified billing & revenue orchestration dashboard.
  * Shows real-time usage, running costs, invoices, and revenue metrics.
  */
+import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { motion } from "framer-motion";
@@ -18,6 +20,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pi
 const COLORS = ["hsl(var(--primary))", "hsl(142 76% 36%)", "hsl(262 83% 58%)", "hsl(38 92% 50%)"];
 
 export default function BillingEngine() {
+  const navigate = useNavigate();
   const { plans, usageEvents, invoices, revenueSnapshots, metrics, isLoading } = useBillingEngine();
 
   if (isLoading) {
@@ -257,6 +260,13 @@ export default function BillingEngine() {
 
           {/* Plans Tab */}
           <TabsContent value="plans">
+            <div className="mb-4 flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">Platform billing plans. To subscribe or change your plan, go to Settings → Billing.</p>
+              <Button onClick={() => navigate("/settings?tab=billing")} size="sm">
+                <CreditCard className="w-4 h-4 mr-2" />
+                Manage Subscription
+              </Button>
+            </div>
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
               {plans.map((plan) => (
                 <Card key={plan.id} className="relative">
