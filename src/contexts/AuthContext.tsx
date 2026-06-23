@@ -123,14 +123,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const fetchUserRole = async (userId: string) => {
     try {
-      const { data, error } = await supabase
+      const { data: rolesData, error } = await supabase
         .from("user_roles")
         .select("role")
-        .eq("user_id", userId)
-        .single();
+        .eq("user_id", userId);
 
-      if (!error && data?.role) {
-        return data.role as AppRole;
+      if (!error && rolesData && rolesData.length > 0) {
+        // Prefer core_ roles, otherwise take the first
+        const coreRole = rolesData.find((r: any) => r.role?.startsWith("core_") || r.role === "internal_team");
+        return ((coreRole ?? rolesData[0]).role) as AppRole;
       }
 
       // Fallback: organization_members.role (TEXT) for roles outside the app_role ENUM
