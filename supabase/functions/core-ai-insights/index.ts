@@ -159,8 +159,8 @@ Focus on: User growth, Revenue changes, Churn signals, Ops efficiency. Be specif
 
       const aiText = await callGemini({
         model: mapModel("google/gemini-3-flash-preview"),
+        system: "You are a business intelligence analyst. Always respond with valid JSON only.",
         messages: [
-          { role: "system", content: "You are a business intelligence analyst. Always respond with valid JSON only." },
           { role: "user", content: prompt }
         ],
         maxTokens: 1024,
@@ -283,8 +283,8 @@ Be realistic with estimates based on the data provided. Use the revenue data to 
 
       const aiText = await callGemini({
         model: mapModel("google/gemini-3-flash-preview"),
+        system: "You are a business intelligence analyst specializing in logistics. Always respond with valid JSON only.",
         messages: [
-          { role: "system", content: "You are a business intelligence analyst specializing in logistics. Always respond with valid JSON only." },
           { role: "user", content: prompt }
         ],
         maxTokens: 1024,

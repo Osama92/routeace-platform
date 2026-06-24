@@ -55,8 +55,8 @@ Deno.serve(async (req) => {
       try {
         aiRecommendation = await callAnthropic({
           model: mapModel("google/gemini-2.5-flash"),
+          system: "You are a logistics procurement analyst. Recommend the best vendor balancing cost and SLA. Reply in 2 sentences max.",
           messages: [
-            { role: "system", content: "You are a logistics procurement analyst. Recommend the best vendor balancing cost and SLA. Reply in 2 sentences max." },
             { role: "user", content: `Route ${route_from}→${route_to}, vehicle ${vehicle_type}. Options: ${JSON.stringify(alternatives)}. Recommend the best.` },
           ],
         }) || aiRecommendation;

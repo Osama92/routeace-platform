@@ -103,8 +103,8 @@ Return ONLY the JSON object, no markdown formatting.`;
 
     const aiText = await callAnthropic({
       model: mapModel("google/gemini-2.5-flash"),
+      system: systemPrompt,
       messages: [
-        { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
       maxTokens: 4096,

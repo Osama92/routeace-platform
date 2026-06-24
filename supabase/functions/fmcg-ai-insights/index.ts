@@ -51,8 +51,8 @@ serve(async (req) => {
 
     const aiText = await callAnthropic({
       model: mapModel("google/gemini-3-flash-preview"),
+      system: systemPrompt,
       messages: [
-        { role: "system", content: systemPrompt },
         { role: "user", content: jsonPrompt },
       ],
     });

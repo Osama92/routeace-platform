@@ -7,11 +7,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
-import { 
-  TrendingUp, 
-  Users, 
-  DollarSign, 
-  Activity, 
+import {
+  TrendingUp,
+  Users,
+  DollarSign,
+  Activity,
   BarChart3,
   AlertTriangle,
   CheckCircle,
@@ -29,41 +29,61 @@ import {
   Receipt,
   Shield,
   LogOut,
-  Sparkles
+  Sparkles,
 } from "lucide-react";
 import type { CoreRole } from "@/hooks/useCoreAuth";
 import AIInsightCards from "@/components/core/AIInsightCards";
 import PredictiveKPIs from "@/components/core/PredictiveKPIs";
 
 interface IntelligenceMetrics {
-  // User metrics
+  // Users
+  totalUsers: number;
   dau: number;
   mau: number;
   dauMauRatio: number;
-  avgSessionDuration: number;
-  
-  // Revenue metrics
+  newUsersThisMonth: number;
+  // Revenue
   mrr: number;
   arr: number;
-  revenueGrowth: number;
-  ltv: number;
-  cac: number;
-  
-  // Operations metrics
-  dispatchesPerDay: number;
-  avgDeliveryTime: number;
-  routeEfficiency: number;
-  
-  // Finance metrics
-  invoicesGenerated: number;
-  paymentCollection: number;
+  totalRevenue: number;
   outstandingAmount: number;
-  
-  // Technical metrics
+  invoicesGenerated: number;
+  paidInvoices: number;
+  // Operations
+  totalDispatches: number;
+  dispatchesThisMonth: number;
+  deliveredDispatches: number;
+  onTimeDispatches: number;
+  lateDispatches: number;
+  avgDeliveryHours: number;
+  // API / Technical
+  apiCalls: number;
   apiLatency: number;
   errorRate: number;
-  uptime: number;
+  successRate: number;
+  activeApiKeys: number;
+  // Engineering
+  failedJobs: number;
+  pendingJobs: number;
+  // Growth
+  newSignups30d: number;
+  orgsCount: number;
+  orgsByTier: { tier: string; count: number }[];
+  // Errors from api logs
+  recentErrors: { type: string; count: number; severity: string }[];
 }
+
+const EMPTY: IntelligenceMetrics = {
+  totalUsers: 0, dau: 0, mau: 0, dauMauRatio: 0, newUsersThisMonth: 0,
+  mrr: 0, arr: 0, totalRevenue: 0, outstandingAmount: 0,
+  invoicesGenerated: 0, paidInvoices: 0,
+  totalDispatches: 0, dispatchesThisMonth: 0, deliveredDispatches: 0,
+  onTimeDispatches: 0, lateDispatches: 0, avgDeliveryHours: 0,
+  apiCalls: 0, apiLatency: 0, errorRate: 0, successRate: 100, activeApiKeys: 0,
+  failedJobs: 0, pendingJobs: 0,
+  newSignups30d: 0, orgsCount: 0, orgsByTier: [],
+  recentErrors: [],
+};
 
 const CoreIntelligence = () => {
   const navigate = useNavigate();
@@ -72,118 +92,152 @@ const CoreIntelligence = () => {
   const [coreRole, setCoreRole] = useState<CoreRole | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("overview");
-  const [metrics, setMetrics] = useState<IntelligenceMetrics>({
-    dau: 0,
-    mau: 0,
-    dauMauRatio: 0,
-    avgSessionDuration: 0,
-    mrr: 0,
-    arr: 0,
-    revenueGrowth: 0,
-    ltv: 0,
-    cac: 0,
-    dispatchesPerDay: 0,
-    avgDeliveryTime: 0,
-    routeEfficiency: 0,
-    invoicesGenerated: 0,
-    paymentCollection: 0,
-    outstandingAmount: 0,
-    apiLatency: 0,
-    errorRate: 0,
-    uptime: 99.9,
-  });
+  const [metrics, setMetrics] = useState<IntelligenceMetrics>(EMPTY);
 
   useEffect(() => {
     checkAccess();
     loadMetrics();
-    
-    // Set active tab from URL
     const path = location.pathname.split("/").pop();
-    if (path && path !== "intelligence") {
-      setActiveTab(path);
-    }
+    if (path && path !== "intelligence") setActiveTab(path);
   }, [location]);
 
   const checkAccess = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        navigate("/core/login");
-        return;
-      }
+      if (!user) { navigate("/core/login"); return; }
 
       const { data: rolesData } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", user.id);
+        .from("user_roles").select("role").eq("user_id", user.id);
 
       const roles = (rolesData ?? []).map((r: any) => r.role as string);
       const role = roles.find((r) => r.startsWith("core_") || r === "internal_team") ?? roles[0];
       const allowedRoles = ["core_founder", "core_cofounder", "core_product", "core_analyst"];
 
       if (!allowedRoles.includes(role)) {
-        toast({
-          title: "Access Denied",
-          description: "This intelligence module is restricted to authorized Core Team members.",
-          variant: "destructive",
-        });
+        toast({ title: "Access Denied", description: "This intelligence module is restricted to authorized Core Team members.", variant: "destructive" });
         navigate("/core/dashboard");
         return;
       }
 
       setCoreRole(role as CoreRole);
       setLoading(false);
-    } catch (error) {
+    } catch {
       navigate("/core/login");
     }
   };
 
   const loadMetrics = async () => {
     try {
-      const [usersRes, sessionsRes, dispatchesRes, invoicesRes, apiLogsRes] = await Promise.all([
-        supabase.from("profiles").select("id, created_at", { count: "exact" }),
-        supabase.from("user_sessions").select("*").gte("login_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()),
-        supabase.from("dispatches").select("id, status, created_at, actual_delivery, scheduled_delivery"),
-        supabase.from("invoices").select("total_amount, status"),
-        supabase.from("api_request_logs").select("response_time_ms, status_code"),
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const thisMonthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+
+      const [
+        totalUsersRes,
+        newUsersRes,
+        dauRes,
+        mauRes,
+        allDispatchesRes,
+        monthDispatchesRes,
+        allInvoicesRes,
+        mrrInvoicesRes,
+        apiLogsRes,
+        apiKeysRes,
+        orgsRes,
+        failedJobsRes,
+        pendingJobsRes,
+      ] = await Promise.all([
+        supabase.from("profiles").select("id", { count: "exact", head: true }),
+        supabase.from("profiles").select("id", { count: "exact", head: true }).gte("created_at", thirtyDaysAgo),
+        supabase.from("user_sessions").select("user_id").gte("login_at", oneDayAgo),
+        supabase.from("user_sessions").select("user_id").gte("login_at", thirtyDaysAgo),
+        supabase.from("dispatches").select("id, status, on_time_flag, actual_delivery, scheduled_delivery, created_at"),
+        supabase.from("dispatches").select("id", { count: "exact", head: true }).gte("created_at", thisMonthStart),
+        supabase.from("invoices").select("id, total_amount, status, created_at"),
+        supabase.from("invoices").select("total_amount").eq("status", "paid").gte("created_at", thisMonthStart),
+        supabase.from("api_request_logs").select("status_code, response_time_ms, created_at").order("created_at", { ascending: false }).limit(500),
+        supabase.from("api_keys").select("id", { count: "exact", head: true }).eq("is_active", true),
+        supabase.from("organizations").select("id, subscription_tier").eq("is_active", true),
+        supabase.from("email_queue").select("id", { count: "exact", head: true }).eq("status", "failed"),
+        supabase.from("email_queue").select("id", { count: "exact", head: true }).eq("status", "pending"),
       ]);
 
-      const totalRevenue = invoicesRes.data?.filter(i => i.status === "paid").reduce((sum, inv) => sum + (inv.total_amount || 0), 0) || 0;
-      const outstandingAmount = invoicesRes.data?.filter(i => i.status === "pending" || i.status === "overdue").reduce((sum, inv) => sum + (inv.total_amount || 0), 0) || 0;
-      const avgLatency = apiLogsRes.data?.reduce((sum, l) => sum + (l.response_time_ms || 0), 0) / (apiLogsRes.data?.length || 1) || 0;
-      const errorCount = apiLogsRes.data?.filter(l => l.status_code && l.status_code >= 400).length || 0;
-      const totalCalls = apiLogsRes.data?.length || 1;
-      
-      // Calculate DAU (unique sessions in last 24h)
-      const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      const dauSessions = sessionsRes.data?.filter(s => s.login_at >= last24h) || [];
-      const uniqueDauUsers = new Set(dauSessions.map(s => s.user_id)).size;
-      
-      // Calculate MAU
-      const uniqueMauUsers = new Set(sessionsRes.data?.map(s => s.user_id) || []).size;
+      // Users
+      const totalUsers = totalUsersRes.count || 0;
+      const newUsersThisMonth = newUsersRes.count || 0;
+      const dau = new Set((dauRes.data || []).map((s: any) => s.user_id)).size;
+      const mau = new Set((mauRes.data || []).map((s: any) => s.user_id)).size;
+      const dauMauRatio = mau > 0 ? (dau / mau) * 100 : 0;
+
+      // Dispatches
+      const dispatches = allDispatchesRes.data || [];
+      const totalDispatches = dispatches.length;
+      const dispatchesThisMonth = monthDispatchesRes.count || 0;
+      const deliveredDispatches = dispatches.filter((d) => d.status === "delivered").length;
+      const onTimeDispatches = dispatches.filter((d) => d.on_time_flag === true).length;
+      const lateDispatches = dispatches.filter((d) => d.on_time_flag === false).length;
+
+      // Avg delivery hours for delivered dispatches that have both timestamps
+      const deliveredWithTimes = dispatches.filter(
+        (d) => d.status === "delivered" && d.actual_delivery && d.scheduled_delivery
+      );
+      const avgDeliveryHours =
+        deliveredWithTimes.length > 0
+          ? deliveredWithTimes.reduce((sum, d) => {
+              const diff = new Date(d.actual_delivery).getTime() - new Date(d.scheduled_delivery).getTime();
+              return sum + Math.abs(diff) / 3_600_000;
+            }, 0) / deliveredWithTimes.length
+          : 0;
+
+      // Revenue
+      const allInvoices = allInvoicesRes.data || [];
+      const totalRevenue = allInvoices.filter((i) => i.status === "paid").reduce((s, i) => s + (i.total_amount || 0), 0);
+      const outstandingAmount = allInvoices.filter((i) => i.status === "pending" || i.status === "overdue").reduce((s, i) => s + (i.total_amount || 0), 0);
+      const mrr = (mrrInvoicesRes.data || []).reduce((s, i) => s + (i.total_amount || 0), 0);
+      const arr = mrr * 12;
+      const invoicesGenerated = allInvoices.length;
+      const paidInvoices = allInvoices.filter((i) => i.status === "paid").length;
+
+      // API
+      const apiLogs = apiLogsRes.data || [];
+      const apiCalls = apiLogs.length;
+      const apiLatency = apiCalls > 0 ? apiLogs.reduce((s, l: any) => s + (l.response_time_ms || 0), 0) / apiCalls : 0;
+      const errorCalls = apiLogs.filter((l: any) => l.status_code && l.status_code >= 400).length;
+      const errorRate = apiCalls > 0 ? (errorCalls / apiCalls) * 100 : 0;
+      const successRate = 100 - errorRate;
+      const activeApiKeys = apiKeysRes.count || 0;
+
+      // Orgs by tier
+      const tierMap: Record<string, number> = {};
+      (orgsRes.data || []).forEach((o: any) => {
+        tierMap[o.subscription_tier] = (tierMap[o.subscription_tier] || 0) + 1;
+      });
+      const orgsByTier = Object.entries(tierMap).map(([tier, count]) => ({ tier, count }));
+      const orgsCount = (orgsRes.data || []).length;
+
+      // Engineering
+      const failedJobs = failedJobsRes.count || 0;
+      const pendingJobs = pendingJobsRes.count || 0;
+
+      // Error breakdown from api logs
+      const clientErrors = apiLogs.filter((l: any) => l.status_code >= 400 && l.status_code < 500).length;
+      const serverErrors = apiLogs.filter((l: any) => l.status_code >= 500).length;
+      const recentErrors = [];
+      if (serverErrors > 0) recentErrors.push({ type: "Server Errors (5xx)", count: serverErrors, severity: "error" });
+      if (clientErrors > 0) recentErrors.push({ type: "Client Errors (4xx)", count: clientErrors, severity: "warn" });
+      if (failedJobs > 0) recentErrors.push({ type: "Failed Email Jobs", count: failedJobs, severity: "warn" });
 
       setMetrics({
-        dau: uniqueDauUsers,
-        mau: uniqueMauUsers,
-        dauMauRatio: uniqueMauUsers > 0 ? (uniqueDauUsers / uniqueMauUsers) * 100 : 0,
-        avgSessionDuration: 12, // Placeholder
-        mrr: totalRevenue * 0.1, // Estimate
-        arr: totalRevenue * 1.2,
-        revenueGrowth: 18,
-        ltv: 450000,
-        cac: 85000,
-        dispatchesPerDay: Math.round((dispatchesRes.data?.length || 0) / 30),
-        avgDeliveryTime: 4.2,
-        routeEfficiency: 87,
-        invoicesGenerated: invoicesRes.data?.length || 0,
-        paymentCollection: totalRevenue,
-        outstandingAmount,
-        apiLatency: avgLatency,
-        errorRate: (errorCount / totalCalls) * 100,
-        uptime: 99.9,
+        totalUsers, dau, mau, dauMauRatio, newUsersThisMonth,
+        mrr, arr, totalRevenue, outstandingAmount, invoicesGenerated, paidInvoices,
+        totalDispatches, dispatchesThisMonth, deliveredDispatches, onTimeDispatches, lateDispatches, avgDeliveryHours,
+        apiCalls, apiLatency, errorRate, successRate, activeApiKeys,
+        failedJobs, pendingJobs,
+        newSignups30d: newUsersThisMonth, orgsCount, orgsByTier,
+        recentErrors,
       });
     } catch (error) {
-      console.error("Error loading metrics:", error);
+      console.error("Error loading intelligence metrics:", error);
     }
   };
 
@@ -220,9 +274,17 @@ const CoreIntelligence = () => {
     );
   }
 
+  // Derived
+  const onTimeRate = metrics.totalDispatches > 0
+    ? (metrics.onTimeDispatches / metrics.totalDispatches) * 100 : 0;
+  const deliveryRate = metrics.totalDispatches > 0
+    ? (metrics.deliveredDispatches / metrics.totalDispatches) * 100 : 0;
+  const collectionRate = (metrics.totalRevenue + metrics.outstandingAmount) > 0
+    ? (metrics.totalRevenue / (metrics.totalRevenue + metrics.outstandingAmount)) * 100 : 0;
+  const maxOrgTier = Math.max(...metrics.orgsByTier.map((t) => t.count), 1);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-purple-950/5">
-      {/* Header */}
       <header className="border-b border-border/50 bg-background/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -238,12 +300,9 @@ const CoreIntelligence = () => {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <Badge className={`${getRoleBadgeColor(coreRole)} border`}>
-              {getRoleLabel(coreRole)}
-            </Badge>
+            <Badge className={`${getRoleBadgeColor(coreRole)} border`}>{getRoleLabel(coreRole)}</Badge>
             <Button variant="outline" size="sm" onClick={handleLogout}>
-              <LogOut className="w-4 h-4 mr-2" />
-              Sign Out
+              <LogOut className="w-4 h-4 mr-2" />Sign Out
             </Button>
           </div>
         </div>
@@ -252,250 +311,212 @@ const CoreIntelligence = () => {
       <main className="max-w-7xl mx-auto px-6 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="bg-secondary/50 flex-wrap h-auto gap-1 p-1">
-            <TabsTrigger value="overview" className="gap-2">
-              <PieChart className="w-4 h-4" />Overview
-            </TabsTrigger>
-            <TabsTrigger value="ai-insights" className="gap-2">
-              <Sparkles className="w-4 h-4" />AI Insights
-            </TabsTrigger>
-            <TabsTrigger value="predictions" className="gap-2">
-              <Brain className="w-4 h-4" />Predictive KPIs
-            </TabsTrigger>
-            <TabsTrigger value="users" className="gap-2">
-              <Users className="w-4 h-4" />Users
-            </TabsTrigger>
+            <TabsTrigger value="overview" className="gap-2"><PieChart className="w-4 h-4" />Overview</TabsTrigger>
+            <TabsTrigger value="ai-insights" className="gap-2"><Sparkles className="w-4 h-4" />AI Insights</TabsTrigger>
+            <TabsTrigger value="predictions" className="gap-2"><Brain className="w-4 h-4" />Predictive KPIs</TabsTrigger>
+            <TabsTrigger value="users" className="gap-2"><Users className="w-4 h-4" />Users</TabsTrigger>
             {(coreRole === "core_founder" || coreRole === "core_cofounder") && (
-              <TabsTrigger value="revenue" className="gap-2">
-                <DollarSign className="w-4 h-4" />Revenue
-              </TabsTrigger>
+              <TabsTrigger value="revenue" className="gap-2"><DollarSign className="w-4 h-4" />Revenue</TabsTrigger>
             )}
-            <TabsTrigger value="growth" className="gap-2">
-              <TrendingUp className="w-4 h-4" />Growth
-            </TabsTrigger>
-            <TabsTrigger value="operations" className="gap-2">
-              <Truck className="w-4 h-4" />Operations
-            </TabsTrigger>
-            <TabsTrigger value="finance" className="gap-2">
-              <Receipt className="w-4 h-4" />Finance
-            </TabsTrigger>
-            <TabsTrigger value="api" className="gap-2">
-              <GitBranch className="w-4 h-4" />API
-            </TabsTrigger>
-            <TabsTrigger value="errors" className="gap-2">
-              <AlertCircle className="w-4 h-4" />Errors
-            </TabsTrigger>
-            <TabsTrigger value="feedback" className="gap-2">
-              <MessageSquare className="w-4 h-4" />Feedback
-            </TabsTrigger>
+            <TabsTrigger value="growth" className="gap-2"><TrendingUp className="w-4 h-4" />Growth</TabsTrigger>
+            <TabsTrigger value="operations" className="gap-2"><Truck className="w-4 h-4" />Operations</TabsTrigger>
+            <TabsTrigger value="finance" className="gap-2"><Receipt className="w-4 h-4" />Finance</TabsTrigger>
+            <TabsTrigger value="api" className="gap-2"><GitBranch className="w-4 h-4" />API</TabsTrigger>
+            <TabsTrigger value="errors" className="gap-2"><AlertCircle className="w-4 h-4" />Errors</TabsTrigger>
           </TabsList>
 
-          {/* Overview Tab */}
+          {/* Overview */}
           <TabsContent value="overview" className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <IntelCard title="Daily Active Users" value={metrics.dau.toString()} icon={Users} trend="+8%" positive />
-              <IntelCard title="Monthly Active Users" value={metrics.mau.toString()} icon={Activity} trend="+12%" positive />
-              <IntelCard title="DAU/MAU Ratio" value={`${metrics.dauMauRatio.toFixed(1)}%`} icon={Target} trend="+2%" positive />
-              <IntelCard title="Avg Session" value={`${metrics.avgSessionDuration}m`} icon={Zap} trend="+1m" positive />
+              <IntelCard title="Daily Active Users" value={metrics.dau.toLocaleString()} icon={Users} sub="Unique logins today" />
+              <IntelCard title="Monthly Active Users" value={metrics.mau.toLocaleString()} icon={Activity} sub="Unique logins (30d)" />
+              <IntelCard title="DAU/MAU Ratio" value={`${metrics.dauMauRatio.toFixed(1)}%`} icon={Target} sub="Stickiness" />
+              <IntelCard title="Total Platform Users" value={metrics.totalUsers.toLocaleString()} icon={Shield} sub="All registered profiles" />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card className="border-border/50">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <LineChart className="w-5 h-5 text-purple-400" />
-                    Key Metrics Summary
+                    <LineChart className="w-5 h-5 text-purple-400" />Key Metrics Summary
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <MetricRow label="Platform Revenue" value={`₦${(metrics.paymentCollection / 1000000).toFixed(2)}M`} progress={75} />
-                  <MetricRow label="Route Efficiency" value={`${metrics.routeEfficiency}%`} progress={metrics.routeEfficiency} />
-                  <MetricRow label="API Uptime" value={`${metrics.uptime}%`} progress={metrics.uptime} />
-                  <MetricRow label="Error Rate" value={`${metrics.errorRate.toFixed(2)}%`} progress={100 - metrics.errorRate} />
+                  <MetricRow label="Paid Revenue" value={`₦${(metrics.totalRevenue / 1_000_000).toFixed(2)}M`} progress={Math.min((metrics.totalRevenue / 5_000_000) * 100, 100)} />
+                  <MetricRow label="Delivery Rate" value={`${deliveryRate.toFixed(1)}%`} progress={deliveryRate} />
+                  <MetricRow label="API Success Rate" value={`${metrics.successRate.toFixed(2)}%`} progress={metrics.successRate} />
+                  <MetricRow label="On-Time Rate" value={`${onTimeRate.toFixed(1)}%`} progress={onTimeRate} />
                 </CardContent>
               </Card>
 
               <Card className="border-border/50">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <BarChart3 className="w-5 h-5 text-purple-400" />
-                    Platform Health Score
+                    <BarChart3 className="w-5 h-5 text-purple-400" />Organisations by Tier
                   </CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="flex items-center justify-center py-8">
-                    <div className="relative w-40 h-40">
-                      <div className="absolute inset-0 rounded-full border-8 border-secondary"></div>
-                      <div className="absolute inset-0 rounded-full border-8 border-t-green-500 border-r-green-500 border-b-transparent border-l-transparent transform -rotate-45"></div>
-                      <div className="absolute inset-0 flex items-center justify-center flex-col">
-                        <span className="text-4xl font-bold">92</span>
-                        <span className="text-sm text-muted-foreground">/ 100</span>
+                <CardContent className="space-y-4">
+                  {metrics.orgsByTier.length > 0 ? metrics.orgsByTier.map((t) => (
+                    <div key={t.tier} className="space-y-1">
+                      <div className="flex justify-between text-sm">
+                        <span className="capitalize">{t.tier}</span>
+                        <span className="font-mono">{t.count} org{t.count !== 1 ? "s" : ""}</span>
+                      </div>
+                      <div className="h-2 bg-secondary rounded-full overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-purple-500 to-pink-500"
+                          style={{ width: `${(t.count / maxOrgTier) * 100}%` }} />
                       </div>
                     </div>
-                  </div>
-                  <div className="flex justify-center gap-8 text-sm">
-                    <div className="text-center">
-                      <CheckCircle className="w-5 h-5 text-green-400 mx-auto mb-1" />
-                      <span className="text-muted-foreground">All Systems</span>
-                    </div>
-                    <div className="text-center">
-                      <AlertTriangle className="w-5 h-5 text-amber-400 mx-auto mb-1" />
-                      <span className="text-muted-foreground">2 Warnings</span>
-                    </div>
+                  )) : (
+                    <p className="text-sm text-muted-foreground">No active organisations yet.</p>
+                  )}
+                  <div className="pt-2 border-t border-border/50 text-sm flex justify-between">
+                    <span className="text-muted-foreground">Total Active Orgs</span>
+                    <span className="font-bold">{metrics.orgsCount}</span>
                   </div>
                 </CardContent>
               </Card>
             </div>
           </TabsContent>
 
-          {/* AI Insights Tab */}
+          {/* AI Insights */}
           <TabsContent value="ai-insights" className="space-y-6">
             <AIInsightCards />
           </TabsContent>
 
-          {/* Predictive KPIs Tab */}
+          {/* Predictive KPIs */}
           <TabsContent value="predictions" className="space-y-6">
             <PredictiveKPIs />
           </TabsContent>
 
-          {/* Users Tab */}
+          {/* Users */}
           <TabsContent value="users" className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <IntelCard title="Total Users" value="1,247" icon={Users} trend="+156 this month" positive />
-              <IntelCard title="Active Today" value={metrics.dau.toString()} icon={Activity} trend="+8%" positive />
-              <IntelCard title="Retention (30d)" value="78%" icon={Target} trend="+3%" positive />
-              <IntelCard title="Churn Rate" value="2.1%" icon={AlertTriangle} trend="-0.5%" positive />
+              <IntelCard title="Total Users" value={metrics.totalUsers.toLocaleString()} icon={Users} sub="All profiles" />
+              <IntelCard title="Active Today" value={metrics.dau.toLocaleString()} icon={Activity} sub="Unique sessions (24h)" />
+              <IntelCard title="Active This Month" value={metrics.mau.toLocaleString()} icon={Target} sub="Unique sessions (30d)" />
+              <IntelCard title="New This Month" value={metrics.newUsersThisMonth.toLocaleString()} icon={TrendingUp} sub="Signups since month start" />
             </div>
 
             <Card className="border-border/50">
               <CardHeader>
-                <CardTitle>User Cohort Analysis</CardTitle>
-                <CardDescription>Monthly retention by signup cohort</CardDescription>
+                <CardTitle>User Engagement</CardTitle>
+                <CardDescription>Computed from user_sessions table</CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {[
-                    { cohort: "Jan 2026", m1: 100, m2: 82, m3: 71, m4: 65 },
-                    { cohort: "Dec 2025", m1: 100, m2: 79, m3: 68, m4: 61 },
-                    { cohort: "Nov 2025", m1: 100, m2: 85, m3: 74, m4: 67 },
-                    { cohort: "Oct 2025", m1: 100, m2: 81, m3: 69, m4: 63 },
-                  ].map((row) => (
-                    <div key={row.cohort} className="flex items-center gap-4">
-                      <span className="w-24 text-sm text-muted-foreground">{row.cohort}</span>
-                      {[row.m1, row.m2, row.m3, row.m4].map((val, i) => (
-                        <div 
-                          key={i} 
-                          className={`w-16 h-8 rounded flex items-center justify-center text-xs font-mono ${
-                            val >= 80 ? "bg-green-500/20 text-green-400" :
-                            val >= 60 ? "bg-amber-500/20 text-amber-400" :
-                            "bg-red-500/20 text-red-400"
-                          }`}
-                        >
-                          {val}%
-                        </div>
-                      ))}
-                    </div>
-                  ))}
-                  <div className="flex items-center gap-4 text-xs text-muted-foreground pt-2 border-t">
-                    <span className="w-24"></span>
-                    <span className="w-16 text-center">Month 1</span>
-                    <span className="w-16 text-center">Month 2</span>
-                    <span className="w-16 text-center">Month 3</span>
-                    <span className="w-16 text-center">Month 4</span>
-                  </div>
-                </div>
+              <CardContent className="space-y-4">
+                <MetricRow label="DAU/MAU (Stickiness)" value={`${metrics.dauMauRatio.toFixed(1)}%`} progress={metrics.dauMauRatio} />
+                <MetricRow
+                  label="Monthly Activation Rate"
+                  value={metrics.totalUsers > 0 ? `${Math.min(Math.round((metrics.mau / metrics.totalUsers) * 100), 100)}%` : "—"}
+                  progress={metrics.totalUsers > 0 ? Math.min((metrics.mau / metrics.totalUsers) * 100, 100) : 0}
+                />
+                <MetricRow
+                  label="New User Growth (30d)"
+                  value={`${metrics.newUsersThisMonth} new users`}
+                  progress={metrics.totalUsers > 0 ? Math.min((metrics.newUsersThisMonth / metrics.totalUsers) * 100 * 5, 100) : 0}
+                />
               </CardContent>
             </Card>
           </TabsContent>
 
-          {/* Revenue Tab - Founder/Cofounder Only */}
+          {/* Revenue — Founder / Co-founder only */}
           <TabsContent value="revenue" className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <IntelCard title="MRR" value={`₦${(metrics.mrr / 1000000).toFixed(2)}M`} icon={DollarSign} trend="+12%" positive />
-              <IntelCard title="ARR" value={`₦${(metrics.arr / 1000000).toFixed(2)}M`} icon={TrendingUp} trend="+18%" positive />
-              <IntelCard title="LTV" value={`₦${(metrics.ltv / 1000).toFixed(0)}K`} icon={Target} trend="+8%" positive />
-              <IntelCard title="CAC" value={`₦${(metrics.cac / 1000).toFixed(0)}K`} icon={BarChart3} trend="-5%" positive />
+              <IntelCard title="MRR" value={`₦${(metrics.mrr / 1_000_000).toFixed(2)}M`} icon={DollarSign} sub="Paid invoices this month" />
+              <IntelCard title="ARR (est.)" value={`₦${(metrics.arr / 1_000_000).toFixed(2)}M`} icon={TrendingUp} sub="MRR × 12" />
+              <IntelCard title="Total Collected" value={`₦${(metrics.totalRevenue / 1_000_000).toFixed(2)}M`} icon={Target} sub="All-time paid invoices" />
+              <IntelCard title="Outstanding" value={`₦${(metrics.outstandingAmount / 1_000_000).toFixed(2)}M`} icon={AlertTriangle} sub="Pending + overdue" />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card className="border-border/50">
                 <CardHeader>
-                  <CardTitle>Revenue by Segment</CardTitle>
+                  <CardTitle>Organisations by Subscription Tier</CardTitle>
+                  <CardDescription>Active organisations on each plan</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {[
-                    { segment: "Enterprise", revenue: 1800000, pct: 45, color: "bg-amber-500" },
-                    { segment: "Mid-Market", revenue: 1200000, pct: 30, color: "bg-blue-500" },
-                    { segment: "SMB", revenue: 600000, pct: 15, color: "bg-green-500" },
-                    { segment: "Resellers", revenue: 400000, pct: 10, color: "bg-purple-500" },
-                  ].map((item) => (
-                    <div key={item.segment} className="space-y-2">
+                  {metrics.orgsByTier.length > 0 ? metrics.orgsByTier.map((t) => (
+                    <div key={t.tier} className="space-y-2">
                       <div className="flex justify-between text-sm">
-                        <span>{item.segment}</span>
-                        <span className="font-mono">₦{(item.revenue / 1000000).toFixed(2)}M ({item.pct}%)</span>
+                        <span className="capitalize">{t.tier}</span>
+                        <span className="font-mono">{t.count} org{t.count !== 1 ? "s" : ""}</span>
                       </div>
-                      <Progress value={item.pct * 2} className="h-2" />
+                      <Progress value={(t.count / maxOrgTier) * 100} className="h-2" />
                     </div>
-                  ))}
+                  )) : (
+                    <p className="text-sm text-muted-foreground">No active organisations found.</p>
+                  )}
                 </CardContent>
               </Card>
 
               <Card className="border-border/50">
                 <CardHeader>
-                  <CardTitle>Unit Economics</CardTitle>
+                  <CardTitle>Billing Summary</CardTitle>
+                  <CardDescription>Derived from invoices table</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex justify-between items-center py-2 border-b border-border/50">
-                    <span className="text-muted-foreground">LTV:CAC Ratio</span>
-                    <span className="font-bold text-green-400">5.3:1</span>
+                    <span className="text-muted-foreground">Total Invoices</span>
+                    <span className="font-bold">{metrics.invoicesGenerated.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between items-center py-2 border-b border-border/50">
-                    <span className="text-muted-foreground">Payback Period</span>
-                    <span className="font-bold">4.2 months</span>
+                    <span className="text-muted-foreground">Paid Invoices</span>
+                    <span className="font-bold text-green-400">{metrics.paidInvoices.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between items-center py-2 border-b border-border/50">
-                    <span className="text-muted-foreground">Gross Margin</span>
-                    <span className="font-bold text-green-400">68%</span>
+                    <span className="text-muted-foreground">Collection Rate</span>
+                    <span className={`font-bold ${collectionRate >= 80 ? "text-green-400" : "text-amber-400"}`}>
+                      {collectionRate.toFixed(1)}%
+                    </span>
                   </div>
                   <div className="flex justify-between items-center py-2">
-                    <span className="text-muted-foreground">Net Revenue Retention</span>
-                    <span className="font-bold text-green-400">112%</span>
+                    <span className="text-muted-foreground">Outstanding Balance</span>
+                    <span className={`font-bold ${metrics.outstandingAmount > 0 ? "text-amber-400" : "text-green-400"}`}>
+                      ₦{(metrics.outstandingAmount / 1_000).toFixed(0)}K
+                    </span>
                   </div>
                 </CardContent>
               </Card>
             </div>
           </TabsContent>
 
-          {/* Growth Tab */}
+          {/* Growth */}
           <TabsContent value="growth" className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <IntelCard title="New Signups (30d)" value="156" icon={Users} trend="+23%" positive />
-              <IntelCard title="Activation Rate" value="72%" icon={Zap} trend="+5%" positive />
-              <IntelCard title="Conversion Rate" value="18%" icon={Target} trend="+2%" positive />
-              <IntelCard title="Viral Coefficient" value="1.2" icon={TrendingUp} trend="+0.1" positive />
+              <IntelCard title="New Signups (30d)" value={metrics.newSignups30d.toLocaleString()} icon={Users} sub="Profiles created this month" />
+              <IntelCard title="Active This Month" value={metrics.mau.toLocaleString()} icon={Activity} sub="MAU from sessions" />
+              <IntelCard
+                title="Activation Rate"
+                value={metrics.newSignups30d > 0 ? `${Math.min(Math.round((metrics.mau / metrics.totalUsers) * 100), 100)}%` : "—"}
+                icon={Zap}
+                sub="MAU / total users"
+              />
+              <IntelCard title="Total Organisations" value={metrics.orgsCount.toLocaleString()} icon={TrendingUp} sub="Active tenants" />
             </div>
 
             <Card className="border-border/50">
               <CardHeader>
-                <CardTitle>Acquisition Funnel</CardTitle>
+                <CardTitle>Platform Funnel</CardTitle>
+                <CardDescription>Derived from profiles, sessions, and invoices</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {[
-                  { stage: "Visitors", count: 8500, pct: 100 },
-                  { stage: "Signups", count: 1530, pct: 18 },
-                  { stage: "Activated", count: 1100, pct: 72 },
-                  { stage: "Paying", count: 198, pct: 18 },
+                  { stage: "Registered Users", count: metrics.totalUsers, pct: 100 },
+                  { stage: "Active This Month (MAU)", count: metrics.mau, pct: metrics.totalUsers > 0 ? (metrics.mau / metrics.totalUsers) * 100 : 0 },
+                  { stage: "Active Organisations", count: metrics.orgsCount, pct: metrics.totalUsers > 0 ? (metrics.orgsCount / metrics.totalUsers) * 100 : 0 },
+                  { stage: "Paying (Invoiced)", count: metrics.paidInvoices, pct: metrics.invoicesGenerated > 0 ? (metrics.paidInvoices / metrics.invoicesGenerated) * 100 : 0 },
                 ].map((item, i) => (
                   <div key={item.stage} className="relative">
-                    <div 
+                    <div
                       className="h-12 rounded-lg bg-gradient-to-r from-purple-500/30 to-pink-500/30 flex items-center px-4"
-                      style={{ width: `${Math.max(item.pct, 20)}%` }}
+                      style={{ width: `${Math.max(item.pct, 15)}%` }}
                     >
-                      <span className="font-medium">{item.stage}</span>
-                      <span className="ml-auto font-mono">{item.count.toLocaleString()}</span>
+                      <span className="font-medium text-sm">{item.stage}</span>
+                      <span className="ml-auto font-mono text-sm">{item.count.toLocaleString()}</span>
                     </div>
                     {i < 3 && (
                       <div className="text-xs text-muted-foreground ml-4 my-1">
-                        ↓ {[18, 72, 18][i]}% conversion
+                        ↓ {item.pct.toFixed(1)}% of registered users
                       </div>
                     )}
                   </div>
@@ -504,109 +525,151 @@ const CoreIntelligence = () => {
             </Card>
           </TabsContent>
 
-          {/* Operations Tab */}
+          {/* Operations */}
           <TabsContent value="operations" className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <IntelCard title="Dispatches/Day" value={metrics.dispatchesPerDay.toString()} icon={Truck} trend="+15%" positive />
-              <IntelCard title="Avg Delivery Time" value={`${metrics.avgDeliveryTime}h`} icon={Activity} trend="-0.5h" positive />
-              <IntelCard title="Route Efficiency" value={`${metrics.routeEfficiency}%`} icon={Target} trend="+3%" positive />
-              <IntelCard title="On-Time Rate" value="94%" icon={CheckCircle} trend="+2%" positive />
+              <IntelCard title="Total Dispatches" value={metrics.totalDispatches.toLocaleString()} icon={Truck} sub="All-time" />
+              <IntelCard title="This Month" value={metrics.dispatchesThisMonth.toLocaleString()} icon={Activity} sub="Created since month start" />
+              <IntelCard title="Delivered" value={metrics.deliveredDispatches.toLocaleString()} icon={CheckCircle} sub={`${deliveryRate.toFixed(1)}% rate`} />
+              <IntelCard title="On-Time" value={metrics.onTimeDispatches.toLocaleString()} icon={Target} sub={`${onTimeRate.toFixed(1)}% rate`} />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Card className="border-border/50">
+                <CardHeader>
+                  <CardTitle>Delivery Performance</CardTitle>
+                  <CardDescription>From dispatches table — on_time_flag + status</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <MetricRow label="Delivery Rate" value={`${deliveryRate.toFixed(1)}%`} progress={deliveryRate} />
+                  <MetricRow label="On-Time Rate" value={`${onTimeRate.toFixed(1)}%`} progress={onTimeRate} />
+                  <MetricRow
+                    label="Late Deliveries"
+                    value={`${metrics.lateDispatches.toLocaleString()} dispatches`}
+                    progress={metrics.totalDispatches > 0 ? 100 - (metrics.lateDispatches / metrics.totalDispatches) * 100 : 100}
+                  />
+                  {metrics.avgDeliveryHours > 0 && (
+                    <div className="flex justify-between text-sm pt-2 border-t border-border/50">
+                      <span className="text-muted-foreground">Avg Delivery Window</span>
+                      <span className="font-mono">{metrics.avgDeliveryHours.toFixed(1)}h</span>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="border-border/50">
+                <CardHeader>
+                  <CardTitle>Dispatch Status Breakdown</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {[
+                    { label: "Delivered", count: metrics.deliveredDispatches, color: "text-green-400" },
+                    { label: "On-Time", count: metrics.onTimeDispatches, color: "text-blue-400" },
+                    { label: "Late", count: metrics.lateDispatches, color: "text-amber-400" },
+                    { label: "Other / In Progress", count: metrics.totalDispatches - metrics.deliveredDispatches, color: "text-muted-foreground" },
+                  ].map((item) => (
+                    <div key={item.label} className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">{item.label}</span>
+                      <span className={`font-mono font-medium ${item.color}`}>{item.count.toLocaleString()}</span>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
             </div>
           </TabsContent>
 
-          {/* Finance Tab */}
+          {/* Finance */}
           <TabsContent value="finance" className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <IntelCard title="Invoices Generated" value={metrics.invoicesGenerated.toString()} icon={Receipt} trend="+45 this week" positive />
-              <IntelCard title="Collections" value={`₦${(metrics.paymentCollection / 1000000).toFixed(2)}M`} icon={DollarSign} trend="+18%" positive />
-              <IntelCard title="Outstanding" value={`₦${(metrics.outstandingAmount / 1000000).toFixed(2)}M`} icon={AlertTriangle} trend="-8%" positive />
-              <IntelCard title="DSO" value="32 days" icon={Activity} trend="-3 days" positive />
-            </div>
-          </TabsContent>
-
-          {/* API Tab */}
-          <TabsContent value="api" className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <IntelCard title="API Calls/Day" value="12,450" icon={GitBranch} trend="+22%" positive />
-              <IntelCard title="Avg Latency" value={`${metrics.apiLatency.toFixed(0)}ms`} icon={Zap} trend="-15ms" positive />
-              <IntelCard title="Success Rate" value={`${(100 - metrics.errorRate).toFixed(2)}%`} icon={CheckCircle} trend="+0.3%" positive />
-              <IntelCard title="Active Keys" value="18" icon={Shield} trend="+3" positive />
-            </div>
-          </TabsContent>
-
-          {/* Errors Tab */}
-          <TabsContent value="errors" className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <IntelCard title="Error Rate" value={`${metrics.errorRate.toFixed(2)}%`} icon={AlertCircle} trend="-0.3%" positive />
-              <IntelCard title="Failed Jobs (24h)" value="3" icon={AlertTriangle} trend="-2" positive />
-              <IntelCard title="P95 Latency" value="245ms" icon={Activity} trend="-20ms" positive />
-              <IntelCard title="Uptime" value={`${metrics.uptime}%`} icon={Server} trend="stable" positive />
+              <IntelCard title="Invoices Generated" value={metrics.invoicesGenerated.toLocaleString()} icon={Receipt} sub="All invoices" />
+              <IntelCard title="Collections" value={`₦${(metrics.totalRevenue / 1_000_000).toFixed(2)}M`} icon={DollarSign} sub="All-time paid" />
+              <IntelCard title="Outstanding" value={`₦${(metrics.outstandingAmount / 1_000_000).toFixed(2)}M`} icon={AlertTriangle} sub="Pending + overdue" />
+              <IntelCard title="Collection Rate" value={`${collectionRate.toFixed(1)}%`} icon={CheckCircle} sub="Paid / total invoiced" />
             </div>
 
             <Card className="border-border/50">
               <CardHeader>
-                <CardTitle>Recent Errors</CardTitle>
+                <CardTitle>Invoice Breakdown</CardTitle>
+                <CardDescription>From invoices table</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-3">
-                {[
-                  { type: "API Timeout", count: 3, severity: "warn", time: "2h ago" },
-                  { type: "Rate Limit Exceeded", count: 12, severity: "info", time: "5h ago" },
-                  { type: "Auth Failure", count: 1, severity: "error", time: "1d ago" },
-                ].map((error, i) => (
-                  <div 
-                    key={i}
-                    className={`flex items-center gap-3 p-3 rounded-lg border ${
-                      error.severity === "error" ? "bg-red-500/10 border-red-500/20" :
-                      error.severity === "warn" ? "bg-amber-500/10 border-amber-500/20" :
-                      "bg-blue-500/10 border-blue-500/20"
-                    }`}
-                  >
-                    <AlertTriangle className={`w-4 h-4 ${
-                      error.severity === "error" ? "text-red-400" :
-                      error.severity === "warn" ? "text-amber-400" :
-                      "text-blue-400"
-                    }`} />
-                    <span className="flex-1">{error.type}</span>
-                    <Badge variant="secondary">{error.count}x</Badge>
-                    <span className="text-xs text-muted-foreground">{error.time}</span>
-                  </div>
-                ))}
+              <CardContent className="space-y-4">
+                <MetricRow label="Paid Invoices" value={`${metrics.paidInvoices} / ${metrics.invoicesGenerated}`} progress={metrics.invoicesGenerated > 0 ? (metrics.paidInvoices / metrics.invoicesGenerated) * 100 : 0} />
+                <MetricRow label="Collection Rate" value={`${collectionRate.toFixed(1)}%`} progress={collectionRate} />
+                <div className="flex justify-between text-sm pt-2 border-t border-border/50">
+                  <span className="text-muted-foreground">MRR (this month)</span>
+                  <span className="font-mono font-bold">₦{(metrics.mrr / 1_000).toFixed(0)}K</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">ARR Estimate</span>
+                  <span className="font-mono font-bold">₦{(metrics.arr / 1_000_000).toFixed(2)}M</span>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
 
-          {/* Feedback Tab */}
-          <TabsContent value="feedback" className="space-y-6">
+          {/* API */}
+          <TabsContent value="api" className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <IntelCard title="NPS Score" value="72" icon={Target} trend="+4" positive />
-              <IntelCard title="CSAT" value="4.6/5" icon={CheckCircle} trend="+0.2" positive />
-              <IntelCard title="Feedback Items" value="156" icon={MessageSquare} trend="+23 this week" positive />
-              <IntelCard title="Response Rate" value="89%" icon={Activity} trend="+5%" positive />
+              <IntelCard title="API Calls (Logged)" value={metrics.apiCalls.toLocaleString()} icon={GitBranch} sub="From api_request_logs" />
+              <IntelCard title="Avg Latency" value={`${metrics.apiLatency.toFixed(0)}ms`} icon={Zap} sub="Mean response time" />
+              <IntelCard title="Success Rate" value={`${metrics.successRate.toFixed(2)}%`} icon={CheckCircle} sub="Non-4xx/5xx responses" />
+              <IntelCard title="Active API Keys" value={metrics.activeApiKeys.toLocaleString()} icon={Shield} sub="Issued and active" />
             </div>
 
             <Card className="border-border/50">
               <CardHeader>
-                <CardTitle>Feature Requests</CardTitle>
+                <CardTitle>API Health</CardTitle>
+                <CardDescription>Last 500 logged requests</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <MetricRow label="Success Rate" value={`${metrics.successRate.toFixed(2)}%`} progress={metrics.successRate} />
+                <MetricRow label="Error Rate" value={`${metrics.errorRate.toFixed(2)}%`} progress={100 - metrics.errorRate} />
+                <div className="flex justify-between text-sm pt-2 border-t border-border/50">
+                  <span className="text-muted-foreground">Avg Latency</span>
+                  <span className={`font-mono ${metrics.apiLatency > 500 ? "text-red-400" : metrics.apiLatency > 200 ? "text-amber-400" : "text-green-400"}`}>
+                    {metrics.apiLatency.toFixed(0)}ms
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Errors */}
+          <TabsContent value="errors" className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <IntelCard title="API Error Rate" value={`${metrics.errorRate.toFixed(2)}%`} icon={AlertCircle} sub="4xx + 5xx in last 500 calls" />
+              <IntelCard title="Failed Jobs" value={metrics.failedJobs.toLocaleString()} icon={AlertTriangle} sub="Email queue failures" />
+              <IntelCard title="Queue Backlog" value={metrics.pendingJobs.toLocaleString()} icon={Activity} sub="Pending email jobs" />
+              <IntelCard title="Uptime" value={metrics.errorRate < 1 ? "Healthy" : "Degraded"} icon={Server} sub={`${(100 - metrics.errorRate).toFixed(2)}% success`} />
+            </div>
+
+            <Card className="border-border/50">
+              <CardHeader>
+                <CardTitle>Error Summary</CardTitle>
+                <CardDescription>Computed from api_request_logs and email_queue</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                {[
-                  { feature: "Multi-stop route optimization", votes: 45, status: "planned" },
-                  { feature: "WhatsApp notifications", votes: 38, status: "in-progress" },
-                  { feature: "Driver mobile app", votes: 32, status: "planned" },
-                  { feature: "Bulk invoice generation", votes: 28, status: "shipped" },
-                ].map((item, i) => (
-                  <div key={i} className="flex items-center gap-3 p-3 bg-secondary/50 rounded-lg">
-                    <span className="flex-1">{item.feature}</span>
-                    <Badge variant="outline">{item.votes} votes</Badge>
-                    <Badge className={
-                      item.status === "shipped" ? "bg-green-500/20 text-green-400" :
-                      item.status === "in-progress" ? "bg-amber-500/20 text-amber-400" :
-                      "bg-blue-500/20 text-blue-400"
-                    }>
-                      {item.status}
-                    </Badge>
+                {metrics.recentErrors.length > 0 ? (
+                  metrics.recentErrors.map((err, i) => (
+                    <div
+                      key={i}
+                      className={`flex items-center gap-3 p-3 rounded-lg border ${
+                        err.severity === "error"
+                          ? "bg-red-500/10 border-red-500/20"
+                          : "bg-amber-500/10 border-amber-500/20"
+                      }`}
+                    >
+                      <AlertTriangle className={`w-4 h-4 ${err.severity === "error" ? "text-red-400" : "text-amber-400"}`} />
+                      <span className="flex-1">{err.type}</span>
+                      <Badge variant="secondary">{err.count}x</Badge>
+                    </div>
+                  ))
+                ) : (
+                  <div className="flex items-center gap-3 p-3 bg-green-500/10 rounded-lg border border-green-500/20">
+                    <CheckCircle className="w-4 h-4 text-green-400" />
+                    <span className="text-sm">No errors detected in current log window.</span>
                   </div>
-                ))}
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -616,25 +679,21 @@ const CoreIntelligence = () => {
   );
 };
 
-// Intelligence Card Component
 interface IntelCardProps {
   title: string;
   value: string;
   icon: React.ElementType;
-  trend: string;
-  positive: boolean;
+  sub?: string;
 }
 
-const IntelCard = ({ title, value, icon: Icon, trend, positive }: IntelCardProps) => (
+const IntelCard = ({ title, value, icon: Icon, sub }: IntelCardProps) => (
   <Card className="border-border/50">
     <CardContent className="pt-6">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm text-muted-foreground">{title}</p>
           <p className="text-2xl font-bold mt-1">{value}</p>
-          <p className={`text-xs mt-1 ${positive ? "text-green-400" : "text-red-400"}`}>
-            {trend}
-          </p>
+          {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
         </div>
         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 flex items-center justify-center">
           <Icon className="w-6 h-6 text-purple-400" />
@@ -644,7 +703,6 @@ const IntelCard = ({ title, value, icon: Icon, trend, positive }: IntelCardProps
   </Card>
 );
 
-// Metric Row Component
 interface MetricRowProps {
   label: string;
   value: string;
@@ -657,7 +715,7 @@ const MetricRow = ({ label, value, progress }: MetricRowProps) => (
       <span className="text-muted-foreground">{label}</span>
       <span className="font-mono">{value}</span>
     </div>
-    <Progress value={progress} className="h-2" />
+    <Progress value={Math.min(Math.max(progress, 0), 100)} className="h-2" />
   </div>
 );
 

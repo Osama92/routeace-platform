@@ -92,8 +92,8 @@ Be specific with ₦ amounts. Survival > profit > scale.`;
 
     const raw = await callAnthropic({
       model: mapModel("google/gemini-2.5-flash"),
+      system: systemPrompt,
       messages: [
-        { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
     }) || "{}";

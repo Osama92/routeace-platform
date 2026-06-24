@@ -56,8 +56,8 @@ Based on the above, provide your analysis.`;
 
     const aiText = await callAnthropic({
       model: mapModel("google/gemini-3-flash-preview"),
+      system: systemPrompt,
       messages: [
-        { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
     });

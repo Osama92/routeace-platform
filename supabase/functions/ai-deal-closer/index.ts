@@ -44,8 +44,8 @@ serve(async (req) => {
           try {
             const txt = await callAnthropic({
               model: mapModel("google/gemini-2.5-flash"),
+              system: "You are a B2B logistics sales strategist. Reply with concise, data-backed pitches. JSON only.",
               messages: [
-                { role: "system", content: "You are a B2B logistics sales strategist. Reply with concise, data-backed pitches. JSON only." },
                 { role: "user", content: `Generate a personalized enterprise sales pitch for ${c.customer_name} (estimated ${fleetSize} trucks, ₦${monthlyLoss}/mo loss). Return JSON: {pitch:string, objections:[{objection,response}]}` },
               ],
             });

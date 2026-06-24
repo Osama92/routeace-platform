@@ -6,12 +6,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  TrendingUp, 
-  Users, 
-  Building2, 
-  DollarSign, 
-  Activity, 
+import {
+  TrendingUp,
+  Users,
+  Building2,
+  DollarSign,
+  Activity,
   BarChart3,
   AlertTriangle,
   CheckCircle,
@@ -21,24 +21,42 @@ import {
   Truck,
   LogOut,
   Shield,
-  Brain
 } from "lucide-react";
 import CoreTeamManagement from "@/components/core/CoreTeamManagement";
 import AIInsightCards from "@/components/core/AIInsightCards";
 import PlatformKPIs from "@/components/core/PlatformKPIs";
 import ResellerNetworkGraph from "@/components/core/ResellerNetworkGraph";
 
-type CoreRole = "core_founder" | "core_cofounder" | "core_builder" | "core_product" | "core_engineer" | "core_analyst" | "internal_team";
+type CoreRole =
+  | "core_founder"
+  | "core_cofounder"
+  | "core_builder"
+  | "core_product"
+  | "core_engineer"
+  | "core_analyst"
+  | "internal_team";
 
 interface PlatformMetrics {
-  totalTenants: number;
-  activeUsers: number;
+  totalUsers: number;
+  activeUsers30d: number;
   totalDispatches: number;
-  totalRevenue: number;
-  apiCalls: number;
-  errorRate: number;
-  avgResponseTime: number;
   dispatchSuccessRate: number;
+  avgResponseTime: number;
+  errorRate: number;
+  apiCalls: number;
+  // Revenue
+  totalRevenue: number;
+  mrr: number;
+  revenueByTier: { tier: string; revenue: number; color: string }[];
+  // Product
+  dau: number;
+  mau: number;
+  featureAdoption: { feature: string; adoption: number }[];
+  // Engineering
+  failedJobs: number;
+  queueBacklog: number;
+  // Activity
+  recentActivity: { action: string; time: string; table_name: string }[];
 }
 
 interface UserInfo {
@@ -53,14 +71,22 @@ const CoreDashboard = () => {
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [metrics, setMetrics] = useState<PlatformMetrics>({
-    totalTenants: 0,
-    activeUsers: 0,
+    totalUsers: 0,
+    activeUsers30d: 0,
     totalDispatches: 0,
-    totalRevenue: 0,
-    apiCalls: 0,
-    errorRate: 0,
-    avgResponseTime: 0,
     dispatchSuccessRate: 0,
+    avgResponseTime: 0,
+    errorRate: 0,
+    apiCalls: 0,
+    totalRevenue: 0,
+    mrr: 0,
+    revenueByTier: [],
+    dau: 0,
+    mau: 0,
+    featureAdoption: [],
+    failedJobs: 0,
+    queueBacklog: 0,
+    recentActivity: [],
   });
 
   useEffect(() => {
@@ -71,10 +97,7 @@ const CoreDashboard = () => {
   const checkCoreAccess = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        navigate("/core/login");
-        return;
-      }
+      if (!user) { navigate("/core/login"); return; }
 
       const { data: rolesData } = await supabase
         .from("user_roles")
@@ -84,11 +107,7 @@ const CoreDashboard = () => {
       const roles = (rolesData ?? []).map((r: any) => r.role as string);
       const role = roles.find((r) => r.startsWith("core_") || r === "internal_team") ?? roles[0];
       if (!role?.startsWith("core_") && role !== "internal_team") {
-        toast({
-          title: "Access Denied",
-          description: "This area is restricted to RouteAce Core Team only.",
-          variant: "destructive",
-        });
+        toast({ title: "Access Denied", description: "This area is restricted to RouteAce Core Team only.", variant: "destructive" });
         navigate("/core/login");
         return;
       }
@@ -96,41 +115,157 @@ const CoreDashboard = () => {
       setCoreRole(role as CoreRole);
       setUserInfo({
         email: user.email || "",
-        displayName: user.user_metadata?.full_name || user.email?.split("@")[0] || "Core User"
+        displayName: user.user_metadata?.full_name || user.email?.split("@")[0] || "Core User",
       });
       setLoading(false);
-    } catch (error) {
+    } catch {
       navigate("/core/login");
     }
   };
 
   const loadMetrics = async () => {
     try {
-      // Load aggregated platform metrics
-      const [tenantsRes, usersRes, dispatchesRes, invoicesRes, apiLogsRes] = await Promise.all([
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const thisMonthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+
+      const [
+        usersRes,
+        activeSessionsRes,
+        dauSessionsRes,
+        dispatchesRes,
+        invoicesRes,
+        invoicesMRRRes,
+        apiLogsRes,
+        orgsByTierRes,
+        subscriptionPlansRes,
+        auditLogsRes,
+        failedJobsRes,
+        pendingJobsRes,
+        dispatchCreatedRes,
+        invoiceCreatedRes,
+        apiKeysRes,
+      ] = await Promise.all([
+        // Total platform users
         supabase.from("profiles").select("id", { count: "exact", head: true }),
-        supabase.from("user_sessions").select("id", { count: "exact", head: true }).gte("login_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()),
-        supabase.from("dispatches").select("id, status", { count: "exact" }),
-        supabase.from("invoices").select("total_amount"),
-        supabase.from("api_request_logs").select("id, status_code, response_time_ms"),
+        // MAU — unique sessions last 30d
+        supabase.from("user_sessions").select("user_id").gte("login_at", thirtyDaysAgo),
+        // DAU — sessions last 24h
+        supabase.from("user_sessions").select("user_id").gte("login_at", oneDayAgo),
+        // All dispatches (status + on_time_flag)
+        supabase.from("dispatches").select("id, status, on_time_flag"),
+        // All paid invoices for total revenue
+        supabase.from("invoices").select("total_amount, status"),
+        // This month's paid invoices for MRR
+        supabase.from("invoices").select("total_amount").eq("status", "paid").gte("created_at", thisMonthStart),
+        // API logs for latency + error rate
+        supabase.from("api_request_logs").select("status_code, response_time_ms"),
+        // Orgs grouped by tier for revenue breakdown
+        supabase.from("organizations").select("id, subscription_tier").eq("is_active", true),
+        // Subscription plans for pricing
+        supabase.from("subscription_plans").select("tier, price_monthly"),
+        // Recent audit log entries for activity feed
+        supabase.from("audit_logs").select("action, table_name, created_at").order("created_at", { ascending: false }).limit(5),
+        // Failed email jobs as proxy for failed jobs
+        supabase.from("email_queue").select("id", { count: "exact", head: true }).eq("status", "failed"),
+        // Pending jobs queue backlog
+        supabase.from("email_queue").select("id", { count: "exact", head: true }).eq("status", "pending"),
+        // Feature adoption: dispatches created
+        supabase.from("dispatches").select("id", { count: "exact", head: true }),
+        // Feature adoption: invoices created
+        supabase.from("invoices").select("id", { count: "exact", head: true }),
+        // Feature adoption: API keys issued
+        supabase.from("api_keys").select("id", { count: "exact", head: true }),
       ]);
 
-      const totalRevenue = invoicesRes.data?.reduce((sum, inv) => sum + (inv.total_amount || 0), 0) || 0;
-      const errorCalls = apiLogsRes.data?.filter(l => l.status_code && l.status_code >= 400).length || 0;
-      const totalCalls = apiLogsRes.data?.length || 1;
-      const avgResponseTime = apiLogsRes.data?.reduce((sum, l) => sum + (l.response_time_ms || 0), 0) / totalCalls || 0;
-      const deliveredDispatches = dispatchesRes.data?.filter(d => d.status === "delivered").length || 0;
-      const totalDispatches = dispatchesRes.data?.length || 1;
+      // Users
+      const totalUsers = usersRes.count || 0;
+      const mau = new Set((activeSessionsRes.data || []).map((s: any) => s.user_id)).size;
+      const dau = new Set((dauSessionsRes.data || []).map((s: any) => s.user_id)).size;
+
+      // Dispatches
+      const dispatches = dispatchesRes.data || [];
+      const totalDispatches = dispatches.length;
+      const delivered = dispatches.filter((d) => d.status === "delivered").length;
+      const dispatchSuccessRate = totalDispatches > 0 ? (delivered / totalDispatches) * 100 : 0;
+
+      // Revenue
+      const allInvoices = invoicesRes.data || [];
+      const totalRevenue = allInvoices
+        .filter((i) => i.status === "paid")
+        .reduce((sum, i) => sum + (i.total_amount || 0), 0);
+      const mrr = (invoicesMRRRes.data || []).reduce((sum, i) => sum + (i.total_amount || 0), 0);
+
+      // Revenue by tier — join org counts with plan pricing
+      const tierPricing: Record<string, number> = {};
+      (subscriptionPlansRes.data || []).forEach((p: any) => {
+        tierPricing[p.tier] = p.price_monthly || 0;
+      });
+      const tierCounts: Record<string, number> = {};
+      (orgsByTierRes.data || []).forEach((o: any) => {
+        tierCounts[o.subscription_tier] = (tierCounts[o.subscription_tier] || 0) + 1;
+      });
+      const tierColors: Record<string, string> = {
+        enterprise: "bg-amber-500",
+        professional: "bg-blue-500",
+        starter: "bg-green-500",
+      };
+      const tierLabels: Record<string, string> = {
+        enterprise: "Enterprise",
+        professional: "Professional",
+        starter: "Starter",
+      };
+      const revenueByTier = Object.entries(tierCounts).map(([tier, count]) => ({
+        tier: tierLabels[tier] || tier,
+        revenue: count * (tierPricing[tier] || 0),
+        color: tierColors[tier] || "bg-purple-500",
+      })).sort((a, b) => b.revenue - a.revenue);
+
+      // API health
+      const apiLogs = apiLogsRes.data || [];
+      const totalCalls = apiLogs.length || 1;
+      const errorCalls = apiLogs.filter((l: any) => l.status_code && l.status_code >= 400).length;
+      const avgResponseTime = apiLogs.reduce((sum: number, l: any) => sum + (l.response_time_ms || 0), 0) / totalCalls;
+      const errorRate = (errorCalls / totalCalls) * 100;
+
+      // Feature adoption — real counts vs total users (floored at 0, capped at 100)
+      const adoptionOf = (count: number) =>
+        totalUsers > 0 ? Math.min(Math.round((count / totalUsers) * 100), 100) : 0;
+      const featureAdoption = [
+        { feature: "Dispatch Creation", adoption: adoptionOf(dispatchCreatedRes.count || 0) },
+        { feature: "Invoice Generation", adoption: adoptionOf(invoiceCreatedRes.count || 0) },
+        { feature: "API Integration", adoption: adoptionOf(apiKeysRes.count || 0) },
+        { feature: "Real-time Tracking", adoption: adoptionOf(delivered) },
+      ];
+
+      // Engineering
+      const failedJobs = failedJobsRes.count || 0;
+      const queueBacklog = pendingJobsRes.count || 0;
+
+      // Recent activity from audit_logs
+      const recentActivity = (auditLogsRes.data || []).map((log: any) => ({
+        action: `${log.action} on ${log.table_name}`,
+        time: formatRelativeTime(log.created_at),
+        table_name: log.table_name,
+      }));
 
       setMetrics({
-        totalTenants: tenantsRes.count || 0,
-        activeUsers: usersRes.count || 0,
-        totalDispatches: dispatchesRes.count || 0,
-        totalRevenue,
-        apiCalls: totalCalls,
-        errorRate: (errorCalls / totalCalls) * 100,
+        totalUsers,
+        activeUsers30d: mau,
+        totalDispatches,
+        dispatchSuccessRate,
         avgResponseTime,
-        dispatchSuccessRate: (deliveredDispatches / totalDispatches) * 100,
+        errorRate,
+        apiCalls: totalCalls,
+        totalRevenue,
+        mrr,
+        revenueByTier,
+        dau,
+        mau,
+        featureAdoption,
+        failedJobs,
+        queueBacklog,
+        recentActivity,
       });
     } catch (error) {
       console.error("Error loading metrics:", error);
@@ -167,6 +302,14 @@ const CoreDashboard = () => {
     }
   };
 
+  const getActivityIcon = (tableName: string) => {
+    if (tableName?.includes("dispatch")) return Truck;
+    if (tableName?.includes("invoice")) return Package;
+    if (tableName?.includes("api")) return Zap;
+    if (tableName?.includes("org") || tableName?.includes("profile")) return Building2;
+    return Activity;
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -175,9 +318,10 @@ const CoreDashboard = () => {
     );
   }
 
+  const maxTierRevenue = Math.max(...metrics.revenueByTier.map((t) => t.revenue), 1);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-amber-950/5">
-      {/* Header */}
       <header className="border-b border-border/50 bg-background/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -208,10 +352,9 @@ const CoreDashboard = () => {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
-        {/* Quick Actions for Intelligence Module */}
         {(coreRole === "core_founder" || coreRole === "core_cofounder" || coreRole === "core_product" || coreRole === "core_analyst") && (
           <div className="mb-6">
-            <Button 
+            <Button
               onClick={() => navigate("/core/intelligence")}
               className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
             >
@@ -242,50 +385,24 @@ const CoreDashboard = () => {
             {(coreRole === "core_engineer" || coreRole === "core_founder" || coreRole === "core_cofounder" || coreRole === "internal_team") && (
               <TabsTrigger value="engineering">Engineering</TabsTrigger>
             )}
-            {(coreRole === "core_founder") && (
+            {coreRole === "core_founder" && (
               <TabsTrigger value="team">Team</TabsTrigger>
             )}
           </TabsList>
 
-          {/* Overview Tab - Visible to All Core Roles */}
+          {/* Overview */}
           <TabsContent value="overview" className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <MetricCard
-                title="Total Users"
-                value={metrics.totalTenants.toLocaleString()}
-                icon={Users}
-                trend="+12%"
-                trendUp={true}
-              />
-              <MetricCard
-                title="Active (30d)"
-                value={metrics.activeUsers.toLocaleString()}
-                icon={Activity}
-                trend="+8%"
-                trendUp={true}
-              />
-              <MetricCard
-                title="Total Dispatches"
-                value={metrics.totalDispatches.toLocaleString()}
-                icon={Truck}
-                trend="+15%"
-                trendUp={true}
-              />
-              <MetricCard
-                title="Success Rate"
-                value={`${metrics.dispatchSuccessRate.toFixed(1)}%`}
-                icon={CheckCircle}
-                trend="+2%"
-                trendUp={true}
-              />
+              <MetricCard title="Total Users" value={metrics.totalUsers.toLocaleString()} icon={Users} sub="All registered profiles" />
+              <MetricCard title="Active (30d)" value={metrics.activeUsers30d.toLocaleString()} icon={Activity} sub="Unique sessions last 30d" />
+              <MetricCard title="Total Dispatches" value={metrics.totalDispatches.toLocaleString()} icon={Truck} sub="All-time" />
+              <MetricCard title="Success Rate" value={`${metrics.dispatchSuccessRate.toFixed(1)}%`} icon={CheckCircle} sub="Delivered dispatches" positive={metrics.dispatchSuccessRate >= 80} />
             </div>
 
-            {/* AI Insights - For Founders, Product, and Analysts */}
             {(coreRole === "core_founder" || coreRole === "core_cofounder" || coreRole === "core_product" || coreRole === "core_analyst") && (
               <AIInsightCards />
             )}
 
-            {/* Quick Stats Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card className="border-border/50">
                 <CardHeader>
@@ -294,7 +411,9 @@ const CoreDashboard = () => {
                 <CardContent className="space-y-4">
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">API Response Time</span>
-                    <span className="font-mono">{metrics.avgResponseTime.toFixed(0)}ms</span>
+                    <span className={`font-mono ${metrics.avgResponseTime > 500 ? "text-red-400" : metrics.avgResponseTime > 200 ? "text-amber-400" : "text-green-400"}`}>
+                      {metrics.avgResponseTime.toFixed(0)}ms
+                    </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Error Rate</span>
@@ -303,8 +422,14 @@ const CoreDashboard = () => {
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">API Calls (Total)</span>
+                    <span className="text-muted-foreground">API Calls (Total Logged)</span>
                     <span className="font-mono">{metrics.apiCalls.toLocaleString()}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Failed Jobs</span>
+                    <span className={`font-mono ${metrics.failedJobs > 0 ? "text-amber-400" : "text-green-400"}`}>
+                      {metrics.failedJobs}
+                    </span>
                   </div>
                 </CardContent>
               </Card>
@@ -314,127 +439,103 @@ const CoreDashboard = () => {
                   <CardTitle className="text-lg">Recent Activity</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-3">
-                    {[
-                      { action: "New tenant onboarded", time: "2 hours ago", icon: Building2 },
-                      { action: "API key generated", time: "4 hours ago", icon: Zap },
-                      { action: "Dispatch milestone: 10,000", time: "1 day ago", icon: Package },
-                    ].map((activity, i) => (
-                      <div key={i} className="flex items-center gap-3 text-sm">
-                        <activity.icon className="w-4 h-4 text-muted-foreground" />
-                        <span className="flex-1">{activity.action}</span>
-                        <span className="text-xs text-muted-foreground">{activity.time}</span>
-                      </div>
-                    ))}
-                  </div>
+                  {metrics.recentActivity.length > 0 ? (
+                    <div className="space-y-3">
+                      {metrics.recentActivity.map((activity, i) => {
+                        const Icon = getActivityIcon(activity.table_name);
+                        return (
+                          <div key={i} className="flex items-center gap-3 text-sm">
+                            <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
+                            <span className="flex-1 capitalize">{activity.action}</span>
+                            <span className="text-xs text-muted-foreground">{activity.time}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No recent activity logged.</p>
+                  )}
                 </CardContent>
               </Card>
             </div>
           </TabsContent>
 
-          {/* Platform KPIs Tab - Founder Only */}
+          {/* Platform KPIs */}
           <TabsContent value="platform" className="space-y-6">
             <PlatformKPIs />
           </TabsContent>
 
-          {/* Reseller Network Tab - Founder Only */}
+          {/* Reseller Network */}
           <TabsContent value="reseller" className="space-y-6">
             <ResellerNetworkGraph />
           </TabsContent>
 
-          {/* Revenue Tab - Founder Only */}
+          {/* Revenue */}
           <TabsContent value="revenue" className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               <MetricCard
                 title="Total Revenue"
-                value={`₦${(metrics.totalRevenue / 1000000).toFixed(2)}M`}
+                value={`₦${(metrics.totalRevenue / 1_000_000).toFixed(2)}M`}
                 icon={DollarSign}
-                trend="+18%"
-                trendUp={true}
+                sub="All paid invoices"
               />
               <MetricCard
                 title="MRR"
-                value="₦2.5M"
+                value={`₦${(metrics.mrr / 1_000_000).toFixed(2)}M`}
                 icon={TrendingUp}
-                trend="+12%"
-                trendUp={true}
+                sub="Paid invoices this month"
               />
               <MetricCard
-                title="Gross Margin"
-                value="68%"
-                icon={BarChart3}
-                trend="+3%"
-                trendUp={true}
-              />
-              <MetricCard
-                title="Churn Rate"
-                value="2.1%"
-                icon={AlertTriangle}
-                trend="-0.5%"
-                trendUp={true}
+                title="Active Orgs"
+                value={metrics.revenueByTier.reduce((s, t) => s + 0, 0).toString()}
+                icon={Building2}
+                sub="Across all tiers"
               />
             </div>
 
             <Card className="border-border/50">
               <CardHeader>
-                <CardTitle>Revenue by Tier</CardTitle>
+                <CardTitle>Revenue by Subscription Tier</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {[
-                    { tier: "Enterprise", revenue: 1200000, color: "bg-amber-500" },
-                    { tier: "Professional", revenue: 800000, color: "bg-blue-500" },
-                    { tier: "Starter", revenue: 300000, color: "bg-green-500" },
-                    { tier: "Reseller", revenue: 200000, color: "bg-purple-500" },
-                  ].map((item) => (
-                    <div key={item.tier} className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span>{item.tier}</span>
-                        <span className="font-mono">₦{(item.revenue / 1000).toFixed(0)}K</span>
+                {metrics.revenueByTier.length > 0 ? (
+                  <div className="space-y-4">
+                    {metrics.revenueByTier.map((item) => (
+                      <div key={item.tier} className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span>{item.tier}</span>
+                          <span className="font-mono">
+                            {item.revenue >= 1_000_000
+                              ? `₦${(item.revenue / 1_000_000).toFixed(2)}M`
+                              : `₦${(item.revenue / 1_000).toFixed(0)}K`}
+                          </span>
+                        </div>
+                        <div className="h-2 bg-secondary rounded-full overflow-hidden">
+                          <div
+                            className={`h-full ${item.color}`}
+                            style={{ width: `${(item.revenue / maxTierRevenue) * 100}%` }}
+                          />
+                        </div>
                       </div>
-                      <div className="h-2 bg-secondary rounded-full overflow-hidden">
-                        <div
-                          className={`h-full ${item.color}`}
-                          style={{ width: `${(item.revenue / 1200000) * 100}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No subscription revenue data yet.</p>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
 
-          {/* Product Tab */}
+          {/* Product */}
           <TabsContent value="product" className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <MetricCard title="DAU" value={metrics.dau.toLocaleString()} icon={Users} sub="Unique active users today" />
+              <MetricCard title="MAU" value={metrics.mau.toLocaleString()} icon={Activity} sub="Unique active users (30d)" />
               <MetricCard
-                title="DAU"
-                value="342"
-                icon={Users}
-                trend="+5%"
-                trendUp={true}
-              />
-              <MetricCard
-                title="MAU"
-                value="1,247"
-                icon={Activity}
-                trend="+8%"
-                trendUp={true}
-              />
-              <MetricCard
-                title="Avg. Session"
-                value="12m"
-                icon={Clock}
-                trend="+2m"
-                trendUp={true}
-              />
-              <MetricCard
-                title="NPS Score"
-                value="72"
-                icon={TrendingUp}
-                trend="+4"
-                trendUp={true}
+                title="DAU/MAU Ratio"
+                value={metrics.mau > 0 ? `${((metrics.dau / metrics.mau) * 100).toFixed(1)}%` : "—"}
+                icon={BarChart3}
+                sub="Stickiness"
               />
             </div>
 
@@ -444,13 +545,7 @@ const CoreDashboard = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {[
-                    { feature: "Dispatch Creation", adoption: 95 },
-                    { feature: "Route Optimization", adoption: 72 },
-                    { feature: "Invoice Generation", adoption: 88 },
-                    { feature: "Real-time Tracking", adoption: 65 },
-                    { feature: "API Integration", adoption: 34 },
-                  ].map((item) => (
+                  {metrics.featureAdoption.map((item) => (
                     <div key={item.feature} className="space-y-2">
                       <div className="flex justify-between text-sm">
                         <span>{item.feature}</span>
@@ -469,96 +564,95 @@ const CoreDashboard = () => {
             </Card>
           </TabsContent>
 
-          {/* System Tab */}
+          {/* System */}
           <TabsContent value="system" className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <MetricCard
-                title="API Calls/Day"
-                value={Math.round(metrics.apiCalls / 30).toLocaleString()}
+                title="API Calls (Total)"
+                value={metrics.apiCalls.toLocaleString()}
                 icon={Zap}
-                trend="+22%"
-                trendUp={true}
+                sub="Logged requests"
               />
               <MetricCard
                 title="Avg Latency"
                 value={`${metrics.avgResponseTime.toFixed(0)}ms`}
                 icon={Clock}
-                trend="-15ms"
-                trendUp={true}
-              />
-              <MetricCard
-                title="Uptime"
-                value="99.9%"
-                icon={CheckCircle}
-                trend="stable"
-                trendUp={true}
+                sub="Mean response time"
+                positive={metrics.avgResponseTime < 300}
               />
               <MetricCard
                 title="Error Rate"
                 value={`${metrics.errorRate.toFixed(2)}%`}
                 icon={AlertTriangle}
-                trend="-0.3%"
-                trendUp={true}
+                sub="4xx + 5xx responses"
+                positive={metrics.errorRate < 2}
+              />
+              <MetricCard
+                title="Success Rate"
+                value={`${(100 - metrics.errorRate).toFixed(2)}%`}
+                icon={CheckCircle}
+                sub="2xx + 3xx responses"
+                positive={metrics.errorRate < 2}
               />
             </div>
           </TabsContent>
 
-          {/* Engineering Tab */}
+          {/* Engineering */}
           <TabsContent value="engineering" className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <MetricCard
                 title="Failed Jobs"
-                value="3"
+                value={metrics.failedJobs.toString()}
                 icon={AlertTriangle}
-                trend="-2"
-                trendUp={true}
+                sub="Email queue failures"
+                positive={metrics.failedJobs === 0}
               />
               <MetricCard
                 title="Queue Backlog"
-                value="12"
+                value={metrics.queueBacklog.toString()}
                 icon={Clock}
-                trend="normal"
-                trendUp={true}
+                sub="Pending email jobs"
+                positive={metrics.queueBacklog < 50}
               />
               <MetricCard
-                title="DB Connections"
-                value="45/100"
+                title="API Error Rate"
+                value={`${metrics.errorRate.toFixed(2)}%`}
                 icon={Activity}
-                trend="healthy"
-                trendUp={true}
+                sub="From api_request_logs"
+                positive={metrics.errorRate < 2}
               />
               <MetricCard
-                title="Memory Usage"
-                value="62%"
-                icon={BarChart3}
-                trend="stable"
-                trendUp={true}
+                title="Dispatch Success"
+                value={`${metrics.dispatchSuccessRate.toFixed(1)}%`}
+                icon={Truck}
+                sub="Delivered / total"
+                positive={metrics.dispatchSuccessRate >= 80}
               />
             </div>
 
             <Card className="border-border/50">
               <CardHeader>
-                <CardTitle>Recent Errors</CardTitle>
+                <CardTitle>API Health Detail</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3 text-sm">
                   {metrics.errorRate > 0 ? (
-                    <>
-                      <div className="flex items-center gap-3 p-3 bg-red-500/10 rounded-lg border border-red-500/20">
-                        <AlertTriangle className="w-4 h-4 text-red-400" />
-                        <span className="flex-1">API timeout on dispatch creation</span>
-                        <span className="text-xs text-muted-foreground">2h ago</span>
-                      </div>
-                      <div className="flex items-center gap-3 p-3 bg-amber-500/10 rounded-lg border border-amber-500/20">
-                        <AlertTriangle className="w-4 h-4 text-amber-400" />
-                        <span className="flex-1">Rate limit exceeded for tenant-xyz</span>
-                        <span className="text-xs text-muted-foreground">5h ago</span>
-                      </div>
-                    </>
+                    <div className="flex items-center gap-3 p-3 bg-amber-500/10 rounded-lg border border-amber-500/20">
+                      <AlertTriangle className="w-4 h-4 text-amber-400" />
+                      <span className="flex-1">
+                        {Math.round((metrics.errorRate / 100) * metrics.apiCalls)} error responses out of {metrics.apiCalls.toLocaleString()} total calls ({metrics.errorRate.toFixed(2)}%)
+                      </span>
+                    </div>
                   ) : (
                     <div className="flex items-center gap-3 p-3 bg-green-500/10 rounded-lg border border-green-500/20">
                       <CheckCircle className="w-4 h-4 text-green-400" />
-                      <span>No errors in the last 24 hours</span>
+                      <span>No API errors recorded in current log window</span>
+                    </div>
+                  )}
+                  {metrics.failedJobs > 0 && (
+                    <div className="flex items-center gap-3 p-3 bg-red-500/10 rounded-lg border border-red-500/20">
+                      <AlertTriangle className="w-4 h-4 text-red-400" />
+                      <span>{metrics.failedJobs} failed job(s) in email queue — review and retry</span>
                     </div>
                   )}
                 </div>
@@ -566,7 +660,7 @@ const CoreDashboard = () => {
             </Card>
           </TabsContent>
 
-          {/* Team Management Tab - Founder Only */}
+          {/* Team */}
           {coreRole === "core_founder" && (
             <TabsContent value="team" className="space-y-6">
               <CoreTeamManagement />
@@ -578,25 +672,24 @@ const CoreDashboard = () => {
   );
 };
 
-// Metric Card Component
 interface MetricCardProps {
   title: string;
   value: string;
   icon: React.ElementType;
-  trend: string;
-  trendUp: boolean;
+  sub?: string;
+  positive?: boolean;
 }
 
-const MetricCard = ({ title, value, icon: Icon, trend, trendUp }: MetricCardProps) => (
+const MetricCard = ({ title, value, icon: Icon, sub, positive }: MetricCardProps) => (
   <Card className="border-border/50">
     <CardContent className="pt-6">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm text-muted-foreground">{title}</p>
-          <p className="text-2xl font-bold mt-1">{value}</p>
-          <p className={`text-xs mt-1 ${trendUp ? "text-green-400" : "text-red-400"}`}>
-            {trend}
+          <p className={`text-2xl font-bold mt-1 ${positive === false ? "text-red-400" : positive === true ? "text-green-400" : ""}`}>
+            {value}
           </p>
+          {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
         </div>
         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center">
           <Icon className="w-6 h-6 text-amber-500" />
@@ -605,5 +698,15 @@ const MetricCard = ({ title, value, icon: Icon, trend, trendUp }: MetricCardProp
     </CardContent>
   </Card>
 );
+
+function formatRelativeTime(isoString: string): string {
+  const diff = Date.now() - new Date(isoString).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
 
 export default CoreDashboard;

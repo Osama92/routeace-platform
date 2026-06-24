@@ -46,8 +46,8 @@ serve(async (req) => {
         try {
           const txt = await callAnthropic({
             model: mapModel("google/gemini-3-flash-preview"),
+            system: "You are a logistics marketing copywriter. Return ONLY JSON.",
             messages: [
-              { role: "system", content: "You are a logistics marketing copywriter. Return ONLY JSON." },
               { role: "user", content: `Write website copy for "${company_name}" - a ${brand_style} ${services.join(", ") || "logistics"} company serving ${cities_served.join(", ") || "Nigeria"}, fleet of ${fleet_size || "growing"} vehicles, targeting ${target_clients.join(", ") || "businesses"}. Return JSON: { "hero_headline": "", "hero_sub": "", "value_props": ["","",""], "services_intro": "", "about_us": "", "cta": "" }` },
             ],
           });
