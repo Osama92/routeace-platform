@@ -76,13 +76,13 @@ const CoreDashboard = () => {
         return;
       }
 
-      const { data: roleData } = await supabase
+      const { data: rolesData } = await supabase
         .from("user_roles")
         .select("role")
-        .eq("user_id", user.id)
-        .single();
+        .eq("user_id", user.id);
 
-      const role = roleData?.role as string;
+      const roles = (rolesData ?? []).map((r: any) => r.role as string);
+      const role = roles.find((r) => r.startsWith("core_") || r === "internal_team") ?? roles[0];
       if (!role?.startsWith("core_") && role !== "internal_team") {
         toast({
           title: "Access Denied",
