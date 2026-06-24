@@ -18,34 +18,25 @@ export function useRoleGuard() {
     if (!user || loading) return null;
 
     try {
-      const { data, error } = await supabase
+      const { data: rolesData, error } = await supabase
         .from("user_roles")
         .select("role")
-        .eq("user_id", user.id)
-        .single();
+        .eq("user_id", user.id);
 
-      if (error || !data) {
+      const roles = (rolesData ?? []).map((r: any) => r.role as string);
+
+      if (error || roles.length === 0) {
         console.warn("No role found for user, creating default role");
-        // Auto-restore with pending customer role
         await supabase.from("user_roles").insert({
           user_id: user.id,
-          role: "customer" // Default safe role
+          role: "customer"
         });
-        
-        // Log the auto-restore
-        await supabase.from("audit_logs").insert({
-          action: "role_auto_restored",
-          table_name: "user_roles",
-          record_id: user.id,
-          new_data: { role: "customer", reason: "missing_role" },
-          user_id: user.id,
-          user_email: user.email
-        });
-        
         return "customer" as AppRole;
       }
 
-      return data.role as AppRole;
+      // Prefer core_ roles, otherwise take first
+      const coreRole = roles.find((r) => r.startsWith("core_") || r === "internal_team");
+      return (coreRole ?? roles[0]) as AppRole;
     } catch (err) {
       console.error("Error rehydrating role:", err);
       return null;
