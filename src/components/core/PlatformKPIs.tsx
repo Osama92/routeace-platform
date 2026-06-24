@@ -88,10 +88,11 @@ const PlatformKPIs = () => {
         .from("commission_ledger")
         .select("gross_amount, routeace_amount, reseller_amount");
 
-      // Load invoices for revenue
+      // Load invoices for revenue (paid only)
       const { data: invoiceData } = await supabase
         .from("invoices")
-        .select("total_amount, created_at");
+        .select("total_amount, created_at, status")
+        .eq("status", "paid");
 
       // Load API usage
       const { count: apiCount } = await supabase
@@ -134,38 +135,64 @@ const PlatformKPIs = () => {
         growthRate: Math.round(growthRate * 10) / 10,
       });
 
-      // Build organization summaries with real data from commission_ledger
+      // Build organization summaries with real per-org data
       const { data: memberCounts } = await supabase
         .from("organization_members")
         .select("organization_id");
-      
-      const { data: dispatchCounts } = await supabase
+
+      const { data: dispatchData } = await supabase
         .from("dispatches")
-        .select("id, created_by");
+        .select("id, organization_id");
+
+      const { data: invoicesByOrg } = await supabase
+        .from("invoices")
+        .select("organization_id, total_amount")
+        .eq("status", "paid");
 
       const orgMemberMap = new Map<string, number>();
       (memberCounts || []).forEach((m: any) => {
         orgMemberMap.set(m.organization_id, (orgMemberMap.get(m.organization_id) || 0) + 1);
       });
 
-      // Get per-org commission revenue
-      const { data: orgRevenue } = await supabase
-        .from("commission_ledger")
-        .select("source_org_id, gross_amount");
-      const orgRevenueMap = new Map<string, number>();
-      (orgRevenue || []).forEach((r: any) => {
-        orgRevenueMap.set(r.source_org_id, (orgRevenueMap.get(r.source_org_id) || 0) + Number(r.gross_amount || 0));
+      const orgDispatchMap = new Map<string, number>();
+      (dispatchData || []).forEach((d: any) => {
+        if (d.organization_id) {
+          orgDispatchMap.set(d.organization_id, (orgDispatchMap.get(d.organization_id) || 0) + 1);
+        }
       });
 
-      const orgSummaries: OrganizationSummary[] = (orgsData || []).slice(0, 10).map((org) => ({
-        id: org.id,
-        name: org.name,
-        tier: org.subscription_tier,
-        revenue: orgRevenueMap.get(org.id) || 0,
-        users: orgMemberMap.get(org.id) || 0,
-        dispatches: 0,
-        churnRisk: (orgRevenueMap.get(org.id) || 0) > 100000 ? "low" : (orgRevenueMap.get(org.id) || 0) > 10000 ? "medium" : "high",
-      }));
+      // Revenue per org from invoices (preferred) or commission_ledger fallback
+      const orgInvoiceRevenueMap = new Map<string, number>();
+      (invoicesByOrg || []).forEach((i: any) => {
+        if (i.organization_id) {
+          orgInvoiceRevenueMap.set(i.organization_id, (orgInvoiceRevenueMap.get(i.organization_id) || 0) + Number(i.total_amount || 0));
+        }
+      });
+      const { data: orgCommission } = await supabase
+        .from("commission_ledger")
+        .select("source_org_id, gross_amount");
+      const orgCommissionMap = new Map<string, number>();
+      (orgCommission || []).forEach((r: any) => {
+        orgCommissionMap.set(r.source_org_id, (orgCommissionMap.get(r.source_org_id) || 0) + Number(r.gross_amount || 0));
+      });
+
+      // Sort by name, show all orgs (no slice)
+      const sortedOrgs = [...(orgsData || [])].sort((a, b) => a.name.localeCompare(b.name));
+
+      const orgSummaries: OrganizationSummary[] = sortedOrgs.map((org) => {
+        const rev = orgInvoiceRevenueMap.get(org.id) || orgCommissionMap.get(org.id) || 0;
+        const dispatches = orgDispatchMap.get(org.id) || 0;
+        const users = orgMemberMap.get(org.id) || 0;
+        return {
+          id: org.id,
+          name: org.name,
+          tier: org.subscription_tier,
+          revenue: rev,
+          users,
+          dispatches,
+          churnRisk: dispatches > 5 ? "low" : dispatches > 0 ? "medium" : "high",
+        };
+      });
 
       setOrganizations(orgSummaries);
     } catch (error) {

@@ -47,7 +47,11 @@ export function AIInsightCards() {
         body: { type: "weekly-insights" }
       });
 
-      if (error) throw error;
+      if (error) {
+        // Surface the actual error message from the function body if available
+        const detail = (data as any)?.error || error.message;
+        throw new Error(detail);
+      }
 
       if (data?.success) {
         setInsights(data.insights || []);

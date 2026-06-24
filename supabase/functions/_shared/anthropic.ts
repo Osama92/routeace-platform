@@ -30,7 +30,7 @@ export async function callAnthropic(opts: CallAnthropicOptions): Promise<string>
 
 /** Map legacy Gemini model tier strings to real Gemini model IDs. */
 export function mapModel(geminiModel: string): string {
-  if (geminiModel.includes("lite")) return "gemini-2.0-flash";
-  if (geminiModel.includes("3-flash") || geminiModel.includes("preview")) return "gemini-2.5-flash";
-  return "gemini-2.5-flash";
+  if (geminiModel.includes("lite")) return "gemini-1.5-flash";
+  if (geminiModel.includes("3-flash") || geminiModel.includes("preview")) return "gemini-1.5-flash";
+  return "gemini-1.5-flash";
 }

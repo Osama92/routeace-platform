@@ -75,7 +75,10 @@ export function PredictiveKPIs() {
         body: { type: "predictive-kpis" }
       });
 
-      if (error) throw error;
+      if (error) {
+        const detail = (data as any)?.error || error.message;
+        throw new Error(detail);
+      }
 
       if (data?.success) {
         setPredictions(data.predictions);

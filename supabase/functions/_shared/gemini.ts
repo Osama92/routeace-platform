@@ -34,7 +34,7 @@ export async function callGemini(opts: CallGeminiOptions): Promise<string> {
   const apiKey = Deno.env.get("GEMINI_API_KEY");
   if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
 
-  const model = opts.model ?? "gemini-2.5-flash";
+  const model = opts.model ?? "gemini-1.5-flash";
   const maxTokens = opts.maxTokens ?? 2048;
   const temperature = opts.temperature ?? 1;
 
