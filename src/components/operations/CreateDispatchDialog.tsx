@@ -37,6 +37,7 @@ const CreateDispatchDialog = () => {
     vehicle_id: "",
     driver_id: "",
     transporter_id: "",
+    vendor_id: "",
     distance_km: "",
     diesel_liters: "",
     cost: "",
@@ -77,16 +78,24 @@ const CreateDispatchDialog = () => {
     enabled: open && !!organizationId && !!user?.id,
   });
 
-  // ── Customers (org-scoped) ────────────────────────────────────────────────
+  // ── Customers (org-scoped, with NULL org_id fallback for pre-migration rows) ──
   const { data: customers } = useQuery({
     queryKey: ["ops-customers-list", organizationId],
     queryFn: async () => {
       if (!organizationId) return [];
-      const { data } = await supabase.from("customers")
-        .select("id, company_name")
-        .eq("organization_id", organizationId)
-        .order("company_name");
-      return data || [];
+      const [orgRes, nullRes] = await Promise.all([
+        supabase.from("customers")
+          .select("id, company_name")
+          .eq("organization_id", organizationId)
+          .order("company_name"),
+        supabase.from("customers")
+          .select("id, company_name")
+          .is("organization_id", null)
+          .order("company_name"),
+      ]);
+      const map = new Map<string, any>();
+      [...(orgRes.data || []), ...(nullRes.data || [])].forEach((c) => map.set(c.id, c));
+      return Array.from(map.values()).sort((a, b) => a.company_name.localeCompare(b.company_name));
     },
     enabled: open && !!organizationId,
   });
@@ -106,32 +115,51 @@ const CreateDispatchDialog = () => {
     enabled: open && !!organizationId,
   });
 
-  // ── Vehicles (org-scoped, available only) ────────────────────────────────
+  // ── Vehicles (org-scoped + NULL org fallback; valid statuses: available/in_use/maintenance/retired) ──
   const { data: vehicles } = useQuery({
     queryKey: ["ops-vehicles-list", organizationId],
     queryFn: async () => {
       if (!organizationId) return [];
-      const { data } = await supabase.from("vehicles")
-        .select("id, registration_number, truck_type, status")
-        .eq("organization_id", organizationId)
-        .in("status", ["available", "active"])
-        .order("registration_number");
-      return data || [];
+      const [orgRes, nullRes] = await Promise.all([
+        supabase.from("vehicles")
+          .select("id, registration_number, truck_type, vehicle_type, status")
+          .eq("organization_id", organizationId)
+          .eq("status", "available")
+          .order("registration_number"),
+        supabase.from("vehicles")
+          .select("id, registration_number, truck_type, vehicle_type, status")
+          .is("organization_id", null)
+          .eq("status", "available")
+          .order("registration_number"),
+      ]);
+      const map = new Map<string, any>();
+      [...(orgRes.data || []), ...(nullRes.data || [])].forEach((v) => map.set(v.id, v));
+      return Array.from(map.values()).sort((a, b) => (a.registration_number || "").localeCompare(b.registration_number || ""));
     },
     enabled: open && !!organizationId,
   });
 
-  // ── 3PL Transporters (org-scoped, approved only) ─────────────────────────
-  const { data: transporters } = useQuery({
-    queryKey: ["ops-transporters-approved", organizationId],
+  // ── Vendors from partners table (transporter + 3pl + vendor types) ────────
+  const { data: vendors } = useQuery({
+    queryKey: ["ops-vendors-list", organizationId],
     queryFn: async () => {
       if (!organizationId) return [];
-      const { data } = await (supabase.from("ld_transporters" as any) as any)
-        .select("id, company_name, email")
-        .eq("organization_id", organizationId)
-        .eq("onboarding_status", "approved")
-        .order("company_name");
-      return data || [];
+      const [orgRes, nullRes] = await Promise.all([
+        supabase.from("partners")
+          .select("id, company_name, partner_type, contact_phone")
+          .eq("organization_id", organizationId)
+          .in("partner_type", ["transporter", "3pl", "vendor"])
+          .in("approval_status", ["active", "approved", "pending_sa", "pending_coo"])
+          .order("company_name"),
+        supabase.from("partners")
+          .select("id, company_name, partner_type, contact_phone")
+          .is("organization_id", null)
+          .in("partner_type", ["transporter", "3pl", "vendor"])
+          .order("company_name"),
+      ]);
+      const map = new Map<string, any>();
+      [...(orgRes.data || []), ...(nullRes.data || [])].forEach((p) => map.set(p.id, p));
+      return Array.from(map.values()).sort((a, b) => a.company_name.localeCompare(b.company_name));
     },
     enabled: open && !!organizationId,
   });
@@ -160,7 +188,7 @@ const CreateDispatchDialog = () => {
       pickup_address: "", pickup_lat: null, pickup_lng: null,
       delivery_address: "", delivery_lat: null, delivery_lng: null,
       cargo_description: "", cargo_weight_kg: "", priority: "normal",
-      scheduled_pickup: "", vehicle_id: "", driver_id: "", transporter_id: "",
+      scheduled_pickup: "", vehicle_id: "", driver_id: "", transporter_id: "", vendor_id: "",
       distance_km: "", diesel_liters: "", cost: "",
     });
     setReturnTrip(false);
@@ -388,18 +416,25 @@ const CreateDispatchDialog = () => {
             </div>
           </div>
 
-          {/* ── Fuel & 3PL ───────────────────────────────────────────────── */}
+          {/* ── Vendor / 3PL Partner ─────────────────────────────────────── */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Diesel (liters)</Label>
               <Input type="number" value={form.diesel_liters} onChange={(e) => setForm((p) => ({ ...p, diesel_liters: e.target.value }))} placeholder="e.g. 80" />
             </div>
             <div>
-              <Label>3PL Transporter</Label>
-              <Select value={form.transporter_id} onValueChange={(v) => setForm((p) => ({ ...p, transporter_id: v }))}>
-                <SelectTrigger><SelectValue placeholder={transporters?.length ? "Optional — select 3PL" : "No approved 3PLs"} /></SelectTrigger>
+              <Label>Vendor / 3PL Partner</Label>
+              <Select value={form.vendor_id} onValueChange={(v) => setForm((p) => ({ ...p, vendor_id: v, transporter_id: v }))}>
+                <SelectTrigger>
+                  <SelectValue placeholder={vendors?.length ? "Optional — select vendor/3PL" : "No vendors added yet"} />
+                </SelectTrigger>
                 <SelectContent>
-                  {transporters?.map((t: any) => <SelectItem key={t.id} value={t.id}>{t.company_name}{t.email ? ` · ${t.email}` : ""}</SelectItem>)}
+                  {vendors?.map((v: any) => (
+                    <SelectItem key={v.id} value={v.id}>
+                      {v.company_name}
+                      <span className="text-muted-foreground text-xs ml-1">· {v.partner_type}</span>
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -443,7 +478,7 @@ const CreateDispatchDialog = () => {
                 <SelectTrigger><SelectValue placeholder={vehicles?.length ? "Select vehicle" : "No available vehicles"} /></SelectTrigger>
                 <SelectContent>
                   {vehicles?.length === 0 && <SelectItem value="_none" disabled>No available vehicles</SelectItem>}
-                  {vehicles?.map((v) => <SelectItem key={v.id} value={v.id}>{v.registration_number}{v.truck_type ? ` (${v.truck_type})` : ""}</SelectItem>)}
+                  {vehicles?.map((v) => <SelectItem key={v.id} value={v.id}>{v.registration_number}{(v.truck_type || v.vehicle_type) ? ` (${v.truck_type || v.vehicle_type})` : ""}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
