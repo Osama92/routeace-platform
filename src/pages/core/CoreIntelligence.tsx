@@ -158,8 +158,8 @@ const CoreIntelligence = () => {
         supabase.from("api_request_logs").select("status_code, response_time_ms, created_at").order("created_at", { ascending: false }).limit(500),
         supabase.from("api_keys").select("id", { count: "exact", head: true }).eq("is_active", true),
         supabase.from("organizations").select("id, subscription_tier").eq("is_active", true),
-        supabase.from("email_queue").select("id", { count: "exact", head: true }).eq("status", "failed"),
-        supabase.from("email_queue").select("id", { count: "exact", head: true }).eq("status", "pending"),
+        supabase.from("api_request_logs").select("id", { count: "exact", head: true }).gte("status_code", 500).gte("created_at", oneDayAgo),
+        supabase.from("api_request_logs").select("id", { count: "exact", head: true }).gte("status_code", 400).lt("status_code", 500).gte("created_at", oneDayAgo),
       ]);
 
       // Users
@@ -646,7 +646,7 @@ const CoreIntelligence = () => {
             <Card className="border-border/50">
               <CardHeader>
                 <CardTitle>Error Summary</CardTitle>
-                <CardDescription>Computed from api_request_logs and email_queue</CardDescription>
+                <CardDescription>Computed from api_request_logs (last 500 requests)</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 {metrics.recentErrors.length > 0 ? (

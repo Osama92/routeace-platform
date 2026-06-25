@@ -3,9 +3,9 @@
  * Replaces callAnthropic for the Zaza chat and other AI features.
  *
  * Model reference:
- *   gemini-2.5-flash   — best balance of speed + quality (default)
- *   gemini-2.0-flash   — stable, slightly faster
- *   gemini-1.5-flash   — legacy fallback
+ *   gemini-1.5-flash   — default (1500 RPD free quota)
+ *   gemini-2.0-flash   — stable, faster (lower free quota)
+ *   gemini-2.5-flash   — most capable (20 RPD free, requires billing)
  */
 
 export interface GeminiMessage {
@@ -34,7 +34,7 @@ export async function callGemini(opts: CallGeminiOptions): Promise<string> {
   const apiKey = Deno.env.get("GEMINI_API_KEY");
   if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
 
-  const model = opts.model ?? "gemini-1.5-flash";
+  const model = opts.model ?? "gemini-2.0-flash";
   const maxTokens = opts.maxTokens ?? 2048;
   const temperature = opts.temperature ?? 1;
 

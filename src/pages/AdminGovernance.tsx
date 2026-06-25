@@ -11,7 +11,7 @@ import {
   LogisticsModule,
   PlanTier,
 } from "@/lib/plans/entitlements";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,12 +22,27 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import {
   LayoutDashboard, Building2, CreditCard, Shield, Users, Settings2,
   Truck, Package, RefreshCw, ArrowLeft, AlertTriangle, CheckCircle2,
-  Zap, Brain, Lock, Unlock, Crown, ChevronRight, Activity,
+  Zap, Brain, Lock, Unlock, Crown, ChevronRight, Activity, Search,
+  UserCheck, Save,
 } from "lucide-react";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 const SIDEBAR_SECTIONS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -52,12 +67,51 @@ const PLAN_BADGES: Record<string, string> = {
   enterprise: "bg-amber-500/10 text-amber-500",
 };
 
+// All platform roles with labels grouped by category
+const ALL_ROLES: { value: string; label: string; category: string }[] = [
+  // Org-level
+  { value: "super_admin",     label: "Super Admin",       category: "Organisation" },
+  { value: "admin",           label: "Admin",             category: "Organisation" },
+  { value: "org_admin",       label: "Org Admin",         category: "Organisation" },
+  // Operations
+  { value: "ops_manager",     label: "Operations Manager", category: "Operations" },
+  { value: "dispatcher",      label: "Dispatcher",         category: "Operations" },
+  { value: "operations",      label: "Operations",         category: "Operations" },
+  { value: "driver",          label: "Driver",             category: "Operations" },
+  // Finance / Support
+  { value: "finance_manager", label: "Finance Manager",   category: "Finance & Support" },
+  { value: "support",         label: "Support",           category: "Finance & Support" },
+  { value: "customer",        label: "Customer",          category: "Finance & Support" },
+  // Core team (internal)
+  { value: "internal_team",   label: "Internal Team",     category: "Core (Internal)" },
+  { value: "core_founder",    label: "Core Founder",      category: "Core (Internal)" },
+  { value: "core_builder",    label: "Core Builder",      category: "Core (Internal)" },
+  { value: "core_product",    label: "Core Product",      category: "Core (Internal)" },
+  { value: "core_engineer",   label: "Core Engineer",     category: "Core (Internal)" },
+  { value: "core_cofounder",  label: "Core Co-Founder",   category: "Core (Internal)" },
+  { value: "core_analyst",    label: "Core Analyst",      category: "Core (Internal)" },
+];
+
+// Group roles by category for display
+const ROLE_CATEGORIES = ALL_ROLES.reduce<Record<string, typeof ALL_ROLES>>((acc, r) => {
+  (acc[r.category] = acc[r.category] || []).push(r);
+  return acc;
+}, {});
+
 export default function AdminGovernance() {
   const navigate = useNavigate();
   const { user, organizationId } = useAuth();
   const { config, isLoading, upsertConfig } = useTenantConfig();
   const { settings: companySettings } = useCompanySettings();
   const [activeSection, setActiveSection] = useState("dashboard");
+
+  // Team & Roles state
+  const [userSearchOpen, setUserSearchOpen] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [selectedUserName, setSelectedUserName] = useState("");
+  const [pendingRoles, setPendingRoles] = useState<string[]>([]);
+  const [savingRoles, setSavingRoles] = useState(false);
+  const queryClient = useQueryClient();
 
   // Source-of-truth resolution: General Settings (company_settings) wins over
   // legacy onboarding values stored in tenant_config. Falls back to org name.
@@ -121,6 +175,88 @@ export default function AdminGovernance() {
     },
     enabled: !!user,
   });
+
+  // Fetch all users in this org for the team dropdown
+  const { data: orgUsers } = useQuery({
+    queryKey: ["governance-org-users", organizationId],
+    queryFn: async () => {
+      if (!organizationId) return [];
+      const { data } = await supabase
+        .from("profiles")
+        .select("id, full_name, email")
+        .eq("organization_id", organizationId)
+        .order("full_name");
+      return data || [];
+    },
+    enabled: !!organizationId,
+  });
+
+  // Fetch the selected user's current roles
+  const { data: selectedUserRoles } = useQuery({
+    queryKey: ["governance-user-roles", selectedUserId],
+    queryFn: async () => {
+      if (!selectedUserId) return [];
+      const { data } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", selectedUserId);
+      return (data || []).map((r: any) => r.role as string);
+    },
+    enabled: !!selectedUserId,
+  });
+
+  // Sync pending roles when selected user changes
+  useEffect(() => {
+    if (selectedUserRoles !== undefined) {
+      setPendingRoles(selectedUserRoles);
+    }
+  }, [selectedUserRoles]);
+
+  const handleUserSelect = (userId: string, displayName: string) => {
+    setSelectedUserId(userId);
+    setSelectedUserName(displayName);
+    setUserSearchOpen(false);
+    setPendingRoles([]);
+  };
+
+  const toggleRole = (role: string) => {
+    setPendingRoles((prev) =>
+      prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]
+    );
+  };
+
+  const saveUserRoles = async () => {
+    if (!selectedUserId) return;
+    setSavingRoles(true);
+    try {
+      const current = selectedUserRoles || [];
+      const toAdd = pendingRoles.filter((r) => !current.includes(r));
+      const toRemove = current.filter((r) => !pendingRoles.includes(r));
+
+      if (toAdd.length > 0) {
+        const { error } = await supabase
+          .from("user_roles")
+          .insert(toAdd.map((role) => ({ user_id: selectedUserId, role })));
+        if (error) throw error;
+      }
+
+      for (const role of toRemove) {
+        const { error } = await supabase
+          .from("user_roles")
+          .delete()
+          .eq("user_id", selectedUserId)
+          .eq("role", role);
+        if (error) throw error;
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ["governance-user-roles", selectedUserId] });
+      toast.success(`Access updated for ${selectedUserName}`);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to update roles");
+    } finally {
+      setSavingRoles(false);
+    }
+  };
 
   const limits = config ? getPlanLimits(config.plan_tier) : getPlanLimits("free");
   const aiRemaining = (config?.ai_credits_total || 0) - (config?.ai_credits_used || 0);
@@ -541,39 +677,100 @@ export default function AdminGovernance() {
             {/* ===== TEAM & ROLES ===== */}
             {activeSection === "team" && (
               <>
-                <h1 className="text-2xl font-bold">Team & Roles</h1>
+                <div>
+                  <h1 className="text-2xl font-bold">Team & Roles</h1>
+                  <p className="text-muted-foreground text-sm mt-1">
+                    Select a team member and assign platform access roles using the toggles below.
+                  </p>
+                </div>
+
+                {/* User picker */}
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-base">Operations Manager Permissions</CardTitle>
-                    <CardDescription>
-                      Control what your Operations Manager can access and do. Changes take effect immediately.
-                    </CardDescription>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <UserCheck className="w-4 h-4" /> Select Team Member
+                    </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    {[
-                      { key: "ops_can_add_fleet", label: "Add Fleet" },
-                      { key: "ops_can_add_vehicles", label: "Add Vehicles" },
-                      { key: "ops_can_add_drivers", label: "Add Drivers" },
-                      { key: "ops_can_add_maintenance", label: "Add Maintenance Records" },
-                      { key: "ops_can_create_dispatch", label: "Create Dispatch" },
-                      { key: "ops_can_approve_dispatch", label: "Approve Dispatch" },
-                      { key: "ops_can_generate_waybill", label: "Generate Waybill" },
-                      { key: "ops_can_connect_integrations", label: "Connect Integrations" },
-                      { key: "ops_can_manage_order_inbox", label: "Manage Order Inbox" },
-                      { key: "ops_can_edit_customers", label: "Edit Customer Accounts" },
-                      { key: "ops_can_see_billing", label: "View Billing Data" },
-                      { key: "ops_can_see_finance", label: "View Finance Data" },
-                    ].map((perm) => (
-                      <div key={perm.key} className="flex items-center justify-between">
-                        <Label className="text-sm">{perm.label}</Label>
-                        <Switch
-                          checked={(config as any)?.[perm.key] ?? false}
-                          onCheckedChange={(v) => handleOpsToggle(perm.key, v)}
-                        />
-                      </div>
-                    ))}
+                  <CardContent>
+                    <Popover open={userSearchOpen} onOpenChange={setUserSearchOpen}>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" className="w-full justify-between">
+                          {selectedUserName || "Search and select a user..."}
+                          <Search className="w-4 h-4 ml-2 text-muted-foreground" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[400px] p-0" align="start">
+                        <Command>
+                          <CommandInput placeholder="Search by name or email..." />
+                          <CommandList>
+                            <CommandEmpty>No users found.</CommandEmpty>
+                            <CommandGroup>
+                              {(orgUsers || []).map((u: any) => (
+                                <CommandItem
+                                  key={u.id}
+                                  value={`${u.full_name} ${u.email}`}
+                                  onSelect={() => handleUserSelect(u.id, u.full_name || u.email)}
+                                >
+                                  <div className="flex flex-col">
+                                    <span className="font-medium">{u.full_name || "Unnamed"}</span>
+                                    <span className="text-xs text-muted-foreground">{u.email}</span>
+                                  </div>
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                   </CardContent>
                 </Card>
+
+                {/* Role assignment — only shown once a user is selected */}
+                {selectedUserId && (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h2 className="text-base font-semibold">Access Roles for {selectedUserName}</h2>
+                        <p className="text-sm text-muted-foreground">Toggle roles on/off then click Save.</p>
+                      </div>
+                      <Button onClick={saveUserRoles} disabled={savingRoles} className="gap-2">
+                        <Save className="w-4 h-4" />
+                        {savingRoles ? "Saving..." : "Save Changes"}
+                      </Button>
+                    </div>
+
+                    {Object.entries(ROLE_CATEGORIES).map(([category, roles]) => (
+                      <Card key={category}>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm text-muted-foreground uppercase tracking-wide">
+                            {category}
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          {roles.map((r) => (
+                            <div key={r.value} className="flex items-center justify-between">
+                              <div>
+                                <Label className="text-sm font-medium">{r.label}</Label>
+                                <p className="text-xs text-muted-foreground font-mono">{r.value}</p>
+                              </div>
+                              <Switch
+                                checked={pendingRoles.includes(r.value)}
+                                onCheckedChange={() => toggleRole(r.value)}
+                              />
+                            </div>
+                          ))}
+                        </CardContent>
+                      </Card>
+                    ))}
+
+                    <div className="flex justify-end pb-6">
+                      <Button onClick={saveUserRoles} disabled={savingRoles} className="gap-2">
+                        <Save className="w-4 h-4" />
+                        {savingRoles ? "Saving..." : "Save Changes"}
+                      </Button>
+                    </div>
+                  </>
+                )}
               </>
             )}
 

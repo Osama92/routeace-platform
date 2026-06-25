@@ -43,14 +43,23 @@ export function AIInsightCards() {
   const fetchInsights = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("core-ai-insights", {
-        body: { type: "weekly-insights" }
-      });
-
-      if (error) {
-        // Surface the actual error message from the function body if available
-        const detail = (data as any)?.error || error.message;
-        throw new Error(detail);
+      // Use raw fetch so we can always read the response body regardless of status
+      const { data: { session } } = await supabase.auth.getSession();
+      const resp = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/core-ai-insights`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${session?.access_token}`,
+            "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          },
+          body: JSON.stringify({ type: "weekly-insights" }),
+        }
+      );
+      const data = await resp.json();
+      if (!resp.ok) {
+        throw new Error(data?.error || `HTTP ${resp.status}`);
       }
 
       if (data?.success) {

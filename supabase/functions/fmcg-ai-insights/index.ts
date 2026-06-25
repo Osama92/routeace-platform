@@ -2,6 +2,8 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { callAnthropic, mapModel } from "../_shared/anthropic.ts";
 import { requireAuth } from "../_shared/require-auth.ts";
 import { rateLimit } from "../_shared/rate-limit.ts";
+import { getCached, setCached } from "../_shared/ai-cache.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 
 import { buildCors } from "../_shared/cors.ts";
 let corsHeaders: Record<string, string> = buildCors();
@@ -41,7 +43,24 @@ serve(async (req) => {
 
   try {
     const { role, context } = await req.json();
-    
+
+    // Cache key per role — context-free roles are shared platform-wide (2h TTL)
+    const cacheKey = `fmcg-${role || "executive"}`;
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+
+    // Only use cache when there's no dynamic context passed
+    if (!context) {
+      const cached = await getCached(supabase, cacheKey);
+      if (cached) {
+        return new Response(JSON.stringify({ ...cached.payload, fromCache: true }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     const systemPrompt = ROLE_PROMPTS[role] || ROLE_PROMPTS.executive;
     const userPrompt = context
       ? `Given this operational context: ${JSON.stringify(context)}. Generate role-specific AI insights now.`
@@ -60,6 +79,12 @@ serve(async (req) => {
     const match = aiText.match(/\{[\s\S]*\}/);
     if (!match) throw new Error("No JSON in response");
     const parsed = JSON.parse(match[0]);
+
+    // Cache the result when no dynamic context (context-free = cacheable)
+    if (!context) {
+      await setCached(supabase, cacheKey, parsed, { ttlHours: 2, model: mapModel("google/gemini-3-flash-preview") });
+    }
+
     return new Response(JSON.stringify(parsed), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

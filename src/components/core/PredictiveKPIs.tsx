@@ -71,13 +71,22 @@ export function PredictiveKPIs() {
   const fetchPredictions = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("core-ai-insights", {
-        body: { type: "predictive-kpis" }
-      });
-
-      if (error) {
-        const detail = (data as any)?.error || error.message;
-        throw new Error(detail);
+      const { data: { session } } = await supabase.auth.getSession();
+      const resp = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/core-ai-insights`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${session?.access_token}`,
+            "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          },
+          body: JSON.stringify({ type: "predictive-kpis" }),
+        }
+      );
+      const data = await resp.json();
+      if (!resp.ok) {
+        throw new Error(data?.error || `HTTP ${resp.status}`);
       }
 
       if (data?.success) {

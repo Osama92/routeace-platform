@@ -3,6 +3,7 @@ import { checkAndDeductCredits } from "../_shared/ai-credits.ts";
 import { callGemini, mapModel } from "../_shared/anthropic.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { requireAuth } from "../_shared/require-auth.ts";
+import { getCached, setCached } from "../_shared/ai-cache.ts";
 
 import { buildCors } from "../_shared/cors.ts";
 let corsHeaders: Record<string, string> = buildCors();
@@ -44,6 +45,14 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     if (type === "weekly-insights") {
+      // Cache check — return hit without calling Gemini
+      const cached = await getCached(supabase, "weekly-insights");
+      if (cached) {
+        return new Response(JSON.stringify({ ...cached.payload, fromCache: true }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       // Gather metrics from the past week
       const oneWeekAgo = new Date();
       oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
@@ -174,17 +183,28 @@ Focus on: User growth, Revenue changes, Churn signals, Ops efficiency. Be specif
         insights = { insights: [] };
       }
 
-      return new Response(JSON.stringify({
+      const weeklyPayload = {
         success: true,
         metrics: metricsSnapshot,
         insights: insights.insights || [],
-        generatedAt: new Date().toISOString()
-      }), {
+        generatedAt: new Date().toISOString(),
+      };
+      await setCached(supabase, "weekly-insights", weeklyPayload, { ttlHours: 6, model: mapModel("google/gemini-3-flash-preview") });
+
+      return new Response(JSON.stringify(weeklyPayload), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     if (type === "predictive-kpis") {
+      // Cache check — return hit without calling Gemini
+      const cachedPred = await getCached(supabase, "predictive-kpis");
+      if (cachedPred) {
+        return new Response(JSON.stringify({ ...cachedPred.payload, fromCache: true }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       // Gather data for predictions
       const { data: customers } = await supabase
         .from("customers")
@@ -298,7 +318,7 @@ Be realistic with estimates based on the data provided. Use the revenue data to 
         predictions = {};
       }
 
-      return new Response(JSON.stringify({
+      const predPayload = {
         success: true,
         predictions,
         rawMetrics: {
@@ -307,10 +327,13 @@ Be realistic with estimates based on the data provided. Use the revenue data to 
           totalRevenue,
           totalExpenses,
           monthlyBurn,
-          activeVehicles: vehicles?.filter(v => v.status === "active").length || 0
+          activeVehicles: vehicles?.filter(v => v.status === "active").length || 0,
         },
-        generatedAt: new Date().toISOString()
-      }), {
+        generatedAt: new Date().toISOString(),
+      };
+      await setCached(supabase, "predictive-kpis", predPayload, { ttlHours: 6, model: mapModel("google/gemini-3-flash-preview") });
+
+      return new Response(JSON.stringify(predPayload), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

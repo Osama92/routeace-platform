@@ -166,10 +166,10 @@ const CoreDashboard = () => {
         supabase.from("subscription_plans").select("tier, price_monthly"),
         // Recent audit log entries for activity feed
         supabase.from("audit_logs").select("action, table_name, created_at").order("created_at", { ascending: false }).limit(5),
-        // Failed email jobs as proxy for failed jobs
-        supabase.from("email_queue").select("id", { count: "exact", head: true }).eq("status", "failed"),
-        // Pending jobs queue backlog
-        supabase.from("email_queue").select("id", { count: "exact", head: true }).eq("status", "pending"),
+        // Failed jobs — 5xx in api_request_logs last 24h
+        supabase.from("api_request_logs").select("id", { count: "exact", head: true }).gte("status_code", 500).gte("created_at", oneDayAgo),
+        // Client errors — 4xx in api_request_logs last 24h
+        supabase.from("api_request_logs").select("id", { count: "exact", head: true }).gte("status_code", 400).lt("status_code", 500).gte("created_at", oneDayAgo),
         // Feature adoption: dispatches created
         supabase.from("dispatches").select("id", { count: "exact", head: true }),
         // Feature adoption: invoices created

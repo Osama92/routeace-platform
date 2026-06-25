@@ -36,7 +36,6 @@ import {
   Phone,
   Mail,
   MapPin,
-  MoreVertical,
   CheckCircle,
   XCircle,
   Truck,
@@ -44,8 +43,19 @@ import {
   Users,
   CreditCard,
   Pencil,
+  Trash2,
   Info,
 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Tooltip,
   TooltipContent,
@@ -89,6 +99,7 @@ const Partners = () => {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isVerifyDialogOpen, setIsVerifyDialogOpen] = useState(false);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedPartner, setSelectedPartner] = useState<Partner | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -308,9 +319,9 @@ const Partners = () => {
     try {
       const { error } = await supabase
         .from("partners")
-        .update({ 
+        .update({
           is_verified: true,
-          approval_status: "approved"
+          approval_status: "active"
         })
         .eq("id", selectedPartner.id);
 
@@ -321,7 +332,7 @@ const Partners = () => {
         record_id: selectedPartner.id,
         action: "update",
         old_data: { is_verified: false },
-        new_data: { is_verified: true, approval_status: "approved" },
+        new_data: { is_verified: true, approval_status: "active" },
       });
 
       toast({
@@ -439,6 +450,46 @@ const Partners = () => {
   const openDetailsDialog = (partner: Partner) => {
     setSelectedPartner(partner);
     setIsDetailsDialogOpen(true);
+  };
+
+  const openDeleteDialog = (partner: Partner) => {
+    setSelectedPartner(partner);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleDeletePartner = async () => {
+    if (!selectedPartner) return;
+    setSaving(true);
+    try {
+      // Remove sensitive details first (FK constraint)
+      await supabase
+        .from("partner_sensitive_details")
+        .delete()
+        .eq("partner_id", selectedPartner.id);
+
+      const { error } = await supabase
+        .from("partners")
+        .delete()
+        .eq("id", selectedPartner.id);
+
+      if (error) throw error;
+
+      await logChange({
+        table_name: "partners",
+        record_id: selectedPartner.id,
+        action: "delete",
+        old_data: selectedPartner,
+      });
+
+      toast({ title: "Partner Deleted", description: `${selectedPartner.company_name} has been removed.` });
+      setIsDeleteDialogOpen(false);
+      setSelectedPartner(null);
+      fetchPartners();
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to delete partner", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const filteredPartners = partners.filter((partner) => {
@@ -970,6 +1021,11 @@ const Partners = () => {
                     Verify
                   </Button>
                 )}
+                {canManage && (
+                  <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => openDeleteDialog(partner)}>
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                )}
               </div>
             </motion.div>
           ))
@@ -1337,6 +1393,27 @@ const Partners = () => {
           <ApprovalDecisionHistory entityType="partners" organizationId={organizationId} title="Vendor Approval History" />
         </div>
       )}
+
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Partner</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete <strong>{selectedPartner?.company_name}</strong>? This action cannot be undone and will remove all associated records.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleDeletePartner}
+              disabled={saving}
+            >
+              {saving ? "Deleting..." : "Delete Partner"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   );
 };
