@@ -81,123 +81,38 @@ const PlatformKPIs = () => {
 
   const loadPlatformMetrics = async () => {
     try {
-      // Load organizations
-      const { data: orgsData, count: orgCount } = await supabase
-        .from("organizations")
-        .select("*", { count: "exact" });
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error("No auth session");
 
-      // Load super admins
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/core-platform-metrics`,
+        { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } },
+      );
+      if (!res.ok) throw new Error(await res.text());
+      const json = await res.json();
+
+      const m = json.metrics;
+
+      // super_admin count still comes from client (no RLS conflict for counting own role)
       const { count: superAdminCount } = await supabase
-        .from("user_roles")
-        .select("*", { count: "exact" })
-        .eq("role", "super_admin");
-
-      // Load reseller data
-      const { data: resellerData } = await supabase
-        .from("reseller_relationships")
-        .select("*")
-        .eq("is_active", true);
-
-      // Load commission ledger
-      const { data: commissionData } = await supabase
-        .from("commission_ledger")
-        .select("gross_amount, routeace_amount, reseller_amount");
-
-      // Load invoices for revenue (paid only)
-      const { data: invoiceData } = await supabase
-        .from("invoices")
-        .select("total_amount, created_at, status")
-        .eq("status", "paid");
-
-      // Load API usage
-      const { count: apiCount } = await supabase
-        .from("api_request_logs")
-        .select("*", { count: "exact" });
-
-      const totalRevenue = invoiceData?.reduce((sum, inv) => sum + (inv.total_amount || 0), 0) || 0;
-      const routeaceCommission = commissionData?.reduce((sum, c) => sum + (c.routeace_amount || 0), 0) || 0;
-      const resellerVolume = commissionData?.reduce((sum, c) => sum + (c.gross_amount || 0), 0) || 0;
-      const activeOrgs = orgsData?.filter(o => o.is_active).length || 0;
-
-      // Calculate growth rate from org creation dates (last 30 days vs prior 30)
-      const now = new Date();
-      const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000);
-      const sixtyDaysAgo = new Date(now.getTime() - 60 * 86400000);
-      const recentOrgs = (orgsData || []).filter(o => new Date(o.created_at) >= thirtyDaysAgo).length;
-      const priorOrgs = (orgsData || []).filter(o => new Date(o.created_at) >= sixtyDaysAgo && new Date(o.created_at) < thirtyDaysAgo).length;
-      const growthRate = priorOrgs > 0 ? ((recentOrgs - priorOrgs) / priorOrgs) * 100 : (recentOrgs > 0 ? 100 : 0);
-
-      // Calculate churn from inactive orgs ratio
-      const totalOrgs = orgCount || 0;
-      const churnRate = totalOrgs > 0 ? ((totalOrgs - activeOrgs) / totalOrgs) * 100 : 0;
-
-      // MRR from invoices created in last 30 days
-      const recentRevenue = (invoiceData || [])
-        .filter(inv => new Date(inv.created_at) >= thirtyDaysAgo)
-        .reduce((sum, inv) => sum + (inv.total_amount || 0), 0);
+        .from("user_roles").select("*", { count: "exact", head: true }).eq("role", "super_admin");
 
       setMetrics({
-        totalOrganizations: totalOrgs,
-        activeOrganizations: activeOrgs,
+        totalOrganizations: m.totalOrganizations,
+        activeOrganizations: m.activeOrganizations,
         totalSuperAdmins: superAdminCount || 0,
-        totalRevenue,
-        monthlyRecurring: recentRevenue,
-        churnRate: Math.round(churnRate * 10) / 10,
-        avgRevenuePerTenant: activeOrgs > 0 ? totalRevenue / activeOrgs : 0,
-        totalResellerVolume: resellerVolume,
-        routeaceCommission,
-        apiUsage: apiCount || 0,
-        growthRate: Math.round(growthRate * 10) / 10,
+        totalRevenue: m.totalRevenue,
+        monthlyRecurring: m.monthlyRecurring,
+        churnRate: m.churnRate,
+        avgRevenuePerTenant: m.avgRevenuePerTenant,
+        totalResellerVolume: m.totalResellerVolume,
+        routeaceCommission: m.routeaceCommission,
+        apiUsage: m.apiUsage,
+        growthRate: m.growthRate,
       });
 
-      // Build organization summaries with real per-org data.
-      // Users live in profiles.organization_id (not organization_members which may be empty).
-      const [profilesRes, dispatchRes, invoiceOrgRes, commissionRes] = await Promise.all([
-        supabase.from("profiles").select("organization_id"),
-        supabase.from("dispatches").select("organization_id"),
-        supabase.from("invoices").select("organization_id, total_amount").eq("status", "paid"),
-        supabase.from("commission_ledger").select("source_org_id, gross_amount"),
-      ]);
-
-      const orgUserMap = new Map<string, number>();
-      (profilesRes.data || []).forEach((p: any) => {
-        if (p.organization_id) orgUserMap.set(p.organization_id, (orgUserMap.get(p.organization_id) || 0) + 1);
-      });
-
-      const orgDispatchMap = new Map<string, number>();
-      (dispatchRes.data || []).forEach((d: any) => {
-        if (d.organization_id) orgDispatchMap.set(d.organization_id, (orgDispatchMap.get(d.organization_id) || 0) + 1);
-      });
-
-      const orgRevenueMap = new Map<string, number>();
-      (invoiceOrgRes.data || []).forEach((i: any) => {
-        if (i.organization_id) orgRevenueMap.set(i.organization_id, (orgRevenueMap.get(i.organization_id) || 0) + Number(i.total_amount || 0));
-      });
-      // Fallback: commission_ledger for orgs with no direct invoices
-      (commissionRes.data || []).forEach((r: any) => {
-        if (r.source_org_id && !orgRevenueMap.has(r.source_org_id)) {
-          orgRevenueMap.set(r.source_org_id, (orgRevenueMap.get(r.source_org_id) || 0) + Number(r.gross_amount || 0));
-        }
-      });
-
-      const sortedOrgs = [...(orgsData || [])].sort((a, b) => a.name.localeCompare(b.name));
-
-      const orgSummaries: OrganizationSummary[] = sortedOrgs.map((org) => {
-        const users = orgUserMap.get(org.id) || 0;
-        const dispatches = orgDispatchMap.get(org.id) || 0;
-        const rev = orgRevenueMap.get(org.id) || 0;
-        return {
-          id: org.id,
-          name: org.name,
-          tier: org.subscription_tier || org.plan_tier || "starter",
-          revenue: rev,
-          users,
-          dispatches,
-          churnRisk: dispatches > 5 ? "low" : dispatches > 0 ? "medium" : "high",
-        };
-      });
-
-      setOrganizations(orgSummaries);
+      setOrganizations(json.organizations || []);
     } catch (error) {
       console.error("Error loading platform metrics:", error);
     } finally {
@@ -209,16 +124,26 @@ const PlatformKPIs = () => {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      const { error } = await supabase
-        .from("organizations")
-        .update({ is_active: false })
-        .eq("id", deleteTarget.id);
-      if (error) throw error;
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error("No auth session");
+
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/core-platform-metrics`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ org_id: deleteTarget.id }),
+        },
+      );
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Delete failed");
+
       setOrganizations((prev) => prev.filter((o) => o.id !== deleteTarget.id));
-      toast.success(`${deleteTarget.name} has been deactivated`);
+      toast.success(`${deleteTarget.name} and all associated data have been permanently deleted`);
       setDeleteTarget(null);
     } catch (e: any) {
-      toast.error(e.message || "Failed to deactivate organisation");
+      toast.error(e.message || "Failed to delete organisation");
     } finally {
       setDeleting(false);
     }
@@ -268,9 +193,22 @@ const PlatformKPIs = () => {
     <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Deactivate Organisation</AlertDialogTitle>
-          <AlertDialogDescription>
-            Are you sure you want to deactivate <strong>{deleteTarget?.name}</strong>? This will set the organisation as inactive. Their data is preserved but they will lose access to the platform. This action can be reversed by re-activating the organisation in the database.
+          <AlertDialogTitle>Permanently Delete Organisation</AlertDialogTitle>
+          <AlertDialogDescription asChild>
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <p>
+                You are about to permanently delete <strong className="text-foreground">{deleteTarget?.name}</strong>.
+              </p>
+              <p>This will irreversibly remove:</p>
+              <ul className="list-disc list-inside space-y-1 pl-2">
+                <li>All dispatches, routes, vehicles, and drivers</li>
+                <li>All invoices, expenses, and financial records</li>
+                <li>All users (profiles disassociated from org)</li>
+                <li>All partners, vendors, and customers</li>
+                <li>All settings, KPIs, and audit logs</li>
+              </ul>
+              <p className="font-semibold text-destructive">This action cannot be undone.</p>
+            </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -280,7 +218,7 @@ const PlatformKPIs = () => {
             disabled={deleting}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
-            {deleting ? "Deactivating..." : "Deactivate Organisation"}
+            {deleting ? "Deleting..." : "Delete Permanently"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
