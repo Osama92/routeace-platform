@@ -3,6 +3,18 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
 import {
   Building2,
   Users,
@@ -16,6 +28,7 @@ import {
   Percent,
   ArrowUpRight,
   Globe,
+  Trash2,
 } from "lucide-react";
 
 interface PlatformMetrics {
@@ -59,6 +72,8 @@ const PlatformKPIs = () => {
 
   const [organizations, setOrganizations] = useState<OrganizationSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState<OrganizationSummary | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     loadPlatformMetrics();
@@ -135,58 +150,46 @@ const PlatformKPIs = () => {
         growthRate: Math.round(growthRate * 10) / 10,
       });
 
-      // Build organization summaries with real per-org data
-      const { data: memberCounts } = await supabase
-        .from("organization_members")
-        .select("organization_id");
+      // Build organization summaries with real per-org data.
+      // Users live in profiles.organization_id (not organization_members which may be empty).
+      const [profilesRes, dispatchRes, invoiceOrgRes, commissionRes] = await Promise.all([
+        supabase.from("profiles").select("organization_id"),
+        supabase.from("dispatches").select("organization_id"),
+        supabase.from("invoices").select("organization_id, total_amount").eq("status", "paid"),
+        supabase.from("commission_ledger").select("source_org_id, gross_amount"),
+      ]);
 
-      const { data: dispatchData } = await supabase
-        .from("dispatches")
-        .select("id, organization_id");
-
-      const { data: invoicesByOrg } = await supabase
-        .from("invoices")
-        .select("organization_id, total_amount")
-        .eq("status", "paid");
-
-      const orgMemberMap = new Map<string, number>();
-      (memberCounts || []).forEach((m: any) => {
-        orgMemberMap.set(m.organization_id, (orgMemberMap.get(m.organization_id) || 0) + 1);
+      const orgUserMap = new Map<string, number>();
+      (profilesRes.data || []).forEach((p: any) => {
+        if (p.organization_id) orgUserMap.set(p.organization_id, (orgUserMap.get(p.organization_id) || 0) + 1);
       });
 
       const orgDispatchMap = new Map<string, number>();
-      (dispatchData || []).forEach((d: any) => {
-        if (d.organization_id) {
-          orgDispatchMap.set(d.organization_id, (orgDispatchMap.get(d.organization_id) || 0) + 1);
+      (dispatchRes.data || []).forEach((d: any) => {
+        if (d.organization_id) orgDispatchMap.set(d.organization_id, (orgDispatchMap.get(d.organization_id) || 0) + 1);
+      });
+
+      const orgRevenueMap = new Map<string, number>();
+      (invoiceOrgRes.data || []).forEach((i: any) => {
+        if (i.organization_id) orgRevenueMap.set(i.organization_id, (orgRevenueMap.get(i.organization_id) || 0) + Number(i.total_amount || 0));
+      });
+      // Fallback: commission_ledger for orgs with no direct invoices
+      (commissionRes.data || []).forEach((r: any) => {
+        if (r.source_org_id && !orgRevenueMap.has(r.source_org_id)) {
+          orgRevenueMap.set(r.source_org_id, (orgRevenueMap.get(r.source_org_id) || 0) + Number(r.gross_amount || 0));
         }
       });
 
-      // Revenue per org from invoices (preferred) or commission_ledger fallback
-      const orgInvoiceRevenueMap = new Map<string, number>();
-      (invoicesByOrg || []).forEach((i: any) => {
-        if (i.organization_id) {
-          orgInvoiceRevenueMap.set(i.organization_id, (orgInvoiceRevenueMap.get(i.organization_id) || 0) + Number(i.total_amount || 0));
-        }
-      });
-      const { data: orgCommission } = await supabase
-        .from("commission_ledger")
-        .select("source_org_id, gross_amount");
-      const orgCommissionMap = new Map<string, number>();
-      (orgCommission || []).forEach((r: any) => {
-        orgCommissionMap.set(r.source_org_id, (orgCommissionMap.get(r.source_org_id) || 0) + Number(r.gross_amount || 0));
-      });
-
-      // Sort by name, show all orgs (no slice)
       const sortedOrgs = [...(orgsData || [])].sort((a, b) => a.name.localeCompare(b.name));
 
       const orgSummaries: OrganizationSummary[] = sortedOrgs.map((org) => {
-        const rev = orgInvoiceRevenueMap.get(org.id) || orgCommissionMap.get(org.id) || 0;
+        const users = orgUserMap.get(org.id) || 0;
         const dispatches = orgDispatchMap.get(org.id) || 0;
-        const users = orgMemberMap.get(org.id) || 0;
+        const rev = orgRevenueMap.get(org.id) || 0;
         return {
           id: org.id,
           name: org.name,
-          tier: org.subscription_tier,
+          tier: org.subscription_tier || org.plan_tier || "starter",
           revenue: rev,
           users,
           dispatches,
@@ -199,6 +202,25 @@ const PlatformKPIs = () => {
       console.error("Error loading platform metrics:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteOrg = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      const { error } = await supabase
+        .from("organizations")
+        .update({ is_active: false })
+        .eq("id", deleteTarget.id);
+      if (error) throw error;
+      setOrganizations((prev) => prev.filter((o) => o.id !== deleteTarget.id));
+      toast.success(`${deleteTarget.name} has been deactivated`);
+      setDeleteTarget(null);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to deactivate organisation");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -242,6 +264,28 @@ const PlatformKPIs = () => {
   }
 
   return (
+    <>
+    <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Deactivate Organisation</AlertDialogTitle>
+          <AlertDialogDescription>
+            Are you sure you want to deactivate <strong>{deleteTarget?.name}</strong>? This will set the organisation as inactive. Their data is preserved but they will lose access to the platform. This action can be reversed by re-activating the organisation in the database.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={handleDeleteOrg}
+            disabled={deleting}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            {deleting ? "Deactivating..." : "Deactivate Organisation"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
     <div className="space-y-6">
       {/* Primary KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -370,6 +414,7 @@ const PlatformKPIs = () => {
                   <th className="text-right py-2 px-3">Users</th>
                   <th className="text-right py-2 px-3">Dispatches</th>
                   <th className="text-center py-2 px-3">Churn Risk</th>
+                  <th className="py-2 px-3" />
                 </tr>
               </thead>
               <tbody>
@@ -389,6 +434,16 @@ const PlatformKPIs = () => {
                         {org.churnRisk}
                       </Badge>
                     </td>
+                    <td className="py-2 px-3 text-right">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => setDeleteTarget(org)}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -397,6 +452,7 @@ const PlatformKPIs = () => {
         </CardContent>
       </Card>
     </div>
+    </>
   );
 };
 

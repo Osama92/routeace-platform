@@ -193,13 +193,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const fetchOrganizationId = async (userId: string): Promise<string | null> => {
     try {
-      const { data } = await supabase
+      // Primary: organization_members (invite-flow users)
+      const { data: memberData } = await supabase
         .from("organization_members")
         .select("organization_id")
         .eq("user_id", userId)
         .eq("is_active", true)
         .maybeSingle();
-      return data?.organization_id ?? null;
+      if (memberData?.organization_id) return memberData.organization_id;
+
+      // Fallback: profiles.organization_id (users created outside the invite flow,
+      // e.g. assigned roles directly via user_roles — covers 'operations' and other roles)
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("organization_id")
+        .eq("id", userId)
+        .maybeSingle();
+      return profileData?.organization_id ?? null;
     } catch {
       return null;
     }
