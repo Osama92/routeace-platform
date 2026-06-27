@@ -67,40 +67,93 @@ const PLAN_BADGES: Record<string, string> = {
   enterprise: "bg-amber-500/10 text-amber-500",
 };
 
-// All platform roles with labels grouped by category
-const ALL_ROLES: { value: string; label: string; category: string }[] = [
-  // Org-level
-  { value: "super_admin",     label: "Super Admin",       category: "Organisation" },
-  { value: "admin",           label: "Admin",             category: "Organisation" },
-  { value: "org_admin",       label: "Org Admin",         category: "Organisation" },
-  // Operations
-  { value: "ops_manager",     label: "Operations Manager", category: "Operations" },
-  { value: "dispatcher",      label: "Dispatcher",         category: "Operations" },
-  { value: "operations",      label: "Operations",         category: "Operations" },
-  { value: "driver",          label: "Driver",             category: "Operations" },
-  // Finance / Support
-  { value: "finance_manager", label: "Finance Manager",   category: "Finance & Support" },
-  { value: "support",         label: "Support",           category: "Finance & Support" },
-  { value: "customer",        label: "Customer",          category: "Finance & Support" },
-  // Core team (internal)
-  { value: "internal_team",   label: "Internal Team",     category: "Core (Internal)" },
-  { value: "core_founder",    label: "Core Founder",      category: "Core (Internal)" },
-  { value: "core_builder",    label: "Core Builder",      category: "Core (Internal)" },
-  { value: "core_product",    label: "Core Product",      category: "Core (Internal)" },
-  { value: "core_engineer",   label: "Core Engineer",     category: "Core (Internal)" },
-  { value: "core_cofounder",  label: "Core Co-Founder",   category: "Core (Internal)" },
-  { value: "core_analyst",    label: "Core Analyst",      category: "Core (Internal)" },
-];
+type RoleEntry = {
+  value: string;
+  label: string;
+  description: string;
+  category: string;
+  internal?: boolean;
+};
 
-// Group roles by category for display
-const ROLE_CATEGORIES = ALL_ROLES.reduce<Record<string, typeof ALL_ROLES>>((acc, r) => {
-  (acc[r.category] = acc[r.category] || []).push(r);
-  return acc;
-}, {});
+// All platform roles with labels and descriptions grouped by category.
+// Roles marked internal=true are hidden from org-level admins.
+const ALL_ROLES: RoleEntry[] = [
+  // Organisation management
+  {
+    value: "super_admin",
+    label: "Super Admin",
+    description: "Full platform access including billing, user management, and audit logs.",
+    category: "Organisation",
+  },
+  {
+    value: "admin",
+    label: "Admin",
+    description: "Full operational access — dispatch, fleet, drivers, vendors, payroll (under ₦5M). Cannot access billing.",
+    category: "Organisation",
+  },
+  {
+    value: "org_admin",
+    label: "Org Admin",
+    description: "Organisation-level admin. Can manage users and settings for this organisation.",
+    category: "Organisation",
+  },
+  // Operations
+  {
+    value: "ops_manager",
+    label: "Operations Manager",
+    description: "Day-to-day fleet and dispatch manager. Can create dispatches and manage fuel anomalies under ₦50K. Cannot create customers or vehicles.",
+    category: "Operations",
+  },
+  {
+    value: "dispatcher",
+    label: "Dispatcher",
+    description: "Creates and assigns dispatches, updates trip status. Cannot see revenue amounts or access financials.",
+    category: "Operations",
+  },
+  {
+    value: "operations",
+    label: "Operations (General)",
+    description: "General operations access for staff who assist with day-to-day logistics.",
+    category: "Operations",
+  },
+  {
+    value: "driver",
+    label: "Driver",
+    description: "Mobile-first access. Can only view own dispatches, log own fuel entries, and view own payslips.",
+    category: "Operations",
+  },
+  // Finance & Support
+  {
+    value: "finance_manager",
+    label: "Finance Manager",
+    description: "Full invoice, bills, payroll, and expense access. Cannot create dispatches or modify operational records.",
+    category: "Finance & Support",
+  },
+  {
+    value: "support",
+    label: "Support",
+    description: "Client-facing coordinator. Can view dispatches and add status updates. No financial data access.",
+    category: "Finance & Support",
+  },
+  {
+    value: "customer",
+    label: "Customer",
+    description: "External customer portal access. Can view own delivery status and tracking links only.",
+    category: "Finance & Support",
+  },
+  // Internal — hidden from org-level admins
+  { value: "internal_team",  label: "Internal Team",    description: "Glyde Systems internal staff.",   category: "Core (Internal)", internal: true },
+  { value: "core_founder",   label: "Core Founder",     description: "Glyde Systems founder access.",   category: "Core (Internal)", internal: true },
+  { value: "core_builder",   label: "Core Builder",     description: "Glyde Systems engineering.",      category: "Core (Internal)", internal: true },
+  { value: "core_product",   label: "Core Product",     description: "Glyde Systems product team.",     category: "Core (Internal)", internal: true },
+  { value: "core_engineer",  label: "Core Engineer",    description: "Glyde Systems engineer.",         category: "Core (Internal)", internal: true },
+  { value: "core_cofounder", label: "Core Co-Founder",  description: "Glyde Systems co-founder.",       category: "Core (Internal)", internal: true },
+  { value: "core_analyst",   label: "Core Analyst",     description: "Glyde Systems analyst.",          category: "Core (Internal)", internal: true },
+];
 
 export default function AdminGovernance() {
   const navigate = useNavigate();
-  const { user, organizationId } = useAuth();
+  const { user, organizationId, hasAnyRole } = useAuth();
   const { config, isLoading, upsertConfig } = useTenantConfig();
   const { settings: companySettings } = useCompanySettings();
   const [activeSection, setActiveSection] = useState("dashboard");
@@ -112,6 +165,24 @@ export default function AdminGovernance() {
   const [pendingRoles, setPendingRoles] = useState<string[]>([]);
   const [savingRoles, setSavingRoles] = useState(false);
   const queryClient = useQueryClient();
+
+  // Only core/internal users (super_admin or core_* roles) can see and assign the
+  // Core (Internal) role category. Org-level admins see org-facing roles only.
+  const isCoreUser = hasAnyRole(["super_admin", "internal_team", "core_founder", "core_builder", "core_product", "core_engineer", "core_cofounder", "core_analyst"] as any[]);
+
+  const visibleRoles = useMemo(
+    () => ALL_ROLES.filter((r) => !r.internal || isCoreUser),
+    [isCoreUser]
+  );
+
+  const roleCategories = useMemo(
+    () =>
+      visibleRoles.reduce<Record<string, RoleEntry[]>>((acc, r) => {
+        (acc[r.category] = acc[r.category] || []).push(r);
+        return acc;
+      }, {}),
+    [visibleRoles]
+  );
 
   // Source-of-truth resolution: General Settings (company_settings) wins over
   // legacy onboarding values stored in tenant_config. Falls back to org name.
@@ -739,19 +810,19 @@ export default function AdminGovernance() {
                       </Button>
                     </div>
 
-                    {Object.entries(ROLE_CATEGORIES).map(([category, roles]) => (
+                    {Object.entries(roleCategories).map(([category, roles]) => (
                       <Card key={category}>
                         <CardHeader className="pb-2">
                           <CardTitle className="text-sm text-muted-foreground uppercase tracking-wide">
                             {category}
                           </CardTitle>
                         </CardHeader>
-                        <CardContent className="space-y-3">
+                        <CardContent className="space-y-4">
                           {roles.map((r) => (
-                            <div key={r.value} className="flex items-center justify-between">
-                              <div>
+                            <div key={r.value} className="flex items-start justify-between gap-4">
+                              <div className="flex-1 min-w-0">
                                 <Label className="text-sm font-medium">{r.label}</Label>
-                                <p className="text-xs text-muted-foreground font-mono">{r.value}</p>
+                                <p className="text-xs text-muted-foreground mt-0.5">{r.description}</p>
                               </div>
                               <Switch
                                 checked={pendingRoles.includes(r.value)}
