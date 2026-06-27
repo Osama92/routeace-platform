@@ -112,7 +112,8 @@ const PlatformKPIs = () => {
         growthRate: m.growthRate,
       });
 
-      setOrganizations(json.organizations || []);
+      // Filter to active only (edge function may return all orgs on older deployment)
+      setOrganizations((json.organizations || []).filter((o: any) => o.is_active !== false));
     } catch (error) {
       console.error("Error loading platform metrics:", error);
     } finally {
