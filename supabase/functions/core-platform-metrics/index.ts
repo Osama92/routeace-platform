@@ -22,7 +22,7 @@ serve(async (req) => {
     });
   }
 
-  // ── DELETE org ──────────────────────────────────────────────────────
+  // ── DEACTIVATE org (sets is_active = false, data preserved) ─────────
   if (req.method === "DELETE") {
     try {
       const { org_id } = await req.json();
@@ -32,14 +32,17 @@ serve(async (req) => {
         });
       }
       const admin = makeAdminClient();
-      const { error } = await admin.rpc("delete_organization_cascade", { p_org_id: org_id });
+      const { error } = await admin
+        .from("organizations")
+        .update({ is_active: false })
+        .eq("id", org_id);
       if (error) throw error;
       return new Response(JSON.stringify({ ok: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     } catch (e: any) {
-      console.error("delete_organization error:", e);
-      return new Response(JSON.stringify({ error: e.message || "Delete failed" }), {
+      console.error("deactivate_organization error:", e);
+      return new Response(JSON.stringify({ error: e.message || "Removal failed" }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -55,7 +58,7 @@ serve(async (req) => {
 
     const [orgsRes, profilesRes, dispatchesRes, invoicesRes, commissionRes, apiRes] =
       await Promise.all([
-        admin.from("organizations").select("id, name, subscription_tier, plan_tier, is_active, created_at"),
+        admin.from("organizations").select("id, name, subscription_tier, plan_tier, is_active, created_at").eq("is_active", true),
         admin.from("profiles").select("id, organization_id"),
         admin.from("dispatches").select("id, organization_id"),
         admin.from("invoices").select("id, organization_id, total_amount, status, created_at"),

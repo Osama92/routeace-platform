@@ -128,6 +128,7 @@ const PlatformKPIs = () => {
       const token = session?.access_token;
       if (!token) throw new Error("No auth session");
 
+      // Use service-role client via edge function to bypass RLS
       const res = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/core-platform-metrics`,
         {
@@ -137,13 +138,14 @@ const PlatformKPIs = () => {
         },
       );
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Delete failed");
+      if (!res.ok) throw new Error(json.error || "Removal failed");
 
+      // Remove from local state immediately so it disappears from the table
       setOrganizations((prev) => prev.filter((o) => o.id !== deleteTarget.id));
-      toast.success(`${deleteTarget.name} and all associated data have been permanently deleted`);
+      toast.success(`${deleteTarget.name} has been removed`);
       setDeleteTarget(null);
     } catch (e: any) {
-      toast.error(e.message || "Failed to delete organisation");
+      toast.error(e.message || "Failed to remove organisation");
     } finally {
       setDeleting(false);
     }
@@ -193,22 +195,9 @@ const PlatformKPIs = () => {
     <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Permanently Delete Organisation</AlertDialogTitle>
-          <AlertDialogDescription asChild>
-            <div className="space-y-2 text-sm text-muted-foreground">
-              <p>
-                You are about to permanently delete <strong className="text-foreground">{deleteTarget?.name}</strong>.
-              </p>
-              <p>This will irreversibly remove:</p>
-              <ul className="list-disc list-inside space-y-1 pl-2">
-                <li>All dispatches, routes, vehicles, and drivers</li>
-                <li>All invoices, expenses, and financial records</li>
-                <li>All users (profiles disassociated from org)</li>
-                <li>All partners, vendors, and customers</li>
-                <li>All settings, KPIs, and audit logs</li>
-              </ul>
-              <p className="font-semibold text-destructive">This action cannot be undone.</p>
-            </div>
+          <AlertDialogTitle>Remove Organisation</AlertDialogTitle>
+          <AlertDialogDescription>
+            Are you sure you want to remove <strong>{deleteTarget?.name}</strong> from the platform? The organisation will be deactivated and will no longer appear in this list. Their data is preserved in the database.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -218,7 +207,7 @@ const PlatformKPIs = () => {
             disabled={deleting}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
-            {deleting ? "Deleting..." : "Delete Permanently"}
+            {deleting ? "Removing..." : "Remove Organisation"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
