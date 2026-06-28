@@ -121,6 +121,12 @@ const PlatformKPIs = () => {
       const invoices = invoicesRes.data || [];
       const commissions = (commissionRes as any).data || [];
 
+      console.log("[PlatformKPIs] orgs total:", allOrgs.length, "active:", activeOrgs.length);
+      console.log("[PlatformKPIs] profiles fetched:", profiles.length, "sample:", profiles.slice(0, 3));
+      console.log("[PlatformKPIs] dispatches fetched:", dispatches.length, "sample:", dispatches.slice(0, 3));
+      console.log("[PlatformKPIs] profilesRes.error:", profilesRes.error);
+      console.log("[PlatformKPIs] dispatchesRes.error:", dispatchesRes.error);
+
       // Per-org user count via profiles.organization_id
       const orgUserMap = new Map<string, number>();
       profiles.forEach((p: any) => {
@@ -131,6 +137,9 @@ const PlatformKPIs = () => {
       dispatches.forEach((d: any) => {
         if (d.organization_id) orgDispatchMap.set(d.organization_id, (orgDispatchMap.get(d.organization_id) || 0) + 1);
       });
+
+      console.log("[PlatformKPIs] orgUserMap entries:", [...orgUserMap.entries()].slice(0, 5));
+      console.log("[PlatformKPIs] orgDispatchMap entries:", [...orgDispatchMap.entries()].slice(0, 5));
 
       const orgRevenueMap = new Map<string, number>();
       invoices.filter((i: any) => i.status === "paid").forEach((i: any) => {
@@ -191,17 +200,21 @@ const PlatformKPIs = () => {
   const handleDeleteOrg = async () => {
     if (!deleteTarget) return;
     setDeleting(true);
+    console.log("[PlatformKPIs] attempting delete for org:", deleteTarget.id, deleteTarget.name);
     try {
-      const { error } = await adminSupabase
+      const { error, data } = await adminSupabase
         .from("organizations")
         .update({ is_active: false })
-        .eq("id", deleteTarget.id);
+        .eq("id", deleteTarget.id)
+        .select("id, is_active");
+      console.log("[PlatformKPIs] delete result — data:", data, "error:", error);
       if (error) throw error;
       const { id: deletedId, name: deletedName } = deleteTarget;
       setDeleteTarget(null);
       setOrganizations((prev) => prev.filter((o) => o.id !== deletedId));
       toast.success(`${deletedName} has been removed`);
     } catch (e: any) {
+      console.error("[PlatformKPIs] delete error:", e);
       toast.error(e.message || "Failed to remove organisation");
     } finally {
       setDeleting(false);
