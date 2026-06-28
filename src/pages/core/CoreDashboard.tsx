@@ -151,12 +151,12 @@ const CoreDashboard = () => {
       ] = await Promise.all([
         adminSupabase.from("organization_members").select("user_id").eq("is_active", true).limit(10000),
         adminSupabase.from("dispatches").select("id, status, organization_id").limit(10000),
-        // Confirmed subscription payments via Paystack/billing
-        adminSupabase.from("billing_payments").select("amount, currency, billing_account_id").eq("status", "confirmed").limit(5000),
-        // This month's confirmed payments for MRR
-        adminSupabase.from("billing_payments").select("amount").eq("status", "confirmed").gte("created_at", thisMonthStart).limit(5000),
-        // Billing accounts with plan tier info
-        adminSupabase.from("billing_accounts").select("id, tenant_id, plan_id").eq("status", "active").limit(1000),
+        // Paid subscription invoices from Paystack
+        adminSupabase.from("subscription_invoices").select("amount, organization_id, plan_name").eq("status", "paid").limit(5000),
+        // This month's paid subscription invoices for MRR
+        adminSupabase.from("subscription_invoices").select("amount").eq("status", "paid").gte("created_at", thisMonthStart).limit(5000),
+        // Placeholder — not used anymore but keep array shape consistent
+        Promise.resolve({ data: [], error: null }),
         adminSupabase.from("organizations").select("id, subscription_tier").eq("is_active", true).limit(1000),
         adminSupabase.from("audit_logs").select("action, table_name, created_at").order("created_at", { ascending: false }).limit(5),
         adminSupabase.from("email_queue").select("id", { count: "exact", head: true }).eq("status", "failed"),
@@ -174,28 +174,25 @@ const CoreDashboard = () => {
       const delivered = dispatches.filter((d: any) => d.status === "delivered").length;
       const dispatchSuccessRate = totalDispatches > 0 ? (delivered / totalDispatches) * 100 : 0;
 
-      // Revenue — from confirmed billing_payments (Paystack subscriptions)
-      const payments = billingPaymentsRes.data || [];
-      const totalRevenue = payments.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
+      // Revenue — from paid subscription_invoices (Paystack verified payments)
+      const subInvoices = billingPaymentsRes.data || [];
+      const totalRevenue = subInvoices.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
       const mrr = (billingPaymentsMRRRes.data || []).reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
 
-      // Revenue by subscription tier — join billing_accounts → organizations.subscription_tier
-      const orgs = orgsRes.data || [];
-      const orgTierMap = new Map<string, string>();
-      orgs.forEach((o: any) => orgTierMap.set(o.id, o.subscription_tier));
-
-      // billing_accounts.tenant_id = organizations.id
-      const accountTierMap = new Map<string, string>();
-      (billingAccountsRes.data || []).forEach((a: any) => {
-        const tier = orgTierMap.get(a.tenant_id) || "starter";
-        accountTierMap.set(a.id, tier);
-      });
-
+      // Revenue by subscription tier — subscription_invoices has plan_name directly
+      // Map plan_name to tier bucket
+      const planToTier: Record<string, string> = {
+        enterprise: "enterprise", professional: "professional", starter: "starter",
+        lc_enterprise: "enterprise", lc_professional: "professional", lc_starter: "starter",
+        ld_enterprise: "enterprise", ld_professional: "professional", ld_starter: "starter",
+      };
       const tierRevenue: Record<string, number> = {};
-      payments.forEach((p: any) => {
-        const tier = accountTierMap.get(p.billing_account_id) || "starter";
+      subInvoices.forEach((p: any) => {
+        const tier = planToTier[p.plan_name?.toLowerCase()] || p.plan_name || "starter";
         tierRevenue[tier] = (tierRevenue[tier] || 0) + Number(p.amount || 0);
       });
+
+      const orgs = orgsRes.data || [];
 
       const tierColors: Record<string, string> = { enterprise: "bg-amber-500", professional: "bg-blue-500", starter: "bg-green-500" };
       const tierLabels: Record<string, string> = { enterprise: "Enterprise", professional: "Professional", starter: "Starter" };
