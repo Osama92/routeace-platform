@@ -99,12 +99,11 @@ const PlatformKPIs = () => {
       const sixtyDaysAgo = new Date(Date.now() - 60 * 86400000).toISOString();
 
       // All queries use adminSupabase (service role) to bypass RLS for cross-org aggregation
-      const [orgsRes, profilesRes, userRolesRes, dispatchesRes, invoicesRes, superAdminRes, commissionRes] =
+      const [orgsRes, profilesRes, dispatchesRes, invoicesRes, superAdminRes, commissionRes] =
         await Promise.all([
           adminSupabase.from("organizations").select("id, name, subscription_tier, is_active, created_at").limit(1000),
           adminSupabase.from("profiles").select("id, organization_id").not("organization_id", "is", null).limit(10000),
-          adminSupabase.from("user_roles").select("user_id, organization_id").not("organization_id", "is", null).limit(10000),
-          adminSupabase.from("dispatches").select("id, organization_id").limit(10000),
+          adminSupabase.from("dispatches").select("id, organization_id").not("organization_id", "is", null).limit(10000),
           adminSupabase.from("invoices").select("id, organization_id, total_amount, status, created_at").limit(5000),
           adminSupabase.from("user_roles").select("id", { count: "exact", head: true }).eq("role", "super_admin"),
           adminSupabase.from("commission_ledger").select("source_org_id, gross_amount, routeace_amount").limit(5000).then((r) => r).catch(() => ({ data: [] as any[], error: null })),
@@ -118,24 +117,14 @@ const PlatformKPIs = () => {
       const allOrgs = orgsRes.data || [];
       const activeOrgs = allOrgs.filter((o) => o.is_active !== false);
       const profiles = profilesRes.data || [];
-      const userRoles = userRolesRes.data || [];
       const dispatches = dispatchesRes.data || [];
       const invoices = invoicesRes.data || [];
       const commissions = (commissionRes as any).data || [];
 
-      // Per-org user count — union of profiles.organization_id and user_roles.organization_id
-      const orgUserMap = new Map<string, Set<string>>();
+      // Per-org user count via profiles.organization_id
+      const orgUserMap = new Map<string, number>();
       profiles.forEach((p: any) => {
-        if (p.organization_id && p.id) {
-          if (!orgUserMap.has(p.organization_id)) orgUserMap.set(p.organization_id, new Set());
-          orgUserMap.get(p.organization_id)!.add(p.id);
-        }
-      });
-      userRoles.forEach((ur: any) => {
-        if (ur.organization_id && ur.user_id) {
-          if (!orgUserMap.has(ur.organization_id)) orgUserMap.set(ur.organization_id, new Set());
-          orgUserMap.get(ur.organization_id)!.add(ur.user_id);
-        }
+        if (p.organization_id) orgUserMap.set(p.organization_id, (orgUserMap.get(p.organization_id) || 0) + 1);
       });
 
       const orgDispatchMap = new Map<string, number>();
@@ -187,7 +176,7 @@ const PlatformKPIs = () => {
             name: org.name,
             tier: org.subscription_tier || "starter",
             revenue: orgRevenueMap.get(org.id) || 0,
-            users: orgUserMap.get(org.id)?.size || 0,
+            users: orgUserMap.get(org.id) || 0,
             dispatches: orgDispatchMap.get(org.id) || 0,
             churnRisk: (orgDispatchMap.get(org.id) || 0) > 5 ? "low" : (orgDispatchMap.get(org.id) || 0) > 0 ? "medium" : "high",
           }))
@@ -203,17 +192,15 @@ const PlatformKPIs = () => {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      const { error, count } = await adminSupabase
+      const { error } = await adminSupabase
         .from("organizations")
         .update({ is_active: false })
-        .eq("id", deleteTarget.id)
-        .select("id", { count: "exact", head: true });
+        .eq("id", deleteTarget.id);
       if (error) throw error;
-      const name = deleteTarget.name;
+      const { id: deletedId, name: deletedName } = deleteTarget;
       setDeleteTarget(null);
-      // Reload from DB to ensure the change persisted
-      await loadPlatformMetrics();
-      toast.success(`${name} has been removed`);
+      setOrganizations((prev) => prev.filter((o) => o.id !== deletedId));
+      toast.success(`${deletedName} has been removed`);
     } catch (e: any) {
       toast.error(e.message || "Failed to remove organisation");
     } finally {
