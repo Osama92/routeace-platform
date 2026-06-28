@@ -103,6 +103,11 @@ const PlatformKPIs = () => {
           adminSupabase.from("commission_ledger").select("source_org_id, gross_amount, routeace_amount").then((r) => r).catch(() => ({ data: [] as any[], error: null })),
         ]);
 
+      if (orgsRes.error) {
+        console.error("Organizations query error:", orgsRes.error);
+        toast.error("Failed to load organizations: " + orgsRes.error.message);
+      }
+
       const allOrgs = orgsRes.data || [];
       const activeOrgs = allOrgs.filter((o) => o.is_active !== false);
       const profiles = profilesRes.data || [];
