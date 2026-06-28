@@ -4,9 +4,12 @@ import { createClient } from "@supabase/supabase-js";
 
 // Service-role client for core admin cross-org queries — this component is
 // only rendered inside CoreDashboard which is gated to core_* roles.
+// persistSession: false prevents the logged-in user's JWT from overriding
+// the service-role key, which would cause RLS to fire and block cross-org queries.
 const adminSupabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
   import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY,
+  { auth: { persistSession: false, autoRefreshToken: false } }
 );
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
