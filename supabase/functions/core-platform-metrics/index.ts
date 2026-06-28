@@ -58,19 +58,27 @@ serve(async (req) => {
 
     const [orgsRes, profilesRes, dispatchesRes, invoicesRes, commissionRes, apiRes] =
       await Promise.all([
-        admin.from("organizations").select("id, name, subscription_tier, plan_tier, is_active, created_at").eq("is_active", true),
+        admin.from("organizations").select("id, name, subscription_tier, plan_tier, is_active, created_at"),
         admin.from("profiles").select("id, organization_id"),
         admin.from("dispatches").select("id, organization_id"),
         admin.from("invoices").select("id, organization_id, total_amount, status, created_at"),
-        admin.from("commission_ledger").select("source_org_id, gross_amount, routeace_amount"),
-        admin.from("api_request_logs").select("id", { count: "exact", head: true }),
+        admin.from("commission_ledger").select("source_org_id, gross_amount, routeace_amount").then((r: any) => r).catch(() => ({ data: [] })),
+        admin.from("api_request_logs").select("id", { count: "exact", head: true }).then((r: any) => r).catch(() => ({ count: 0 })),
       ]);
 
-    const orgs = orgsRes.data || [];
+    // Log any query errors to help diagnose
+    if (orgsRes.error) console.error("orgs error:", orgsRes.error.message);
+    if (profilesRes.error) console.error("profiles error:", profilesRes.error.message);
+    if (dispatchesRes.error) console.error("dispatches error:", dispatchesRes.error.message);
+    if (invoicesRes.error) console.error("invoices error:", invoicesRes.error.message);
+
+    const allOrgs = orgsRes.data || [];
+    // Filter active orgs client-side as a safety net
+    const orgs = allOrgs.filter((o: any) => o.is_active !== false);
     const profiles = profilesRes.data || [];
     const dispatches = dispatchesRes.data || [];
     const invoices = invoicesRes.data || [];
-    const commissions = commissionRes.data || [];
+    const commissions = (commissionRes as any).data || [];
 
     // Build per-org maps
     const orgUserMap = new Map<string, number>();
@@ -102,7 +110,7 @@ serve(async (req) => {
       .reduce((s: number, i: any) => s + Number(i.total_amount || 0), 0);
     const routeaceCommission = commissions.reduce((s: number, c: any) => s + Number(c.routeace_amount || 0), 0);
     const resellerVolume = commissions.reduce((s: number, c: any) => s + Number(c.gross_amount || 0), 0);
-    const activeOrgs = orgs.filter((o: any) => o.is_active).length;
+    const activeOrgs = orgs.length;
     const recentOrgs = orgs.filter((o: any) => o.created_at >= thirtyDaysAgo).length;
     const priorOrgs = orgs.filter((o: any) => o.created_at >= sixtyDaysAgo && o.created_at < thirtyDaysAgo).length;
     const growthRate = priorOrgs > 0 ? ((recentOrgs - priorOrgs) / priorOrgs) * 100 : (recentOrgs > 0 ? 100 : 0);

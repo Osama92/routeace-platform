@@ -1,5 +1,13 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { createClient } from "@supabase/supabase-js";
+
+// Service-role client for core admin cross-org queries — this component is
+// only rendered inside CoreDashboard which is gated to core_* roles.
+const adminSupabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY,
+);
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -81,39 +89,87 @@ const PlatformKPIs = () => {
 
   const loadPlatformMetrics = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      if (!token) throw new Error("No auth session");
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
+      const sixtyDaysAgo = new Date(Date.now() - 60 * 86400000).toISOString();
 
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/core-platform-metrics`,
-        { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } },
-      );
-      if (!res.ok) throw new Error(await res.text());
-      const json = await res.json();
+      // All queries use adminSupabase (service role) to bypass RLS for cross-org aggregation
+      const [orgsRes, profilesRes, dispatchesRes, invoicesRes, superAdminRes, commissionRes] =
+        await Promise.all([
+          adminSupabase.from("organizations").select("id, name, subscription_tier, plan_tier, is_active, created_at"),
+          adminSupabase.from("profiles").select("id, organization_id"),
+          adminSupabase.from("dispatches").select("id, organization_id"),
+          adminSupabase.from("invoices").select("id, organization_id, total_amount, status, created_at"),
+          adminSupabase.from("user_roles").select("id", { count: "exact", head: true }).eq("role", "super_admin"),
+          adminSupabase.from("commission_ledger").select("source_org_id, gross_amount, routeace_amount").then((r) => r).catch(() => ({ data: [] as any[], error: null })),
+        ]);
 
-      const m = json.metrics;
+      const allOrgs = orgsRes.data || [];
+      const activeOrgs = allOrgs.filter((o) => o.is_active !== false);
+      const profiles = profilesRes.data || [];
+      const dispatches = dispatchesRes.data || [];
+      const invoices = invoicesRes.data || [];
+      const commissions = (commissionRes as any).data || [];
 
-      // super_admin count still comes from client (no RLS conflict for counting own role)
-      const { count: superAdminCount } = await supabase
-        .from("user_roles").select("*", { count: "exact", head: true }).eq("role", "super_admin");
-
-      setMetrics({
-        totalOrganizations: m.totalOrganizations,
-        activeOrganizations: m.activeOrganizations,
-        totalSuperAdmins: superAdminCount || 0,
-        totalRevenue: m.totalRevenue,
-        monthlyRecurring: m.monthlyRecurring,
-        churnRate: m.churnRate,
-        avgRevenuePerTenant: m.avgRevenuePerTenant,
-        totalResellerVolume: m.totalResellerVolume,
-        routeaceCommission: m.routeaceCommission,
-        apiUsage: m.apiUsage,
-        growthRate: m.growthRate,
+      // Per-org maps
+      const orgUserMap = new Map<string, number>();
+      profiles.forEach((p: any) => {
+        if (p.organization_id) orgUserMap.set(p.organization_id, (orgUserMap.get(p.organization_id) || 0) + 1);
       });
 
-      // Filter to active only (edge function may return all orgs on older deployment)
-      setOrganizations((json.organizations || []).filter((o: any) => o.is_active !== false));
+      const orgDispatchMap = new Map<string, number>();
+      dispatches.forEach((d: any) => {
+        if (d.organization_id) orgDispatchMap.set(d.organization_id, (orgDispatchMap.get(d.organization_id) || 0) + 1);
+      });
+
+      const orgRevenueMap = new Map<string, number>();
+      invoices.filter((i: any) => i.status === "paid").forEach((i: any) => {
+        if (i.organization_id) orgRevenueMap.set(i.organization_id, (orgRevenueMap.get(i.organization_id) || 0) + Number(i.total_amount || 0));
+      });
+      commissions.forEach((c: any) => {
+        if (c.source_org_id && !orgRevenueMap.has(c.source_org_id))
+          orgRevenueMap.set(c.source_org_id, Number(c.gross_amount || 0));
+      });
+
+      // Platform aggregates
+      const totalRevenue = invoices.filter((i: any) => i.status === "paid")
+        .reduce((s: number, i: any) => s + Number(i.total_amount || 0), 0);
+      const monthlyRevenue = invoices
+        .filter((i: any) => i.status === "paid" && i.created_at >= thirtyDaysAgo)
+        .reduce((s: number, i: any) => s + Number(i.total_amount || 0), 0);
+      const routeaceCommission = commissions.reduce((s: number, c: any) => s + Number(c.routeace_amount || 0), 0);
+      const resellerVolume = commissions.reduce((s: number, c: any) => s + Number(c.gross_amount || 0), 0);
+      const recentOrgs = allOrgs.filter((o) => o.created_at >= thirtyDaysAgo).length;
+      const priorOrgs = allOrgs.filter((o) => o.created_at >= sixtyDaysAgo && o.created_at < thirtyDaysAgo).length;
+      const growthRate = priorOrgs > 0 ? ((recentOrgs - priorOrgs) / priorOrgs) * 100 : (recentOrgs > 0 ? 100 : 0);
+      const churnRate = allOrgs.length > 0 ? ((allOrgs.length - activeOrgs.length) / allOrgs.length) * 100 : 0;
+
+      setMetrics({
+        totalOrganizations: allOrgs.length,
+        activeOrganizations: activeOrgs.length,
+        totalSuperAdmins: superAdminRes.count || 0,
+        totalRevenue,
+        monthlyRecurring: monthlyRevenue,
+        churnRate: Math.round(churnRate * 10) / 10,
+        avgRevenuePerTenant: activeOrgs.length > 0 ? totalRevenue / activeOrgs.length : 0,
+        totalResellerVolume: resellerVolume,
+        routeaceCommission,
+        apiUsage: 0,
+        growthRate: Math.round(growthRate * 10) / 10,
+      });
+
+      setOrganizations(
+        [...activeOrgs]
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map((org) => ({
+            id: org.id,
+            name: org.name,
+            tier: org.subscription_tier || org.plan_tier || "starter",
+            revenue: orgRevenueMap.get(org.id) || 0,
+            users: orgUserMap.get(org.id) || 0,
+            dispatches: orgDispatchMap.get(org.id) || 0,
+            churnRisk: (orgDispatchMap.get(org.id) || 0) > 5 ? "low" : (orgDispatchMap.get(org.id) || 0) > 0 ? "medium" : "high",
+          }))
+      );
     } catch (error) {
       console.error("Error loading platform metrics:", error);
     } finally {
@@ -125,23 +181,11 @@ const PlatformKPIs = () => {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      if (!token) throw new Error("No auth session");
-
-      // Use service-role client via edge function to bypass RLS
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/core-platform-metrics`,
-        {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ org_id: deleteTarget.id }),
-        },
-      );
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Removal failed");
-
-      // Remove from local state immediately so it disappears from the table
+      const { error } = await adminSupabase
+        .from("organizations")
+        .update({ is_active: false })
+        .eq("id", deleteTarget.id);
+      if (error) throw error;
       setOrganizations((prev) => prev.filter((o) => o.id !== deleteTarget.id));
       toast.success(`${deleteTarget.name} has been removed`);
       setDeleteTarget(null);

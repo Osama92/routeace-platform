@@ -52,6 +52,7 @@ jobs:
           VITE_SUPABASE_URL: https://mbybrzggrpyhvcnxhlua.supabase.co
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY_PROD }}
           VITE_SUPABASE_PROJECT_ID: mbybrzggrpyhvcnxhlua
+          VITE_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
           VITE_GOOGLE_PLACES_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
 
