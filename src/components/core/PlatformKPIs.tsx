@@ -101,7 +101,7 @@ const PlatformKPIs = () => {
       // All queries use adminSupabase (service role) to bypass RLS for cross-org aggregation
       const [orgsRes, profilesRes, dispatchesRes, invoicesRes, superAdminRes, commissionRes] =
         await Promise.all([
-          adminSupabase.from("organizations").select("id, name, subscription_tier, plan_tier, is_active, created_at"),
+          adminSupabase.from("organizations").select("id, name, subscription_tier, is_active, created_at"),
           adminSupabase.from("profiles").select("id, organization_id"),
           adminSupabase.from("dispatches").select("id, organization_id"),
           adminSupabase.from("invoices").select("id, organization_id, total_amount, status, created_at"),
@@ -174,7 +174,7 @@ const PlatformKPIs = () => {
           .map((org) => ({
             id: org.id,
             name: org.name,
-            tier: org.subscription_tier || org.plan_tier || "starter",
+            tier: org.subscription_tier || "starter",
             revenue: orgRevenueMap.get(org.id) || 0,
             users: orgUserMap.get(org.id) || 0,
             dispatches: orgDispatchMap.get(org.id) || 0,
