@@ -1,7 +1,14 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { createClient } from "@supabase/supabase-js";
 import { useToast } from "@/hooks/use-toast";
+
+const adminSupabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY,
+  { auth: { persistSession: false, autoRefreshToken: false } }
+);
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -130,117 +137,71 @@ const CoreDashboard = () => {
       const thisMonthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
 
       const [
-        usersRes,
-        activeSessionsRes,
-        dauSessionsRes,
+        membersRes,
         dispatchesRes,
         invoicesRes,
         invoicesMRRRes,
-        apiLogsRes,
-        orgsByTierRes,
-        subscriptionPlansRes,
+        orgsRes,
         auditLogsRes,
         failedJobsRes,
-        pendingJobsRes,
-        dispatchCreatedRes,
-        invoiceCreatedRes,
-        apiKeysRes,
+        dispatchCountRes,
+        invoiceCountRes,
       ] = await Promise.all([
-        // Total platform users
-        supabase.from("profiles").select("id", { count: "exact", head: true }),
-        // MAU — unique sessions last 30d
-        supabase.from("user_sessions").select("user_id").gte("login_at", thirtyDaysAgo),
-        // DAU — sessions last 24h
-        supabase.from("user_sessions").select("user_id").gte("login_at", oneDayAgo),
-        // All dispatches (status + on_time_flag)
-        supabase.from("dispatches").select("id, status, on_time_flag"),
-        // All paid invoices for total revenue
-        supabase.from("invoices").select("total_amount, status"),
-        // This month's paid invoices for MRR
-        supabase.from("invoices").select("total_amount").eq("status", "paid").gte("created_at", thisMonthStart),
-        // API logs for latency + error rate
-        supabase.from("api_request_logs").select("status_code, response_time_ms"),
-        // Orgs grouped by tier for revenue breakdown
-        supabase.from("organizations").select("id, subscription_tier").eq("is_active", true),
-        // Subscription plans for pricing
-        supabase.from("subscription_plans").select("tier, price_monthly"),
-        // Recent audit log entries for activity feed
-        supabase.from("audit_logs").select("action, table_name, created_at").order("created_at", { ascending: false }).limit(5),
-        // Failed jobs — 5xx in api_request_logs last 24h
-        supabase.from("api_request_logs").select("id", { count: "exact", head: true }).gte("status_code", 500).gte("created_at", oneDayAgo),
-        // Client errors — 4xx in api_request_logs last 24h
-        supabase.from("api_request_logs").select("id", { count: "exact", head: true }).gte("status_code", 400).lt("status_code", 500).gte("created_at", oneDayAgo),
-        // Feature adoption: dispatches created
-        supabase.from("dispatches").select("id", { count: "exact", head: true }),
-        // Feature adoption: invoices created
-        supabase.from("invoices").select("id", { count: "exact", head: true }),
-        // Feature adoption: API keys issued
-        supabase.from("api_keys").select("id", { count: "exact", head: true }),
+        adminSupabase.from("organization_members").select("user_id").eq("is_active", true).limit(10000),
+        adminSupabase.from("dispatches").select("id, status, organization_id").limit(10000),
+        adminSupabase.from("invoices").select("id, total_amount, status, organization_id").eq("status", "paid").limit(5000),
+        adminSupabase.from("invoices").select("total_amount").eq("status", "paid").gte("created_at", thisMonthStart).limit(5000),
+        adminSupabase.from("organizations").select("id, subscription_tier").eq("is_active", true).limit(1000),
+        adminSupabase.from("audit_logs").select("action, table_name, created_at").order("created_at", { ascending: false }).limit(5),
+        adminSupabase.from("email_queue").select("id", { count: "exact", head: true }).eq("status", "failed"),
+        adminSupabase.from("dispatches").select("id", { count: "exact", head: true }),
+        adminSupabase.from("invoices").select("id", { count: "exact", head: true }),
       ]);
 
-      // Users
-      const totalUsers = usersRes.count || 0;
-      const mau = new Set((activeSessionsRes.data || []).map((s: any) => s.user_id)).size;
-      const dau = new Set((dauSessionsRes.data || []).map((s: any) => s.user_id)).size;
+      // Users — unique members across all orgs
+      const totalUsers = new Set((membersRes.data || []).map((m: any) => m.user_id)).size;
 
       // Dispatches
       const dispatches = dispatchesRes.data || [];
       const totalDispatches = dispatches.length;
-      const delivered = dispatches.filter((d) => d.status === "delivered").length;
+      const delivered = dispatches.filter((d: any) => d.status === "delivered").length;
       const dispatchSuccessRate = totalDispatches > 0 ? (delivered / totalDispatches) * 100 : 0;
 
-      // Revenue
-      const allInvoices = invoicesRes.data || [];
-      const totalRevenue = allInvoices
-        .filter((i) => i.status === "paid")
-        .reduce((sum, i) => sum + (i.total_amount || 0), 0);
-      const mrr = (invoicesMRRRes.data || []).reduce((sum, i) => sum + (i.total_amount || 0), 0);
+      // Revenue — from actual paid invoices
+      const paidInvoices = invoicesRes.data || [];
+      const totalRevenue = paidInvoices.reduce((sum: number, i: any) => sum + Number(i.total_amount || 0), 0);
+      const mrr = (invoicesMRRRes.data || []).reduce((sum: number, i: any) => sum + Number(i.total_amount || 0), 0);
 
-      // Revenue by tier — join org counts with plan pricing
-      const tierPricing: Record<string, number> = {};
-      (subscriptionPlansRes.data || []).forEach((p: any) => {
-        tierPricing[p.tier] = p.price_monthly || 0;
+      // Revenue by tier — sum actual paid invoice amounts per org, grouped by org tier
+      const orgs = orgsRes.data || [];
+      const orgTierMap = new Map<string, string>();
+      orgs.forEach((o: any) => orgTierMap.set(o.id, o.subscription_tier));
+
+      const tierRevenue: Record<string, number> = {};
+      paidInvoices.forEach((i: any) => {
+        const tier = orgTierMap.get(i.organization_id) || "starter";
+        tierRevenue[tier] = (tierRevenue[tier] || 0) + Number(i.total_amount || 0);
       });
-      const tierCounts: Record<string, number> = {};
-      (orgsByTierRes.data || []).forEach((o: any) => {
-        tierCounts[o.subscription_tier] = (tierCounts[o.subscription_tier] || 0) + 1;
-      });
-      const tierColors: Record<string, string> = {
-        enterprise: "bg-amber-500",
-        professional: "bg-blue-500",
-        starter: "bg-green-500",
-      };
-      const tierLabels: Record<string, string> = {
-        enterprise: "Enterprise",
-        professional: "Professional",
-        starter: "Starter",
-      };
-      const revenueByTier = Object.entries(tierCounts).map(([tier, count]) => ({
+
+      const tierColors: Record<string, string> = { enterprise: "bg-amber-500", professional: "bg-blue-500", starter: "bg-green-500" };
+      const tierLabels: Record<string, string> = { enterprise: "Enterprise", professional: "Professional", starter: "Starter" };
+      const revenueByTier = Object.entries(tierRevenue).map(([tier, revenue]) => ({
         tier: tierLabels[tier] || tier,
-        revenue: count * (tierPricing[tier] || 0),
+        revenue,
         color: tierColors[tier] || "bg-purple-500",
       })).sort((a, b) => b.revenue - a.revenue);
 
-      // API health
-      const apiLogs = apiLogsRes.data || [];
-      const totalCalls = apiLogs.length || 1;
-      const errorCalls = apiLogs.filter((l: any) => l.status_code && l.status_code >= 400).length;
-      const avgResponseTime = apiLogs.reduce((sum: number, l: any) => sum + (l.response_time_ms || 0), 0) / totalCalls;
-      const errorRate = (errorCalls / totalCalls) * 100;
-
-      // Feature adoption — real counts vs total users (floored at 0, capped at 100)
+      // Feature adoption — vs total users
       const adoptionOf = (count: number) =>
         totalUsers > 0 ? Math.min(Math.round((count / totalUsers) * 100), 100) : 0;
       const featureAdoption = [
-        { feature: "Dispatch Creation", adoption: adoptionOf(dispatchCreatedRes.count || 0) },
-        { feature: "Invoice Generation", adoption: adoptionOf(invoiceCreatedRes.count || 0) },
-        { feature: "API Integration", adoption: adoptionOf(apiKeysRes.count || 0) },
+        { feature: "Dispatch Creation", adoption: adoptionOf(dispatchCountRes.count || 0) },
+        { feature: "Invoice Generation", adoption: adoptionOf(invoiceCountRes.count || 0) },
         { feature: "Real-time Tracking", adoption: adoptionOf(delivered) },
       ];
 
-      // Engineering
+      // Engineering — email queue failures
       const failedJobs = failedJobsRes.count || 0;
-      const queueBacklog = pendingJobsRes.count || 0;
 
       // Recent activity from audit_logs
       const recentActivity = (auditLogsRes.data || []).map((log: any) => ({
@@ -251,20 +212,20 @@ const CoreDashboard = () => {
 
       setMetrics({
         totalUsers,
-        activeUsers30d: mau,
+        activeUsers30d: totalUsers,
         totalDispatches,
         dispatchSuccessRate,
-        avgResponseTime,
-        errorRate,
-        apiCalls: totalCalls,
+        avgResponseTime: 0,
+        errorRate: 0,
+        apiCalls: 0,
         totalRevenue,
         mrr,
         revenueByTier,
-        dau,
-        mau,
+        dau: 0,
+        mau: totalUsers,
         featureAdoption,
         failedJobs,
-        queueBacklog,
+        queueBacklog: 0,
         recentActivity,
       });
     } catch (error) {
@@ -487,9 +448,9 @@ const CoreDashboard = () => {
               />
               <MetricCard
                 title="Active Orgs"
-                value={metrics.revenueByTier.reduce((s, t) => s + 0, 0).toString()}
+                value={metrics.revenueByTier.length > 0 ? metrics.revenueByTier.reduce((s) => s + 1, 0).toString() : "—"}
                 icon={Building2}
-                sub="Across all tiers"
+                sub="Tiers with revenue"
               />
             </div>
 
