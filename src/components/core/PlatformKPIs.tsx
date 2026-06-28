@@ -89,6 +89,12 @@ const PlatformKPIs = () => {
 
   const loadPlatformMetrics = async () => {
     try {
+      if (!import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY) {
+        toast.error("Service role key not configured — cannot load platform data");
+        setLoading(false);
+        return;
+      }
+
       const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
       const sixtyDaysAgo = new Date(Date.now() - 60 * 86400000).toISOString();
 
