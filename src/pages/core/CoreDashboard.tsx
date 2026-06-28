@@ -139,22 +139,29 @@ const CoreDashboard = () => {
       const [
         membersRes,
         dispatchesRes,
-        invoicesRes,
-        invoicesMRRRes,
+        billingPaymentsRes,
+        billingPaymentsMRRRes,
+        billingAccountsRes,
         orgsRes,
         auditLogsRes,
         failedJobsRes,
-        dispatchCountRes,
-        invoiceCountRes,
+        driversRes,
+        vehiclesRes,
+        invoicesRes,
       ] = await Promise.all([
         adminSupabase.from("organization_members").select("user_id").eq("is_active", true).limit(10000),
         adminSupabase.from("dispatches").select("id, status, organization_id").limit(10000),
-        adminSupabase.from("invoices").select("id, total_amount, status, organization_id").eq("status", "paid").limit(5000),
-        adminSupabase.from("invoices").select("total_amount").eq("status", "paid").gte("created_at", thisMonthStart).limit(5000),
+        // Confirmed subscription payments via Paystack/billing
+        adminSupabase.from("billing_payments").select("amount, currency, billing_account_id").eq("status", "confirmed").limit(5000),
+        // This month's confirmed payments for MRR
+        adminSupabase.from("billing_payments").select("amount").eq("status", "confirmed").gte("created_at", thisMonthStart).limit(5000),
+        // Billing accounts with plan tier info
+        adminSupabase.from("billing_accounts").select("id, tenant_id, plan_id").eq("status", "active").limit(1000),
         adminSupabase.from("organizations").select("id, subscription_tier").eq("is_active", true).limit(1000),
         adminSupabase.from("audit_logs").select("action, table_name, created_at").order("created_at", { ascending: false }).limit(5),
         adminSupabase.from("email_queue").select("id", { count: "exact", head: true }).eq("status", "failed"),
-        adminSupabase.from("dispatches").select("id", { count: "exact", head: true }),
+        adminSupabase.from("drivers").select("id", { count: "exact", head: true }),
+        adminSupabase.from("vehicles").select("id", { count: "exact", head: true }),
         adminSupabase.from("invoices").select("id", { count: "exact", head: true }),
       ]);
 
@@ -167,20 +174,27 @@ const CoreDashboard = () => {
       const delivered = dispatches.filter((d: any) => d.status === "delivered").length;
       const dispatchSuccessRate = totalDispatches > 0 ? (delivered / totalDispatches) * 100 : 0;
 
-      // Revenue — from actual paid invoices
-      const paidInvoices = invoicesRes.data || [];
-      const totalRevenue = paidInvoices.reduce((sum: number, i: any) => sum + Number(i.total_amount || 0), 0);
-      const mrr = (invoicesMRRRes.data || []).reduce((sum: number, i: any) => sum + Number(i.total_amount || 0), 0);
+      // Revenue — from confirmed billing_payments (Paystack subscriptions)
+      const payments = billingPaymentsRes.data || [];
+      const totalRevenue = payments.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
+      const mrr = (billingPaymentsMRRRes.data || []).reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
 
-      // Revenue by tier — sum actual paid invoice amounts per org, grouped by org tier
+      // Revenue by subscription tier — join billing_accounts → organizations.subscription_tier
       const orgs = orgsRes.data || [];
       const orgTierMap = new Map<string, string>();
       orgs.forEach((o: any) => orgTierMap.set(o.id, o.subscription_tier));
 
+      // billing_accounts.tenant_id = organizations.id
+      const accountTierMap = new Map<string, string>();
+      (billingAccountsRes.data || []).forEach((a: any) => {
+        const tier = orgTierMap.get(a.tenant_id) || "starter";
+        accountTierMap.set(a.id, tier);
+      });
+
       const tierRevenue: Record<string, number> = {};
-      paidInvoices.forEach((i: any) => {
-        const tier = orgTierMap.get(i.organization_id) || "starter";
-        tierRevenue[tier] = (tierRevenue[tier] || 0) + Number(i.total_amount || 0);
+      payments.forEach((p: any) => {
+        const tier = accountTierMap.get(p.billing_account_id) || "starter";
+        tierRevenue[tier] = (tierRevenue[tier] || 0) + Number(p.amount || 0);
       });
 
       const tierColors: Record<string, string> = { enterprise: "bg-amber-500", professional: "bg-blue-500", starter: "bg-green-500" };
@@ -191,13 +205,18 @@ const CoreDashboard = () => {
         color: tierColors[tier] || "bg-purple-500",
       })).sort((a, b) => b.revenue - a.revenue);
 
-      // Feature adoption — vs total users
-      const adoptionOf = (count: number) =>
-        totalUsers > 0 ? Math.min(Math.round((count / totalUsers) * 100), 100) : 0;
+      // Feature adoption — orgs that have used each feature vs total orgs
+      const totalOrgs = orgs.length || 1;
+      const orgsWithDispatches = new Set(dispatches.map((d: any) => d.organization_id).filter(Boolean)).size;
+      const orgsWithInvoices = invoicesRes.count || 0;
+      const orgsWithDrivers = driversRes.count || 0;
+      const orgsWithVehicles = vehiclesRes.count || 0;
+      const adoptionOf = (count: number) => Math.min(Math.round((count / totalOrgs) * 100), 100);
       const featureAdoption = [
-        { feature: "Dispatch Creation", adoption: adoptionOf(dispatchCountRes.count || 0) },
-        { feature: "Invoice Generation", adoption: adoptionOf(invoiceCountRes.count || 0) },
-        { feature: "Real-time Tracking", adoption: adoptionOf(delivered) },
+        { feature: "Dispatch Creation", adoption: adoptionOf(orgsWithDispatches) },
+        { feature: "Invoice Generation", adoption: adoptionOf(orgsWithInvoices) },
+        { feature: "Driver Management", adoption: adoptionOf(orgsWithDrivers) },
+        { feature: "Fleet Management", adoption: adoptionOf(orgsWithVehicles) },
       ];
 
       // Engineering — email queue failures
