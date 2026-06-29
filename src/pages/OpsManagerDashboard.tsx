@@ -27,7 +27,6 @@ import OrderIntakeEngine from "@/components/operations/OrderIntakeEngine";
 import WaybillEngine from "@/components/operations/WaybillEngine";
 import OpsOnboardingChecklist from "@/components/operations/OpsOnboardingChecklist";
 import CreateDispatchDialog from "@/components/operations/CreateDispatchDialog";
-import CreateDriverDialog from "@/components/operations/CreateDriverDialog";
 import {
   Truck, Users, Package, AlertTriangle, CheckCircle, Clock, MapPin,
   Wrench, TrendingUp, FileText, RefreshCw, Shield, Brain, Gauge,
@@ -73,7 +72,7 @@ const OpsManagerDashboardInner = () => {
       const { data, error } = await supabase
         .from("drivers")
         .select("id, full_name, phone, status")
-        .eq("status", "active")
+        .in("status", ["available", "active"])
         .eq("organization_id", orgFilter);
       if (error) throw error;
       return data;
@@ -87,7 +86,7 @@ const OpsManagerDashboardInner = () => {
       const { data, error } = await supabase
         .from("vehicles")
         .select("id, registration_number, truck_type, status")
-        .eq("status", "active")
+        .in("status", ["available", "active"])
         .eq("organization_id", orgFilter);
       if (error) throw error;
       return data;
@@ -106,7 +105,7 @@ const OpsManagerDashboardInner = () => {
       if (error) throw error;
       return {
         total: data?.length || 0,
-        active: data?.filter((v) => v.status === "active").length || 0,
+        active: data?.filter((v) => ["available", "active"].includes(v.status)).length || 0,
         maintenance: data?.filter((v) => v.status === "maintenance").length || 0,
       };
     },
@@ -353,7 +352,7 @@ const OpsManagerDashboardInner = () => {
       {/* Quick Actions */}
       <div className="flex flex-wrap gap-2 mb-6">
         <CreateDispatchDialog />
-        <CreateDriverDialog />
+        <Button size="sm" variant="outline" onClick={() => navigate("/drivers")}><Users className="w-3 h-3 mr-1" />Add Driver</Button>
         <Button size="sm" variant="outline" onClick={() => navigate("/fleet")}><Truck className="w-3 h-3 mr-1" />Add Fleet</Button>
         <Button size="sm" variant="outline" onClick={() => navigate("/advanced-route-planner")}><Route className="w-3 h-3 mr-1" />Plan Route</Button>
         <Button size="sm" variant="outline" onClick={() => navigate("/customers")}><Plus className="w-3 h-3 mr-1" />Add Customer</Button>
