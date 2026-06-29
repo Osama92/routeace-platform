@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -44,6 +44,9 @@ import {
   AlertCircle,
   Calendar,
   Upload,
+  Camera,
+  CreditCard,
+  Loader2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -115,6 +118,11 @@ const DriversPage = () => {
   const opsAllowed = tenantConfig?.ops_can_add_drivers ?? true;
   const canManage = isPrivileged || (isOpsManager && opsAllowed);
 
+  const [uploading, setUploading] = useState<string | null>(null);
+  const profileRef = useRef<HTMLInputElement>(null);
+  const licenseDocRef = useRef<HTMLInputElement>(null);
+  const ninDocRef = useRef<HTMLInputElement>(null);
+
   const [formData, setFormData] = useState({
     full_name: "",
     email: "",
@@ -130,7 +138,35 @@ const DriversPage = () => {
     verification_method: "" as "" | "license_sighted" | "carrier_agreement" | "manual_id_check",
     verification_confirmed: false,
     partner_name: "",
+    // Document uploads
+    profile_picture_url: "",
+    license_document_url: "",
+    nin_document_url: "",
   });
+
+  const handleFileUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    field: "profile_picture_url" | "license_document_url" | "nin_document_url"
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: "File too large", description: "Maximum file size is 5MB", variant: "destructive" });
+      return;
+    }
+    setUploading(field);
+    const ext = file.name.split(".").pop();
+    const path = `${field === "profile_picture_url" ? "drivers" : field === "license_document_url" ? "driver-licenses" : "driver-nin"}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+    const bucket = field === "profile_picture_url" ? "profile-pictures" : "driver-documents";
+    const { error } = await supabase.storage.from(bucket).upload(path, file);
+    if (error) {
+      toast({ title: "Upload failed", description: error.message, variant: "destructive" });
+    } else {
+      setFormData((p) => ({ ...p, [field]: path }));
+      toast({ title: "Uploaded", description: `${field === "profile_picture_url" ? "Photo" : field === "license_document_url" ? "License doc" : "NIN doc"} uploaded` });
+    }
+    setUploading(null);
+  };
 
   const [docFormData, setDocFormData] = useState({
     document_type: "",
@@ -240,18 +276,21 @@ const DriversPage = () => {
         documents_verified: true,
         verification_method: formData.verification_method,
         verified_at: new Date().toISOString(),
+        profile_picture_url: formData.profile_picture_url || null,
+        license_document_url: formData.license_document_url || null,
       };
 
       const { data, error } = await supabase.from("drivers").insert(insertData).select().single();
 
       if (error) throw error;
 
-      // Persist sensitive tax_id to restricted table (best-effort; requires finance/admin role)
-      if (data && formData.tax_id) {
+      // Persist sensitive fields (tax_id, NIN doc) to restricted table
+      if (data && (formData.tax_id || formData.nin_document_url)) {
         await supabase.from("driver_sensitive_details").upsert({
           driver_id: data.id,
           organization_id: organizationId ?? null,
-          tax_id: formData.tax_id,
+          tax_id: formData.tax_id || null,
+          nin_document_url: formData.nin_document_url || null,
         }, { onConflict: "driver_id" });
       }
 
@@ -284,6 +323,9 @@ const DriversPage = () => {
         verification_method: "",
         verification_confirmed: false,
         partner_name: "",
+        profile_picture_url: "",
+        license_document_url: "",
+        nin_document_url: "",
       });
       fetchDrivers();
     } catch (error: any) {
@@ -594,6 +636,39 @@ const DriversPage = () => {
                   />
                 </TabsContent>
                 <TabsContent value="verify" className="space-y-4 mt-4">
+                  {/* Document Uploads */}
+                  <div className="border border-border rounded-lg p-3 space-y-2">
+                    <Label className="text-sm font-semibold flex items-center gap-2">
+                      <Upload className="w-4 h-4" /> Documents &amp; Photo
+                    </Label>
+                    <input ref={profileRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, "profile_picture_url")} />
+                    <input ref={licenseDocRef} type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => handleFileUpload(e, "license_document_url")} />
+                    <input ref={ninDocRef} type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => handleFileUpload(e, "nin_document_url")} />
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <Label className="text-xs">Profile Photo</Label>
+                        <Button type="button" variant={formData.profile_picture_url ? "default" : "outline"} size="sm" className="w-full mt-1 text-xs" onClick={() => profileRef.current?.click()} disabled={uploading === "profile_picture_url"}>
+                          {uploading === "profile_picture_url" ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Camera className="w-3 h-3 mr-1" />}
+                          {formData.profile_picture_url ? "✓ Uploaded" : "Upload Photo"}
+                        </Button>
+                      </div>
+                      <div>
+                        <Label className="text-xs">License Doc</Label>
+                        <Button type="button" variant={formData.license_document_url ? "default" : "outline"} size="sm" className="w-full mt-1 text-xs" onClick={() => licenseDocRef.current?.click()} disabled={uploading === "license_document_url"}>
+                          {uploading === "license_document_url" ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <FileText className="w-3 h-3 mr-1" />}
+                          {formData.license_document_url ? "✓ Uploaded" : "Upload License"}
+                        </Button>
+                      </div>
+                      <div>
+                        <Label className="text-xs">NIN Document</Label>
+                        <Button type="button" variant={formData.nin_document_url ? "default" : "outline"} size="sm" className="w-full mt-1 text-xs" onClick={() => ninDocRef.current?.click()} disabled={uploading === "nin_document_url"}>
+                          {uploading === "nin_document_url" ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <CreditCard className="w-3 h-3 mr-1" />}
+                          {formData.nin_document_url ? "✓ Uploaded" : "Upload NIN"}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="space-y-2 p-3 rounded-md border border-warning/30 bg-warning/5">
                     <Label className="text-sm font-semibold flex items-center gap-2">
                       <FileText className="w-4 h-4 text-warning" /> Document Verification *
