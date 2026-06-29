@@ -19,7 +19,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 
 // ─── Types ─────────────────────────────────────────
-interface Vehicle { id: string; plate_number: string | null; registration_number?: string | null; status: string; current_mileage: number; truck_type: string; }
+interface Vehicle { id: string; registration_number: string | null; status: string; current_mileage: number; truck_type: string; }
 interface Inspection { id: string; vehicle_id: string; inspection_type: string; status: string; overall_score: number | null; inspector_notes: string | null; blocked_dispatch: boolean; completed_at: string | null; created_at: string; vehicle_inspection_items?: InspectionItem[]; }
 interface InspectionItem { id: string; category: string; item_name: string; condition: string; is_safety_critical: boolean; notes: string | null; }
 interface Prediction { id: string; vehicle_id: string; component: string; failure_probability: number; confidence_score: number; predicted_failure_date: string; urgency: string; risk_factors: any[]; recommended_action: string; auto_blocked: boolean; resolved_at: string | null; }
@@ -60,16 +60,14 @@ export default function FleetInspectionEngine() {
   const [submitting, setSubmitting] = useState(false);
 
   const fetchData = useCallback(async (orgId: string) => {
-    console.log("[FleetInspection] fetchData called, orgId:", orgId);
     setLoading(true);
     // Fetch vehicles scoped to org
     const vRes = await supabase
       .from("vehicles")
-      .select("id, plate_number, registration_number, status, current_mileage, truck_type")
+      .select("id, registration_number, status, current_mileage, truck_type")
       .eq("organization_id", orgId)
       .order("registration_number");
 
-    console.log("[FleetInspection] vehicles query result:", { data: vRes.data, error: vRes.error, count: vRes.data?.length });
     const orgVehicles = vRes.data || [];
     setVehicles(orgVehicles as any);
 
@@ -98,7 +96,6 @@ export default function FleetInspectionEngine() {
   }, []);
 
   useEffect(() => {
-    console.log("[FleetInspection] useEffect fired, organizationId:", organizationId);
     if (organizationId) fetchData(organizationId);
   }, [organizationId, fetchData]);
 
@@ -219,8 +216,7 @@ export default function FleetInspectionEngine() {
                   <Select value={inspVehicle} onValueChange={setInspVehicle}>
                     <SelectTrigger><SelectValue placeholder="Select Vehicle" /></SelectTrigger>
                     <SelectContent>
-                      {(() => { console.log("[FleetInspection] dropdown rendering, vehicles:", vehicles); return null; })()}
-                      {vehicles.map(v => <SelectItem key={v.id} value={v.id}>{v.registration_number || v.plate_number || v.id}</SelectItem>)}
+                      {vehicles.map(v => <SelectItem key={v.id} value={v.id}>{v.registration_number || v.id}</SelectItem>)}
                     </SelectContent>
                   </Select>
                   <Select value={inspType} onValueChange={(v: any) => setInspType(v)}>
@@ -311,7 +307,7 @@ export default function FleetInspectionEngine() {
                       <Activity className={`w-5 h-5 ${urgencyColor(p.urgency)}`} />
                     </div>
                     <div>
-                      <p className="font-semibold text-sm capitalize">{p.component} - {vehicles.find(v => v.id === p.vehicle_id)?.registration_number || vehicles.find(v => v.id === p.vehicle_id)?.plate_number || "Unknown"}</p>
+                      <p className="font-semibold text-sm capitalize">{p.component} - {vehicles.find(v => v.id === p.vehicle_id)?.registration_number || "Unknown"}</p>
                       <p className="text-xs text-muted-foreground">{p.recommended_action}</p>
                     </div>
                   </div>
