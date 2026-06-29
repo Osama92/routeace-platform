@@ -27,7 +27,6 @@ import OrderIntakeEngine from "@/components/operations/OrderIntakeEngine";
 import WaybillEngine from "@/components/operations/WaybillEngine";
 import OpsOnboardingChecklist from "@/components/operations/OpsOnboardingChecklist";
 import CreateDispatchDialog from "@/components/operations/CreateDispatchDialog";
-import CreateVehicleDialog from "@/components/operations/CreateVehicleDialog";
 import CreateDriverDialog from "@/components/operations/CreateDriverDialog";
 import {
   Truck, Users, Package, AlertTriangle, CheckCircle, Clock, MapPin,
@@ -355,7 +354,7 @@ const OpsManagerDashboardInner = () => {
       <div className="flex flex-wrap gap-2 mb-6">
         <CreateDispatchDialog />
         <CreateDriverDialog />
-        <CreateVehicleDialog />
+        <Button size="sm" variant="outline" onClick={() => navigate("/fleet")}><Truck className="w-3 h-3 mr-1" />Add Fleet</Button>
         <Button size="sm" variant="outline" onClick={() => navigate("/advanced-route-planner")}><Route className="w-3 h-3 mr-1" />Plan Route</Button>
         <Button size="sm" variant="outline" onClick={() => navigate("/customers")}><Plus className="w-3 h-3 mr-1" />Add Customer</Button>
         <Button size="sm" variant="outline" onClick={() => navigate("/approval-center")}><CheckCircle className="w-3 h-3 mr-1" />Approvals</Button>
