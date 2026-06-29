@@ -156,28 +156,32 @@ const SubscriptionManager = () => {
         </Card>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {plans.map((plan: any) => (
-          <Card key={plan.id} className={plan.popular ? "border-primary shadow-lg relative" : "relative"}>
+          <Card key={plan.id} className={`flex flex-col ${plan.popular ? "border-primary shadow-lg relative" : "relative"}`}>
             {plan.popular && (
-              <Badge className="absolute -top-3 left-1/2 -translate-x-1/2">Most Popular</Badge>
+              <Badge className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap">Most Popular</Badge>
             )}
-            <CardHeader>
-              <CardTitle>{plan.name}</CardTitle>
-              <CardDescription>
-                <span className="text-2xl font-bold text-foreground">{plan.price}</span>
-                {plan.period && <span className="text-muted-foreground">{plan.period}</span>}
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">{plan.name}</CardTitle>
+              <div className="mt-1">
+                <div className="flex items-baseline gap-1 flex-wrap">
+                  <span className="text-2xl font-bold text-foreground leading-tight">{plan.price}</span>
+                  {plan.period && (
+                    <span className="text-xs text-muted-foreground leading-tight">{plan.period}</span>
+                  )}
+                </div>
                 {plan.sub && (
-                  <span className="block text-xs text-muted-foreground mt-1">{plan.sub}</span>
+                  <p className="text-xs text-muted-foreground mt-1 leading-snug">{plan.sub}</p>
                 )}
-              </CardDescription>
+              </div>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <ul className="space-y-2">
+            <CardContent className="space-y-4 flex flex-col flex-1">
+              <ul className="space-y-2 flex-1">
                 {plan.features.map((f: string) => (
                   <li key={f} className="flex items-start gap-2 text-sm">
                     <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
-                    <span>{f}</span>
+                    <span className="leading-snug">{f}</span>
                   </li>
                 ))}
               </ul>
@@ -187,18 +191,18 @@ const SubscriptionManager = () => {
                 const notSubscribable = (plan as any).subscribable === false;
                 return (
                   <Button
-                    className="w-full"
+                    className="w-full mt-auto"
                     disabled={loading === plan.id || notSubscribable}
                     onClick={() => !notSubscribable && handleSubscribe(plan.id)}
                   >
                     {loading === plan.id ? (
                       <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Redirecting…</>
                     ) : isFree ? (
-                      <>Current - Free tier</>
+                      "Current - Free tier"
                     ) : isPerDrop ? (
-                      <>Billed per delivery</>
+                      "Billed per delivery"
                     ) : (
-                      <><Zap className="w-4 h-4 mr-2" />Subscribe - {plan.price}{plan.period}</>
+                      <><Zap className="w-4 h-4 mr-2 shrink-0" />Subscribe</>
                     )}
                   </Button>
                 );
