@@ -270,7 +270,7 @@ const FleetPage = () => {
     try {
       const insertData = {
         organization_id: organizationId ?? null,
-        registration_number: formData.registration_number,
+        registration_number: formData.registration_number.replace(/\s+/g, "").toUpperCase(),
         vehicle_type: formData.vehicle_type,
         truck_type: formData.truck_type || null,
         make: formData.make || null,

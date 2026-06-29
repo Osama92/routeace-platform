@@ -33,7 +33,7 @@ const PLAN_TABLE: Record<string, PlanDef> = {
   // Logistics Company (LC)
   starter:      { id: "starter",      monthly_base_kobo: 0,        per_drop_kobo: 0,    billing_model: "free",        db_tier: "starter",      subscribable: false },
   bikes_vans:   { id: "bikes_vans",   monthly_base_kobo: 0,        per_drop_kobo: 5_000, billing_model: "per_drop",   db_tier: "starter",      subscribable: false },
-  heavy_fleet:  { id: "heavy_fleet",  monthly_base_kobo: 100_000,  per_drop_kobo: 0,    billing_model: "per_vehicle", db_tier: "professional", subscribable: true  }, // TEST PRICE ₦1,000 — revert to 500_000
+  heavy_fleet:  { id: "heavy_fleet",  monthly_base_kobo: 500_000,  per_drop_kobo: 0,    billing_model: "per_vehicle", db_tier: "professional", subscribable: true  }, // ₦5,000 per vehicle
   mixed_fleet:  { id: "mixed_fleet",  monthly_base_kobo: 500_000,  per_drop_kobo: 5_000, billing_model: "hybrid",     db_tier: "professional", subscribable: true  },
 
   // Legacy ids kept for backward compatibility with existing callers

@@ -71,7 +71,7 @@ export const LC_PRICING_PLANS: LcPlan[] = [
   {
     id: "heavy_fleet",
     name: "Heavy Fleet / Haulage",
-    price: "₦1,000",
+    price: "₦5,000",
     period: "/vehicle/mo",
     sub: "VAT exclusive · per active vehicle",
     features: [
@@ -81,7 +81,7 @@ export const LC_PRICING_PLANS: LcPlan[] = [
       "Admin panel access",
     ],
     billingModel: "per_vehicle",
-    monthlyBaseKobo: 100_000, // ₦1,000 per vehicle (TEST PRICE — revert to 500_000)
+    monthlyBaseKobo: 500_000, // ₦5,000 per vehicle
     perDropKobo: 0,
     popular: true,
     subscribable: true,
