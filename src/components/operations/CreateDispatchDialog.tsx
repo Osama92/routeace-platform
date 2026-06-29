@@ -78,12 +78,14 @@ const CreateDispatchDialog = () => {
     enabled: open && !!organizationId && !!user?.id,
   });
 
-  // ── Customers (org-scoped, with NULL org_id fallback for pre-migration rows) ──
+  // ── Customers: fetch from customers table AND partners table, merge into one list ──
+  // partners are stored separately but can be dispatch recipients; we upsert them into
+  // customers on selection so the FK constraint on dispatches.customer_id is satisfied.
   const { data: customers } = useQuery({
     queryKey: ["ops-customers-list", organizationId],
     queryFn: async () => {
       if (!organizationId) return [];
-      const [orgRes, nullRes] = await Promise.all([
+      const [custOrgRes, custNullRes, partnersRes] = await Promise.all([
         supabase.from("customers")
           .select("id, company_name")
           .eq("organization_id", organizationId)
@@ -92,9 +94,29 @@ const CreateDispatchDialog = () => {
           .select("id, company_name")
           .is("organization_id", null)
           .order("company_name"),
+        supabase.from("partners")
+          .select("id, company_name, contact_name, contact_email, contact_phone, partner_type")
+          .eq("organization_id", organizationId)
+          .in("approval_status", ["active", "approved", "pending_sa", "pending_coo"])
+          .order("company_name"),
       ]);
-      const map = new Map<string, any>();
-      [...(orgRes.data || []), ...(nullRes.data || [])].forEach((c) => map.set(c.id, c));
+
+      // Build a set of existing customer names to avoid showing duplicates
+      const existingNames = new Set<string>();
+      const map = new Map<string, { id: string; company_name: string; _source?: string; _partner?: any }>();
+
+      [...(custOrgRes.data || []), ...(custNullRes.data || [])].forEach((c) => {
+        map.set(c.id, c);
+        existingNames.add(c.company_name.toLowerCase());
+      });
+
+      // Add partners that don't already exist as customers by name
+      (partnersRes.data || []).forEach((p: any) => {
+        if (!existingNames.has(p.company_name.toLowerCase())) {
+          map.set(`partner_${p.id}`, { id: `partner_${p.id}`, company_name: p.company_name, _source: "partner", _partner: p });
+        }
+      });
+
       return Array.from(map.values()).sort((a, b) => a.company_name.localeCompare(b.company_name));
     },
     enabled: open && !!organizationId,
@@ -206,10 +228,45 @@ const CreateDispatchDialog = () => {
       const costValue = form.cost ? parseFloat(form.cost) : null;
       const dieselNum = form.diesel_liters ? parseFloat(form.diesel_liters) : null;
 
+      // If user picked a partner (prefixed id), resolve or create a matching customers row
+      let resolvedCustomerId = form.customer_id;
+      if (form.customer_id.startsWith("partner_")) {
+        const partnerEntry = customers?.find((c) => c.id === form.customer_id) as any;
+        const p = partnerEntry?._partner;
+        if (p) {
+          // Check if a customer with this name already exists in the org
+          const { data: existing } = await supabase
+            .from("customers")
+            .select("id")
+            .eq("organization_id", organizationId)
+            .eq("company_name", p.company_name)
+            .maybeSingle();
+
+          if (existing) {
+            resolvedCustomerId = existing.id;
+          } else {
+            const { data: created, error: createErr } = await supabase
+              .from("customers")
+              .insert({
+                company_name: p.company_name,
+                contact_name: p.contact_name || p.company_name,
+                email: p.contact_email || "noreply@routeace.app",
+                phone: p.contact_phone || "N/A",
+                organization_id: organizationId,
+                created_by: user?.id,
+              })
+              .select("id")
+              .single();
+            if (createErr) throw createErr;
+            resolvedCustomerId = created!.id;
+          }
+        }
+      }
+
       const { data: disp, error } = await supabase.from("dispatches").insert([{
         dispatch_number: `DSP-${Date.now()}`,
         organization_id: organizationId,          // org isolation
-        customer_id: form.customer_id,
+        customer_id: resolvedCustomerId,
         route_id: form.route_id || null,
         pickup_address: form.pickup_address,
         delivery_address: form.delivery_address,
@@ -325,9 +382,18 @@ const CreateDispatchDialog = () => {
           <div>
             <Label>Customer *</Label>
             <Select value={form.customer_id} onValueChange={(v) => setForm((p) => ({ ...p, customer_id: v }))}>
-              <SelectTrigger><SelectValue placeholder="Select customer" /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue placeholder={customers?.length ? "Select customer or partner" : "No customers or partners added yet"} />
+              </SelectTrigger>
               <SelectContent>
-                {customers?.map((c) => <SelectItem key={c.id} value={c.id}>{c.company_name}</SelectItem>)}
+                {customers?.map((c: any) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.company_name}
+                    {c._source === "partner" && (
+                      <span className="text-muted-foreground text-xs ml-1">· Partner</span>
+                    )}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
