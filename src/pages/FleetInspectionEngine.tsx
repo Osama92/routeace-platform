@@ -62,13 +62,35 @@ export default function FleetInspectionEngine() {
   const fetchData = useCallback(async () => {
     if (!organizationId) return;
     setLoading(true);
-    const [vRes, iRes, pRes, gRes] = await Promise.all([
-      supabase.from("vehicles").select("id, plate_number, registration_number, status, current_mileage, truck_type").eq("organization_id", organizationId).order("registration_number"),
-      supabase.from("vehicle_inspections").select("*, vehicle_inspection_items(*)").eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(100),
-      supabase.from("maintenance_predictions").select("*").eq("organization_id", organizationId).is("resolved_at", null).order("failure_probability", { ascending: false }),
-      supabase.from("dispatch_safety_gates").select("*").eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(50),
+    // Fetch vehicles first so we can scope predictions/gates by vehicle_id
+    const vRes = await supabase
+      .from("vehicles")
+      .select("id, plate_number, registration_number, status, current_mileage, truck_type")
+      .eq("organization_id", organizationId)
+      .order("registration_number");
+
+    const orgVehicles = vRes.data || [];
+    if (orgVehicles.length > 0) setVehicles(orgVehicles as any);
+
+    const vehicleIds = orgVehicles.map((v: any) => v.id);
+
+    // These tables may not have organization_id — scope by vehicle_id instead
+    const [iRes, pRes, gRes] = await Promise.all([
+      supabase.from("vehicle_inspections").select("*, vehicle_inspection_items(*)")
+        .eq("organization_id", organizationId)
+        .order("created_at", { ascending: false }).limit(100),
+      vehicleIds.length
+        ? supabase.from("maintenance_predictions").select("*")
+            .in("vehicle_id", vehicleIds)
+            .is("resolved_at", null)
+            .order("failure_probability", { ascending: false })
+        : Promise.resolve({ data: [] }),
+      vehicleIds.length
+        ? supabase.from("dispatch_safety_gates").select("*")
+            .in("vehicle_id", vehicleIds)
+            .order("created_at", { ascending: false }).limit(50)
+        : Promise.resolve({ data: [] }),
     ]);
-    if (vRes.data) setVehicles(vRes.data as any);
     if (iRes.data) setInspections(iRes.data as any);
     if (pRes.data) setPredictions(pRes.data as any);
     if (gRes.data) setSafetyGates(gRes.data as any);
