@@ -7,10 +7,12 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 import { Users, Loader2, Upload, Camera, FileText, CreditCard } from "lucide-react";
 
 const CreateDriverDialog = () => {
   const { toast } = useToast();
+  const { organizationId } = useAuth();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -77,6 +79,7 @@ const CreateDriverDialog = () => {
     setSaving(true);
     try {
       const { data: inserted, error } = await supabase.from("drivers").insert({
+        organization_id: organizationId ?? null,
         full_name: form.full_name,
         email: form.email || null,
         phone: form.phone,
@@ -104,6 +107,7 @@ const CreateDriverDialog = () => {
       toast({ title: "Driver added", description: `${form.full_name} registered successfully` });
       queryClient.invalidateQueries({ queryKey: ["available-drivers"] });
       queryClient.invalidateQueries({ queryKey: ["ops-drivers-list"] });
+      queryClient.invalidateQueries({ queryKey: ["drivers"] });
       setOpen(false);
       setForm({ full_name: "", email: "", phone: "", license_number: "", license_expiry: "", driver_type: "owned", salary_type: "monthly", base_salary: "", tax_id: "", profile_picture_url: "", license_document_url: "", nin_document_url: "" });
     } catch (err: any) {
