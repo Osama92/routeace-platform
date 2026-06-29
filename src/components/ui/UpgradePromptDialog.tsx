@@ -97,7 +97,7 @@ export default function UpgradePromptDialog() {
           <div className="space-y-2 pt-1">
             <Button
               className="w-full gap-2 h-10 font-semibold bg-indigo-600 hover:bg-indigo-700 text-white"
-              onClick={() => { setOpen(false); navigate("/billing-engine"); }}
+              onClick={() => { setOpen(false); navigate("/settings?tab=billing"); }}
             >
               <Zap className="w-4 h-4" />
               View Plans & Upgrade

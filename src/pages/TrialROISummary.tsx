@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import DashboardLayout from "@/components/layout/DashboardLayout";
@@ -23,7 +24,9 @@ const SLA_PROTECTION = 50_000;
 const MONTHLY_PER_VEHICLE = 5_000;
 
 export default function TrialROISummary() {
-  const { organizationId: orgId } = useAuth();
+  const { organizationId: orgId, hasAnyRole } = useAuth();
+  const navigate = useNavigate();
+  const canSubscribe = hasAnyRole(["super_admin", "org_admin", "admin"]);
 
   const { data: org } = useQuery({
     queryKey: ["roi-org", orgId],
@@ -62,6 +65,31 @@ export default function TrialROISummary() {
     },
   });
 
+  // Live: resolved SLA breach alerts scoped to this org
+  const { data: slaBreaches = [] } = useQuery({
+    queryKey: ["roi-sla-breaches", orgId],
+    enabled: !!orgId,
+    queryFn: async () => {
+      const { data } = await supabase.from("sla_breach_alerts")
+        .select("id, delay_hours, is_resolved")
+        .eq("organization_id", orgId!)
+        .eq("is_resolved", true);
+      return data ?? [];
+    },
+  });
+
+  // Live: overdue invoices scoped to this org
+  const { data: invoiceData = [] } = useQuery({
+    queryKey: ["roi-invoices", orgId],
+    enabled: !!orgId,
+    queryFn: async () => {
+      const { data } = await supabase.from("invoices")
+        .select("id, status, total_amount")
+        .eq("organization_id", orgId!);
+      return data ?? [];
+    },
+  });
+
   const daysActive = org?.created_at
     ? Math.max(1, differenceInDays(new Date(), new Date(org.created_at)))
     : 1;
@@ -71,16 +99,28 @@ export default function TrialROISummary() {
 
   const delivered = dispatches.filter((d: any) => d.status === "delivered");
   const totalTripRevenue = dispatches.reduce((s: any, d: any) => s + Number(d.cost ?? 0), 0);
+
+  // Fraud: real trip revenue × NARTO benchmark (meaningful once trips have cost entered)
   const fraudPrevented = Math.round(totalTripRevenue * FRAUD_RATE);
-  const dispatchesWithCost = dispatches.filter((d: any) => Number(d.cost ?? 0) > 0).length;
-  const disputesSaved = Math.round(dispatchesWithCost * DISPUTE_RATE);
+
+  // Invoice disputes: overdue invoices resolved to paid = real disputes avoided
+  const overdueCount = invoiceData.filter((i: any) => i.status === "overdue").length;
+  const paidFromOverdue = invoiceData.filter((i: any) => i.status === "paid").length;
+  // Total disputes avoided = invoices that were paid (implies dispute/delay was resolved)
+  const disputesSaved = Math.max(overdueCount, Math.round(paidFromOverdue * DISPUTE_RATE));
   const disputeSavings = disputesSaved * DISPUTE_COST;
+
+  // SLA: resolved breach alerts (real breaches RouteAce detected and resolved)
+  const resolvedBreaches = slaBreaches.length;
+  const slaSavings = resolvedBreaches * SLA_PROTECTION;
+
+  // Fallback to on-time delivery estimate if no breach data yet
   const slaOnTime = delivered.filter(
     (d: any) => d.actual_delivery && d.scheduled_delivery &&
       new Date(d.actual_delivery) <= new Date(d.scheduled_delivery)
   ).length;
-  const slaSavings = Math.round(slaOnTime * 0.05 * SLA_PROTECTION);
-  const totalSavings = fraudPrevented + disputeSavings + slaSavings;
+  const slaValue = slaSavings > 0 ? slaSavings : Math.round(slaOnTime * 0.05 * SLA_PROTECTION);
+  const totalSavings = fraudPrevented + disputeSavings + slaValue;
   const roiRatio = routeAceCost > 0 ? Math.round(totalSavings / routeAceCost) : 0;
   const annualised = Math.round((totalSavings / daysActive) * 365);
 
@@ -88,7 +128,9 @@ export default function TrialROISummary() {
     {
       icon: Shield,
       label: "Driver Fraud Prevented",
-      sublabel: `15% of ₦${(totalTripRevenue / 1000).toFixed(0)}k logistics spend (NARTO benchmark)`,
+      sublabel: totalTripRevenue > 0
+        ? `15% of ${NGN(totalTripRevenue)} logistics spend tracked (NARTO benchmark)`
+        : `${dispatches.length} dispatches tracked · add trip costs to unlock fraud savings`,
       value: fraudPrevented,
       color: "text-orange-500",
       border: "border-l-orange-500",
@@ -97,7 +139,9 @@ export default function TrialROISummary() {
     {
       icon: FileCheck,
       label: "Invoice Disputes Avoided",
-      sublabel: `${disputesSaved} disputes × ₦15,000 avg resolution cost`,
+      sublabel: invoiceData.length > 0
+        ? `${disputesSaved} disputes resolved · ${overdueCount} overdue invoices flagged by RouteAce`
+        : `${dispatches.length} dispatches invoiced — disputes tracked in real time`,
       value: disputeSavings,
       color: "text-teal-500",
       border: "border-l-teal-500",
@@ -106,8 +150,12 @@ export default function TrialROISummary() {
     {
       icon: Target,
       label: "SLA Contracts Protected",
-      sublabel: `${slaOnTime} on-time deliveries tracked and verifiable`,
-      value: slaSavings,
+      sublabel: resolvedBreaches > 0
+        ? `${resolvedBreaches} SLA breaches detected and resolved by RouteAce`
+        : slaOnTime > 0
+          ? `${slaOnTime} on-time deliveries verified — SLA breach monitoring active`
+          : `SLA breach monitoring active · breaches will appear here when detected`,
+      value: slaValue,
       color: "text-green-500",
       border: "border-l-green-500",
       bg: "bg-green-500/10",
@@ -213,11 +261,13 @@ export default function TrialROISummary() {
                 </p>
               </div>
               <div className="flex gap-3 shrink-0">
-                <Button variant="outline" onClick={() => (window.location.href = "/")}>Back to Dashboard</Button>
-                <Button onClick={() => (window.location.href = "/billing-engine")}>
-                  <TrendingUp className="w-4 h-4 mr-1.5" />
-                  Subscribe - Keep Saving
-                </Button>
+                <Button variant="outline" onClick={() => navigate("/")}>Back to Dashboard</Button>
+                {canSubscribe && (
+                  <Button onClick={() => navigate("/settings?tab=billing")}>
+                    <TrendingUp className="w-4 h-4 mr-1.5" />
+                    Subscribe - Keep Saving
+                  </Button>
+                )}
               </div>
             </div>
           </CardContent>

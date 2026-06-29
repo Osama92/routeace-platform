@@ -73,7 +73,7 @@ const TrialExpiredScreen = () => {
             <div className="space-y-3">
               <Button
                 className="w-full gap-2 h-11 text-base font-semibold"
-                onClick={() => navigate("/billing-engine")}
+                onClick={() => navigate("/settings?tab=billing")}
               >
                 <Zap className="w-4 h-4" />
                 Choose a Plan

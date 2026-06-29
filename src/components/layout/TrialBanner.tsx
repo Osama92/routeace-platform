@@ -109,7 +109,7 @@ export default function TrialBanner() {
           size="sm"
           variant={btnVariant}
           className="h-7 text-xs gap-1 font-semibold"
-          onClick={() => navigate("/billing-engine")}
+          onClick={() => navigate("/settings?tab=billing")}
         >
           <Zap className="w-3.5 h-3.5" />
           Upgrade Now
