@@ -60,6 +60,7 @@ export default function FleetInspectionEngine() {
   const [submitting, setSubmitting] = useState(false);
 
   const fetchData = useCallback(async (orgId: string) => {
+    console.log("[FleetInspection] fetchData called, orgId:", orgId);
     setLoading(true);
     // Fetch vehicles scoped to org
     const vRes = await supabase
@@ -68,6 +69,7 @@ export default function FleetInspectionEngine() {
       .eq("organization_id", orgId)
       .order("registration_number");
 
+    console.log("[FleetInspection] vehicles query result:", { data: vRes.data, error: vRes.error, count: vRes.data?.length });
     const orgVehicles = vRes.data || [];
     setVehicles(orgVehicles as any);
 
@@ -96,6 +98,7 @@ export default function FleetInspectionEngine() {
   }, []);
 
   useEffect(() => {
+    console.log("[FleetInspection] useEffect fired, organizationId:", organizationId);
     if (organizationId) fetchData(organizationId);
   }, [organizationId, fetchData]);
 
@@ -215,7 +218,10 @@ export default function FleetInspectionEngine() {
                 <div className="grid grid-cols-2 gap-4">
                   <Select value={inspVehicle} onValueChange={setInspVehicle}>
                     <SelectTrigger><SelectValue placeholder="Select Vehicle" /></SelectTrigger>
-                    <SelectContent>{vehicles.map(v => <SelectItem key={v.id} value={v.id}>{v.registration_number || v.plate_number || v.id}</SelectItem>)}</SelectContent>
+                    <SelectContent>
+                      {(() => { console.log("[FleetInspection] dropdown rendering, vehicles:", vehicles); return null; })()}
+                      {vehicles.map(v => <SelectItem key={v.id} value={v.id}>{v.registration_number || v.plate_number || v.id}</SelectItem>)}
+                    </SelectContent>
                   </Select>
                   <Select value={inspType} onValueChange={(v: any) => setInspType(v)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
