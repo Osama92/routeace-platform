@@ -16,6 +16,7 @@ import {
   ArrowLeft, RefreshCw, ClipboardCheck, Ban, Gauge,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 
 // ─── Types ─────────────────────────────────────────
 interface Vehicle { id: string; plate_number: string | null; registration_number?: string | null; status: string; current_mileage: number; truck_type: string; }
@@ -43,6 +44,7 @@ const CHECKLIST_TEMPLATE = [
 
 export default function FleetInspectionEngine() {
   const navigate = useNavigate();
+  const { organizationId } = useAuth();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [inspections, setInspections] = useState<Inspection[]>([]);
   const [predictions, setPredictions] = useState<Prediction[]>([]);
@@ -58,19 +60,20 @@ export default function FleetInspectionEngine() {
   const [submitting, setSubmitting] = useState(false);
 
   const fetchData = useCallback(async () => {
+    if (!organizationId) return;
     setLoading(true);
     const [vRes, iRes, pRes, gRes] = await Promise.all([
-      supabase.from("vehicles").select("id, plate_number, registration_number, status, current_mileage, truck_type").order("plate_number"),
-      supabase.from("vehicle_inspections").select("*, vehicle_inspection_items(*)").order("created_at", { ascending: false }).limit(100),
-      supabase.from("maintenance_predictions").select("*").is("resolved_at", null).order("failure_probability", { ascending: false }),
-      supabase.from("dispatch_safety_gates").select("*").order("created_at", { ascending: false }).limit(50),
+      supabase.from("vehicles").select("id, plate_number, registration_number, status, current_mileage, truck_type").eq("organization_id", organizationId).order("registration_number"),
+      supabase.from("vehicle_inspections").select("*, vehicle_inspection_items(*)").eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(100),
+      supabase.from("maintenance_predictions").select("*").eq("organization_id", organizationId).is("resolved_at", null).order("failure_probability", { ascending: false }),
+      supabase.from("dispatch_safety_gates").select("*").eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(50),
     ]);
     if (vRes.data) setVehicles(vRes.data as any);
     if (iRes.data) setInspections(iRes.data as any);
     if (pRes.data) setPredictions(pRes.data as any);
     if (gRes.data) setSafetyGates(gRes.data as any);
     setLoading(false);
-  }, []);
+  }, [organizationId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -120,6 +123,7 @@ export default function FleetInspectionEngine() {
       if (!allChecked) status = "in_progress";
 
       const { data: insp, error } = await supabase.from("vehicle_inspections").insert({
+        organization_id: organizationId,
         vehicle_id: inspVehicle,
         inspection_type: inspType,
         status,
