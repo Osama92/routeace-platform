@@ -535,18 +535,18 @@ const FleetPage = () => {
             <EntitlementGate
               usageResource="vehicles"
               usageCurrent={vehicles.length}
-              featureLabel="Add Vehicle"
+              featureLabel="Add Fleet"
             >
               <DialogTrigger asChild>
                 <Button className="bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => resetForm()}>
                   <Plus className="w-4 h-4 mr-2" />
-                  Add Vehicle
+                  Add Fleet
                 </Button>
               </DialogTrigger>
             </EntitlementGate>
             <DialogContent className="sm:max-w-[600px]">
               <DialogHeader>
-                <DialogTitle className="font-heading">{editingVehicle ? "Edit Vehicle" : "Add New Vehicle"}</DialogTitle>
+                <DialogTitle className="font-heading">{editingVehicle ? "Edit Vehicle" : "Add Fleet"}</DialogTitle>
                 <DialogDescription>
                   {editingVehicle ? "Update vehicle details." : "Enter vehicle details and documentation."}
                 </DialogDescription>
@@ -714,7 +714,7 @@ const FleetPage = () => {
                   Cancel
                 </Button>
                 <Button onClick={handleSubmit} disabled={saving}>
-                  {saving ? "Saving..." : editingVehicle ? "Save Changes" : "Add Vehicle"}
+                  {saving ? "Saving..." : editingVehicle ? "Save Changes" : "Add Fleet"}
                 </Button>
               </DialogFooter>
             </DialogContent>
