@@ -218,7 +218,17 @@ const CreateDispatchDialog = () => {
   };
 
   const handleSubmit = async () => {
+    console.log("[CreateDispatch] Submit triggered", {
+      customer_id: form.customer_id,
+      pickup_address: form.pickup_address,
+      delivery_address: form.delivery_address,
+      vehicle_id: form.vehicle_id,
+      driver_id: form.driver_id,
+      organizationId,
+    });
+
     if (!form.customer_id || !form.pickup_address || !form.delivery_address) {
+      console.warn("[CreateDispatch] Validation failed — missing required fields");
       toast({ title: "Missing fields", description: "Customer, pickup & delivery addresses are required", variant: "destructive" });
       return;
     }
@@ -230,18 +240,24 @@ const CreateDispatchDialog = () => {
 
       // If user picked a partner (prefixed id), resolve or create a matching customers row
       let resolvedCustomerId = form.customer_id;
+      console.log("[CreateDispatch] Raw customer_id:", form.customer_id);
+
       if (form.customer_id.startsWith("partner_")) {
+        console.log("[CreateDispatch] Partner ID detected — resolving to customers table");
         const partnerEntry = customers?.find((c) => c.id === form.customer_id) as any;
         const p = partnerEntry?._partner;
+        console.log("[CreateDispatch] Partner cache entry:", partnerEntry, "| _partner:", p);
 
         if (!p) {
-          // Partner data missing from cache — fetch the raw partner ID and look up by name
+          console.warn("[CreateDispatch] _partner missing from cache — fetching from DB");
           const rawPartnerId = form.customer_id.replace("partner_", "");
-          const { data: partnerRow } = await supabase
+          const { data: partnerRow, error: partnerErr } = await supabase
             .from("partners")
             .select("id, company_name, contact_name, contact_email, contact_phone")
             .eq("id", rawPartnerId)
             .maybeSingle();
+
+          console.log("[CreateDispatch] DB partner fetch:", { partnerRow, partnerErr });
 
           if (!partnerRow) {
             toast({ title: "Customer not found", description: "Please re-select the customer and try again.", variant: "destructive" });
@@ -249,13 +265,14 @@ const CreateDispatchDialog = () => {
             return;
           }
 
-          // Check if already in customers
           const { data: existing } = await supabase
             .from("customers")
             .select("id")
             .eq("organization_id", organizationId)
             .eq("company_name", partnerRow.company_name)
             .maybeSingle();
+
+          console.log("[CreateDispatch] Existing customer match:", existing);
 
           if (existing) {
             resolvedCustomerId = existing.id;
@@ -272,17 +289,19 @@ const CreateDispatchDialog = () => {
               })
               .select("id")
               .single();
+            console.log("[CreateDispatch] Customer insert from partner (DB path):", { created, createErr });
             if (createErr) throw createErr;
             resolvedCustomerId = created!.id;
           }
         } else {
-          // Check if a customer with this name already exists in the org
           const { data: existing } = await supabase
             .from("customers")
             .select("id")
             .eq("organization_id", organizationId)
             .eq("company_name", p.company_name)
             .maybeSingle();
+
+          console.log("[CreateDispatch] Existing customer match (cache path):", existing);
 
           if (existing) {
             resolvedCustomerId = existing.id;
@@ -299,22 +318,26 @@ const CreateDispatchDialog = () => {
               })
               .select("id")
               .single();
+            console.log("[CreateDispatch] Customer insert from partner (cache path):", { created, createErr });
             if (createErr) throw createErr;
             resolvedCustomerId = created!.id;
           }
         }
       }
 
+      console.log("[CreateDispatch] Resolved customer_id:", resolvedCustomerId);
+
       // Final guard — if still not a UUID, abort cleanly
       if (!resolvedCustomerId || resolvedCustomerId.startsWith("partner_")) {
+        console.error("[CreateDispatch] Guard failed — resolvedCustomerId still invalid:", resolvedCustomerId);
         toast({ title: "Customer required", description: "Please select a valid customer before creating a dispatch.", variant: "destructive" });
         setSaving(false);
         return;
       }
 
-      const { data: disp, error } = await supabase.from("dispatches").insert([{
+      const insertPayload = {
         dispatch_number: `DSP-${Date.now()}`,
-        organization_id: organizationId,          // org isolation
+        organization_id: organizationId,
         customer_id: resolvedCustomerId,
         route_id: form.route_id || null,
         pickup_address: form.pickup_address,
@@ -335,7 +358,11 @@ const CreateDispatchDialog = () => {
         status: form.driver_id || form.transporter_id ? "assigned" : "pending",
         created_by: user?.id,
         submitted_by: user?.id,
-      } as any]).select("id").single();
+      };
+      console.log("[CreateDispatch] Insert payload:", insertPayload);
+
+      const { data: disp, error } = await supabase.from("dispatches").insert([insertPayload as any]).select("id").single();
+      console.log("[CreateDispatch] Insert result:", { disp, error });
 
       if (error) throw error;
 
@@ -369,7 +396,9 @@ const CreateDispatchDialog = () => {
       setOpen(false);
       resetForm();
     } catch (err: any) {
+      console.error("[CreateDispatch] Error caught:", { code: (err as any)?.code, message: err?.message, details: (err as any)?.details, err });
       if (isQuotaError(err)) {
+        console.warn("[CreateDispatch] Identified as quota error — showing upgrade dialog");
         emitQuotaExceeded({ resource: resourceFromError(err.message ?? ""), message: err.message ?? "" });
       } else {
         toast({ title: "Error creating dispatch", description: err.message, variant: "destructive" });
