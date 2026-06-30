@@ -22,14 +22,17 @@ export function onQuotaExceeded(handler: (detail: QuotaExceededDetail) => void) 
 
 /**
  * Returns true when a Supabase error is a DB-level quota violation (SQLSTATE P0001).
- * Checks both the PostgreSQL error code and the trigger's message text as fallbacks.
+ * Only matches the exact trigger messages emitted by check_dispatch_quota,
+ * check_user_quota, check_vehicle_quota, etc.
  */
 export function isQuotaError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const e = error as Record<string, unknown>;
+  // Only trust the exact PostgreSQL error code our triggers raise
   if (e.code === "P0001") return true;
+  // Fallback: only match the exact phrases our quota triggers emit
   const msg = String(e.message ?? "").toLowerCase();
-  return msg.includes("quota exceeded") || msg.includes("limit reached") || msg.includes("plan.");
+  return msg.includes("quota exceeded") || msg.includes("quota exceeded");
 }
 
 /** Derive resource type from the trigger error message. */

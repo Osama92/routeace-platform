@@ -56,7 +56,7 @@ export default function UpgradePromptDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="max-w-md p-0 overflow-hidden gap-0">
+      <DialogContent className="max-w-md p-0 overflow-hidden gap-0 [&>button:last-of-type]:hidden">
         {/* Header gradient */}
         <div className="bg-gradient-to-br from-indigo-600 to-violet-600 px-6 pt-6 pb-5 text-white relative">
           <button
