@@ -41,6 +41,7 @@ import {
   Route as RouteIcon,
   ArrowLeftRight,
   ArrowRight,
+  Trash2,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
@@ -279,6 +280,7 @@ const DispatchPage = () => {
 
   const canManage = hasAnyRole(["super_admin", "org_admin", "admin", "operations", "dispatcher"]);
   const canUpdateStatus = hasAnyRole(["super_admin", "org_admin", "admin", "operations", "dispatcher", "support"]);
+  const canDelete = hasAnyRole(["super_admin", "org_admin", "admin"]);
 
   const fetchData = async () => {
     try {
@@ -476,6 +478,18 @@ const DispatchPage = () => {
   });
 
   const pendingApprovalCount = dispatches.filter(d => d.approval_status === "pending").length;
+
+  const handleDeleteDispatch = async (dispatch: Dispatch) => {
+    if (!confirm(`Delete dispatch ${dispatch.dispatch_number}? This cannot be undone.`)) return;
+    try {
+      const { error } = await supabase.from("dispatches").delete().eq("id", dispatch.id);
+      if (error) throw error;
+      toast({ title: "Dispatch deleted", description: `${dispatch.dispatch_number} has been deleted.` });
+      fetchData();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  };
 
   const handleApproveDispatch = async (dispatch: Dispatch) => {
     setSaving(true);
@@ -1587,6 +1601,17 @@ const DispatchPage = () => {
                   >
                     <AlertTriangle className="w-4 h-4 mr-1" />
                     Log Delay
+                  </Button>
+                )}
+                {/* Delete — super_admin / org_admin / admin only */}
+                {canDelete && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-destructive/40 text-destructive hover:bg-destructive/10"
+                    onClick={() => handleDeleteDispatch(dispatch)}
+                  >
+                    <Trash2 className="w-4 h-4" />
                   </Button>
                 )}
                 {/* Admin Approval Buttons */}

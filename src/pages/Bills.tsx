@@ -17,8 +17,12 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   Plus, Search, FileText, Clock, CheckCircle, AlertTriangle,
-  RefreshCw, Trash2, X,
+  RefreshCw, Trash2, X, MoreVertical, Pencil, XCircle,
 } from "lucide-react";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { format, isPast, startOfMonth, endOfMonth } from "date-fns";
 
 const CATEGORIES = [
@@ -261,6 +265,30 @@ export default function BillsPage() {
     },
   });
 
+  const updateStatus = useMutation({
+    mutationFn: async ({ billId, status }: { billId: string; status: string }) => {
+      const { error } = await supabase.from("bills").update({ payment_status: status } as any).eq("id", billId);
+      if (error) throw error;
+    },
+    onSuccess: (_d, { status }) => {
+      qc.invalidateQueries({ queryKey: ["bills"] });
+      toast({ title: `Bill marked as ${status}` });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteBill = useMutation({
+    mutationFn: async (billId: string) => {
+      const { error } = await supabase.from("bills").delete().eq("id", billId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["bills"] });
+      toast({ title: "Bill deleted" });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const filtered = (bills || []).filter((b: any) =>
     b.vendor_name?.toLowerCase().includes(search.toLowerCase()) ||
     b.bill_number?.toLowerCase().includes(search.toLowerCase())
@@ -395,12 +423,36 @@ export default function BillsPage() {
                           <Badge variant="outline" className={`text-[10px] ${STATUS_COLORS[displayStatus] || ""}`}>{displayStatus}</Badge>
                         </TableCell>
                         {activeErp.connected && <TableCell className="text-xs text-muted-foreground">-</TableCell>}
-                        <TableCell>
-                          {bill.payment_status === "pending" && (
-                            <Button size="sm" variant="outline" className="h-6 text-[10px]" onClick={() => markPaid.mutate(bill.id)}>
-                              Mark Paid
-                            </Button>
-                          )}
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-7 w-7">
+                                <MoreVertical className="w-4 h-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => markPaid.mutate(bill.id)}>
+                                <CheckCircle className="w-4 h-4 mr-2 text-emerald-500" />Mark as Paid
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => updateStatus.mutate({ billId: bill.id, status: "pending" })}>
+                                <Clock className="w-4 h-4 mr-2 text-amber-500" />Mark as Pending
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => updateStatus.mutate({ billId: bill.id, status: "cancelled" })}>
+                                <XCircle className="w-4 h-4 mr-2 text-muted-foreground" />Mark as Cancelled
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => {
+                                  if (confirm(`Delete bill ${bill.bill_number}? This cannot be undone.`)) {
+                                    deleteBill.mutate(bill.id);
+                                  }
+                                }}
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />Delete Bill
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </TableCell>
                       </TableRow>
                     );

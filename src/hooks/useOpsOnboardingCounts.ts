@@ -28,7 +28,7 @@ export function useOpsOnboardingCounts() {
         sb.from("vehicles").select("id", { count: "exact", head: true }).eq("organization_id", orgFilter),
         sb.from("drivers").select("id", { count: "exact", head: true }).eq("organization_id", orgFilter),
         sb.from("dispatches").select("id", { count: "exact", head: true }).eq("organization_id", orgFilter),
-        sb.from("order_inbox").select("id", { count: "exact", head: true }).eq("organization_id", orgFilter),
+        sb.from("order_inbox").select("id", { count: "exact", head: true }).eq("status", "pending"),
         sb.from("route_plans").select("id", { count: "exact", head: true }).eq("organization_id", orgFilter),
         sb.from("waybills").select("id", { count: "exact", head: true }).eq("organization_id", orgFilter),
       ]);
