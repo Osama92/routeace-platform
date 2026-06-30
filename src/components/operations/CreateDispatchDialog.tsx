@@ -233,7 +233,49 @@ const CreateDispatchDialog = () => {
       if (form.customer_id.startsWith("partner_")) {
         const partnerEntry = customers?.find((c) => c.id === form.customer_id) as any;
         const p = partnerEntry?._partner;
-        if (p) {
+
+        if (!p) {
+          // Partner data missing from cache — fetch the raw partner ID and look up by name
+          const rawPartnerId = form.customer_id.replace("partner_", "");
+          const { data: partnerRow } = await supabase
+            .from("partners")
+            .select("id, company_name, contact_name, contact_email, contact_phone")
+            .eq("id", rawPartnerId)
+            .maybeSingle();
+
+          if (!partnerRow) {
+            toast({ title: "Customer not found", description: "Please re-select the customer and try again.", variant: "destructive" });
+            setSaving(false);
+            return;
+          }
+
+          // Check if already in customers
+          const { data: existing } = await supabase
+            .from("customers")
+            .select("id")
+            .eq("organization_id", organizationId)
+            .eq("company_name", partnerRow.company_name)
+            .maybeSingle();
+
+          if (existing) {
+            resolvedCustomerId = existing.id;
+          } else {
+            const { data: created, error: createErr } = await supabase
+              .from("customers")
+              .insert({
+                company_name: partnerRow.company_name,
+                contact_name: partnerRow.contact_name || partnerRow.company_name,
+                email: partnerRow.contact_email || "noreply@routeace.app",
+                phone: partnerRow.contact_phone || "N/A",
+                organization_id: organizationId,
+                created_by: user?.id,
+              })
+              .select("id")
+              .single();
+            if (createErr) throw createErr;
+            resolvedCustomerId = created!.id;
+          }
+        } else {
           // Check if a customer with this name already exists in the org
           const { data: existing } = await supabase
             .from("customers")
@@ -261,6 +303,13 @@ const CreateDispatchDialog = () => {
             resolvedCustomerId = created!.id;
           }
         }
+      }
+
+      // Final guard — if still not a UUID, abort cleanly
+      if (!resolvedCustomerId || resolvedCustomerId.startsWith("partner_")) {
+        toast({ title: "Customer required", description: "Please select a valid customer before creating a dispatch.", variant: "destructive" });
+        setSaving(false);
+        return;
       }
 
       const { data: disp, error } = await supabase.from("dispatches").insert([{
