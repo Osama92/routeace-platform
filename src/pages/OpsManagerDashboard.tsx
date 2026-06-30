@@ -117,8 +117,7 @@ const OpsManagerDashboardInner = () => {
     queryFn: async () => {
       const { count, error } = await (supabase.from("order_inbox") as any)
         .select("id", { count: "exact", head: true })
-        .eq("status", "pending")
-        .eq("organization_id", orgFilter);
+        .eq("status", "pending");
       if (error) throw error;
       return count || 0;
     },

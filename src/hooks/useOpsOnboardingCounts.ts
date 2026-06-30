@@ -48,7 +48,7 @@ export function useOpsOnboardingCounts() {
   useEffect(() => {
     if (!organizationId) return;
     const invalidate = () => queryClient.invalidateQueries({ queryKey });
-    const tables = ["vehicles", "drivers", "dispatches", "order_inbox", "route_plans", "waybills"];
+    const tables = ["vehicles", "drivers", "dispatches", "route_plans", "waybills"];
     const channel = supabase.channel(`ops-onboarding-${organizationId}`);
     tables.forEach((table) => {
       channel.on(
