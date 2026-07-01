@@ -145,6 +145,23 @@ export const InvoicePreviewDialog = ({ invoice, open, onClose, onStatusUpdate }:
     ? lineItems
     : [{ id: "1", description: "Logistics / Delivery Service", tonnage: "-", quantity: 1, unit_price: invoice.amount, rate: invoice.amount, vat_rate: 0, vat_amount: 0, line_total: invoice.amount, amount: invoice.amount }];
 
+  // ── Helper: load image URL → base64 dataURL via canvas (avoids CORS issues) ──
+  const loadImageAsDataUrl = (url: string): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        canvas.getContext("2d")!.drawImage(img, 0, 0);
+        resolve(canvas.toDataURL("image/png"));
+      };
+      img.onerror = () => reject(new Error(`Failed to load image: ${url}`));
+      // Cache-busting suffix forces browser to fetch fresh and respect crossOrigin
+      img.src = url.includes("?") ? `${url}&_cb=${Date.now()}` : `${url}?_cb=${Date.now()}`;
+    });
+
   // ─── PDF generation matching Glyde invoice style ─────────────────────────
   const generatePDF = async (): Promise<jsPDF> => {
     const doc = new jsPDF({ unit: "mm", format: "a4" });
@@ -156,16 +173,8 @@ export const InvoicePreviewDialog = ({ invoice, open, onClose, onStatusUpdate }:
     // ── Logo (top-left) ──────────────────────────────────────────────────────
     if (cs?.logo_url) {
       try {
-        const resp = await fetch(cs.logo_url);
-        const blob = await resp.blob();
-        const dataUrl = await new Promise<string>((res, rej) => {
-          const fr = new FileReader();
-          fr.onload = () => res(fr.result as string);
-          fr.onerror = rej;
-          fr.readAsDataURL(blob);
-        });
-        const ext = cs.logo_url.split(".").pop()?.toUpperCase() as "PNG" | "JPEG" | "JPG" || "PNG";
-        doc.addImage(dataUrl, ext === "JPG" ? "JPEG" : ext, marginL, y, 30, 30);
+        const dataUrl = await loadImageAsDataUrl(cs.logo_url);
+        doc.addImage(dataUrl, "PNG", marginL, y, 30, 30);
       } catch { /* skip if logo fails */ }
     }
 
@@ -352,14 +361,7 @@ export const InvoicePreviewDialog = ({ invoice, open, onClose, onStatusUpdate }:
     // ── Signature ────────────────────────────────────────────────────────────
     if (cs?.signature_url) {
       try {
-        const resp = await fetch(cs.signature_url);
-        const blob = await resp.blob();
-        const dataUrl = await new Promise<string>((res, rej) => {
-          const fr = new FileReader();
-          fr.onload = () => res(fr.result as string);
-          fr.onerror = rej;
-          fr.readAsDataURL(blob);
-        });
+        const dataUrl = await loadImageAsDataUrl(cs.signature_url);
         const sigY = Math.max(y + 8, 240);
         doc.addImage(dataUrl, "PNG", marginL, sigY, 35, 18);
         doc.setFont("helvetica", "normal");
