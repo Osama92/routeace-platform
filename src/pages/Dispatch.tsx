@@ -42,6 +42,7 @@ import {
   ArrowLeftRight,
   ArrowRight,
   Trash2,
+  History,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
@@ -177,6 +178,7 @@ const DispatchPage = () => {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
+  const [isHistoryDialogOpen, setIsHistoryDialogOpen] = useState(false);
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedDispatch, setSelectedDispatch] = useState<Dispatch | null>(null);
@@ -260,6 +262,17 @@ const DispatchPage = () => {
       .order("created_at", { ascending: true })
       .then(({ data }) => setStatusHistory(data || []));
   }, [isStatusDialogOpen, selectedDispatch?.id]);
+
+  // Also load history when the read-only history dialog opens
+  useEffect(() => {
+    if (!isHistoryDialogOpen || !selectedDispatch) { setStatusHistory([]); return; }
+    supabase
+      .from("delivery_updates")
+      .select("*")
+      .eq("dispatch_id", selectedDispatch.id)
+      .order("created_at", { ascending: true })
+      .then(({ data }) => setStatusHistory(data || []));
+  }, [isHistoryDialogOpen, selectedDispatch?.id]);
 
   const [dropoffs, setDropoffs] = useState<Dropoff[]>([]);
   
@@ -1603,6 +1616,22 @@ const DispatchPage = () => {
                     Log Delay
                   </Button>
                 )}
+                {/* View History — all canUpdateStatus users, on any dispatch */}
+                {canUpdateStatus && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={() => {
+                      setSelectedDispatch(dispatch);
+                      setStatusHistory([]);
+                      setIsHistoryDialogOpen(true);
+                    }}
+                  >
+                    <History className="w-4 h-4 mr-1" />
+                    History
+                  </Button>
+                )}
                 {/* Delete — super_admin / org_admin / admin only */}
                 {canDelete && (
                   <Button
@@ -1645,6 +1674,92 @@ const DispatchPage = () => {
           ))}
         </div>
       )}
+
+      {/* Dispatch Status History Dialog (read-only) */}
+      <Dialog open={isHistoryDialogOpen} onOpenChange={setIsHistoryDialogOpen}>
+        <DialogContent className="sm:max-w-[500px] max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-heading flex items-center gap-2">
+              <History className="w-4 h-4" />
+              Dispatch Journey
+            </DialogTitle>
+            <DialogDescription>
+              {selectedDispatch?.dispatch_number} · Full status update history
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Dispatch meta */}
+          {selectedDispatch && (
+            <div className="flex items-center gap-3 py-2 px-3 rounded-lg bg-secondary/40 text-sm mb-1">
+              <MapPin className="w-4 h-4 text-muted-foreground shrink-0" />
+              <span className="truncate text-muted-foreground">
+                {selectedDispatch.pickup_address?.split(",")[0]} → {selectedDispatch.delivery_address?.split(",")[0]}
+              </span>
+              <Badge variant="outline" className="ml-auto shrink-0 text-xs capitalize">
+                {selectedDispatch.status?.replace("_", " ")}
+              </Badge>
+            </div>
+          )}
+
+          {statusHistory.length === 0 ? (
+            <div className="text-center py-10 text-muted-foreground text-sm">
+              No status updates recorded yet for this dispatch.
+            </div>
+          ) : (
+            <div className="relative pl-5 mt-2">
+              <div className="absolute left-2 top-2 bottom-2 w-px bg-border" />
+              <div className="space-y-4">
+                {statusHistory.map((upd, idx) => {
+                  const isLatest = idx === statusHistory.length - 1;
+                  const dotColor =
+                    upd.status === "delivered" ? "bg-green-500" :
+                    upd.status === "cancelled" ? "bg-red-500" :
+                    upd.status === "delayed" ? "bg-yellow-500" :
+                    upd.status === "in_transit" ? "bg-blue-500" :
+                    upd.status === "picked_up" ? "bg-cyan-500" :
+                    "bg-muted-foreground";
+                  const statusLabel: Record<string, string> = {
+                    assigned: "Assigned to Driver",
+                    picked_up: "Picked Up",
+                    in_transit: "In Transit",
+                    delayed: "Delayed",
+                    delivered: "Delivered",
+                    cancelled: "Cancelled",
+                  };
+                  return (
+                    <div key={upd.id} className="relative">
+                      <div className={`absolute -left-[13px] top-1 w-3 h-3 rounded-full border-2 border-background ${dotColor} ${isLatest ? "ring-2 ring-primary/30" : ""}`} />
+                      <div className={`rounded-lg p-3 text-sm ${isLatest ? "bg-primary/5 border border-primary/20" : "bg-muted/40"}`}>
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <span className="font-semibold text-foreground">{statusLabel[upd.status] ?? upd.status}</span>
+                          <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                            {new Date(upd.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                            {" · "}
+                            {new Date(upd.created_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                        </div>
+                        {upd.location && (
+                          <div className="flex items-center gap-1 mt-1 text-muted-foreground">
+                            <MapPin className="w-3 h-3 shrink-0" />
+                            <span className="truncate text-xs">{upd.location}</span>
+                          </div>
+                        )}
+                        {upd.notes && (
+                          <p className="mt-1 text-xs text-muted-foreground/80 italic">{upd.notes}</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setIsHistoryDialogOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Status Update Dialog */}
       <Dialog open={isStatusDialogOpen} onOpenChange={(open) => { setIsStatusDialogOpen(open); if (!open) { setLocationSuggestions([]); setShowLocationDropdown(false); } }}>

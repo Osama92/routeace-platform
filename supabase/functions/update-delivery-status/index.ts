@@ -320,13 +320,22 @@ const handler = async (req: Request): Promise<Response> => {
           console.log("Status update email sent:", emailResponse);
           emailSent = true;
 
-          await supabase
+          // Select the most-recent delivery_update row for this dispatch+status, then update it.
+          // .order()/.limit() are not valid on update() in Supabase JS, so we do a select first.
+          const { data: latestUpdate } = await supabase
             .from("delivery_updates")
-            .update({ email_sent: true })
+            .select("id")
             .eq("dispatch_id", dispatch_id)
             .eq("status", status)
             .order("created_at", { ascending: false })
-            .limit(1);
+            .limit(1)
+            .maybeSingle();
+          if ((latestUpdate as any)?.id) {
+            await supabase
+              .from("delivery_updates")
+              .update({ email_sent: true })
+              .eq("id", (latestUpdate as any).id);
+          }
 
           await supabase.from("email_notifications").insert({
             dispatch_id,

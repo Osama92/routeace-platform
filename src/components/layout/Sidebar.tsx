@@ -83,6 +83,8 @@ const dashboardSection: NavSection = {
     { name: "Customer Portal", href: "/customer-portal", icon: Package, roles: ["customer", "super_admin", "org_admin", "admin", "ops_manager", "support"] },
     { name: "Overview", href: "/", icon: LayoutDashboard, roles: ["admin", "operations", "support", "dispatcher", "super_admin", "org_admin", "ops_manager", "finance_manager"] },
     { name: "Control Center", href: "/control-center", icon: Cpu, roles: ["admin", "super_admin", "org_admin"] },
+    // Support users see their primary workspace (Support Center) directly in the Dashboard section
+    { name: "Support Center", href: "/support-center", icon: Headphones, roles: ["support"], region: "BOTH" },
     // NOTE: 'customer' role intentionally excluded from above - they only see Customer Portal entry above
   ],
 };
@@ -194,7 +196,7 @@ const partnersSection: NavSection = {
     { name: "3PL Transporter Roster", href: "/dept/transporters", icon: Truck, roles: ["admin", "super_admin", "org_admin"] },
     { name: "Vendor Performance", href: "/vendor-performance", icon: TrendingUp, roles: ["admin", "super_admin", "org_admin"] },
     { name: "Staff", href: "/staff", icon: Briefcase, roles: ["admin", "super_admin", "org_admin"] },
-    { name: "Support Center", href: "/support-center", icon: Headphones, roles: ["admin", "super_admin", "org_admin", "support"], region: "BOTH" },
+    { name: "Support Center", href: "/support-center", icon: Headphones, roles: ["admin", "super_admin", "org_admin"], region: "BOTH" },
   ],
 };
 
@@ -348,7 +350,7 @@ const DEPT_ADMIN_SECTION: NavSection = {
     { name: "Team Management", href: "/users", icon: Users, roles: ["super_admin", "org_admin"] },
     { name: "Integrations", href: "/finance-integrations", icon: Zap, roles: ["super_admin", "org_admin"] },
     { name: "Jaggaer Integration", href: "/dept/jaggaer", icon: Zap, roles: ["super_admin", "org_admin"] },
-    { name: "Support Center", href: "/support-center", icon: Headphones, roles: ["super_admin", "org_admin", "support"] },
+    { name: "Support Center", href: "/support-center", icon: Headphones, roles: ["super_admin", "org_admin"] },
     { name: "Analytics", href: "/admin-analytics", icon: PieChart, roles: ["super_admin", "org_admin", "finance_manager"] },
     { name: "Settings", href: "/settings", icon: Settings, roles: ["super_admin", "org_admin"] },
   ],
