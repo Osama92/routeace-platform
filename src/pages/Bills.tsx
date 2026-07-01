@@ -328,52 +328,52 @@ export default function BillsPage() {
       <Card className="mb-4">
         <CardContent className="py-3 flex items-center gap-3 flex-wrap">
           {/* Date range */}
-          <div className="flex items-center gap-1 text-xs">
-            <FileText className="w-3.5 h-3.5 text-muted-foreground" />
+          <div className="flex items-center gap-2 text-sm">
+            <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
             <Select value={String(filterMonth)} onValueChange={v => setFilterMonth(Number(v))}>
-              <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>{months.map((m, i) => <SelectItem key={i} value={String(i)} className="text-xs">{m}</SelectItem>)}</SelectContent>
+              <SelectTrigger className="w-[120px] h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>{months.map((m, i) => <SelectItem key={i} value={String(i)}>{m}</SelectItem>)}</SelectContent>
             </Select>
             <Select value={String(filterYear)} onValueChange={v => setFilterYear(Number(v))}>
-              <SelectTrigger className="w-[80px] h-8 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>{[2024,2025,2026,2027].map(y => <SelectItem key={y} value={String(y)} className="text-xs">{y}</SelectItem>)}</SelectContent>
+              <SelectTrigger className="w-[88px] h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>{[2024,2025,2026,2027].map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}</SelectContent>
             </Select>
             <span className="text-muted-foreground">→</span>
             <Select value={String(filterEndMonth)} onValueChange={v => setFilterEndMonth(Number(v))}>
-              <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>{months.map((m, i) => <SelectItem key={i} value={String(i)} className="text-xs">{m}</SelectItem>)}</SelectContent>
+              <SelectTrigger className="w-[120px] h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>{months.map((m, i) => <SelectItem key={i} value={String(i)}>{m}</SelectItem>)}</SelectContent>
             </Select>
             <Select value={String(filterEndYear)} onValueChange={v => setFilterEndYear(Number(v))}>
-              <SelectTrigger className="w-[80px] h-8 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>{[2024,2025,2026,2027].map(y => <SelectItem key={y} value={String(y)} className="text-xs">{y}</SelectItem>)}</SelectContent>
+              <SelectTrigger className="w-[88px] h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>{[2024,2025,2026,2027].map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}</SelectContent>
             </Select>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setFilterMonth(now.getMonth()); setFilterYear(now.getFullYear()); setFilterEndMonth(now.getMonth()); setFilterEndYear(now.getFullYear()); }}>
-              <X className="w-3.5 h-3.5" />
+            <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={() => { setFilterMonth(now.getMonth()); setFilterYear(now.getFullYear()); setFilterEndMonth(now.getMonth()); setFilterEndYear(now.getFullYear()); }}>
+              <X className="w-4 h-4" />
             </Button>
           </div>
 
-          <div className="relative flex-1 min-w-[180px]">
-            <Search className="absolute left-2.5 top-2 w-3.5 h-3.5 text-muted-foreground" />
-            <Input placeholder="Search vendor or bill #..." className="pl-8 h-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} />
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
+            <Input placeholder="Search vendor or bill #..." className="pl-9 h-9 text-sm" value={search} onChange={e => setSearch(e.target.value)} />
           </div>
 
           <Select value={filterStatus} onValueChange={setFilterStatus}>
-            <SelectTrigger className="w-[130px] h-8 text-xs"><SelectValue placeholder="All Statuses" /></SelectTrigger>
+            <SelectTrigger className="w-[150px] h-9 text-sm"><SelectValue placeholder="All Statuses" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all" className="text-xs">All Statuses</SelectItem>
-              <SelectItem value="pending" className="text-xs">Pending</SelectItem>
-              <SelectItem value="paid" className="text-xs">Paid</SelectItem>
-              <SelectItem value="overdue" className="text-xs">Overdue</SelectItem>
+              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="paid">Paid</SelectItem>
+              <SelectItem value="overdue">Overdue</SelectItem>
             </SelectContent>
           </Select>
 
           {activeErp.connected && (
-            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5">
-              <RefreshCw className="w-3 h-3" /> Pull from {activeErp.name}
+            <Button variant="outline" className="h-9 gap-2">
+              <RefreshCw className="w-4 h-4" /> Pull from {activeErp.name}
             </Button>
           )}
-          <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => setCreateOpen(true)}>
-            <Plus className="w-3 h-3" /> New Bill
+          <Button className="h-9 gap-2" onClick={() => setCreateOpen(true)}>
+            <Plus className="w-4 h-4" /> New Bill
           </Button>
         </CardContent>
       </Card>
@@ -387,22 +387,22 @@ export default function BillsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-xs text-primary">Vendor</TableHead>
-                  <TableHead className="text-xs text-primary">Bill #</TableHead>
-                  <TableHead className="text-xs text-primary">Bill Date</TableHead>
-                  <TableHead className="text-xs text-primary">Due Date</TableHead>
-                  <TableHead className="text-xs text-primary text-right whitespace-nowrap min-w-[110px]">Amount</TableHead>
-                  <TableHead className="text-xs text-primary text-right whitespace-nowrap min-w-[100px]">Paid</TableHead>
-                  <TableHead className="text-xs text-primary text-right whitespace-nowrap min-w-[100px]">Balance</TableHead>
-                  <TableHead className="text-xs text-primary">Status</TableHead>
-                  {activeErp.connected && <TableHead className="text-xs text-primary">{activeErp.name}</TableHead>}
-                  <TableHead className="text-xs text-primary">Actions</TableHead>
+                  <TableHead className="text-sm font-semibold text-primary whitespace-nowrap">Vendor</TableHead>
+                  <TableHead className="text-sm font-semibold text-primary whitespace-nowrap">Bill #</TableHead>
+                  <TableHead className="text-sm font-semibold text-primary whitespace-nowrap">Bill Date</TableHead>
+                  <TableHead className="text-sm font-semibold text-primary whitespace-nowrap">Due Date</TableHead>
+                  <TableHead className="text-sm font-semibold text-primary text-right whitespace-nowrap min-w-[130px]">Amount</TableHead>
+                  <TableHead className="text-sm font-semibold text-primary text-right whitespace-nowrap min-w-[120px]">Paid</TableHead>
+                  <TableHead className="text-sm font-semibold text-primary text-right whitespace-nowrap min-w-[120px]">Balance</TableHead>
+                  <TableHead className="text-sm font-semibold text-primary whitespace-nowrap">Status</TableHead>
+                  {activeErp.connected && <TableHead className="text-sm font-semibold text-primary whitespace-nowrap">{activeErp.name}</TableHead>}
+                  <TableHead className="text-sm font-semibold text-primary whitespace-nowrap">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground text-sm">No bills found</TableCell>
+                    <TableCell colSpan={10} className="text-center py-10 text-muted-foreground text-base">No bills found</TableCell>
                   </TableRow>
                 ) : (
                   filtered.map((bill: any) => {
@@ -412,21 +412,21 @@ export default function BillsPage() {
                     const balance = (bill.total_amount || 0) - paidAmt;
                     return (
                       <TableRow key={bill.id}>
-                        <TableCell className="text-xs font-medium">{bill.vendor_name}</TableCell>
-                        <TableCell className="text-xs font-mono">{bill.bill_number}</TableCell>
-                        <TableCell className="text-xs whitespace-nowrap">{bill.bill_date ? format(new Date(bill.bill_date), "MM/dd/yyyy") : "-"}</TableCell>
-                        <TableCell className="text-xs whitespace-nowrap">{bill.due_date ? format(new Date(bill.due_date), "MM/dd/yyyy") : "-"}</TableCell>
-                        <TableCell className="text-xs text-right font-mono whitespace-nowrap tabular-nums">₦{(bill.total_amount || 0).toLocaleString()}</TableCell>
-                        <TableCell className="text-xs text-right font-mono whitespace-nowrap tabular-nums text-emerald-500">₦{paidAmt.toLocaleString()}</TableCell>
-                        <TableCell className="text-xs text-right font-mono whitespace-nowrap tabular-nums">{balance > 0 ? `₦${balance.toLocaleString()}` : "-"}</TableCell>
+                        <TableCell className="text-sm font-medium whitespace-nowrap">{bill.vendor_name}</TableCell>
+                        <TableCell className="text-sm font-mono whitespace-nowrap">{bill.bill_number}</TableCell>
+                        <TableCell className="text-sm whitespace-nowrap">{bill.bill_date ? format(new Date(bill.bill_date), "dd MMM yyyy") : "-"}</TableCell>
+                        <TableCell className="text-sm whitespace-nowrap">{bill.due_date ? format(new Date(bill.due_date), "dd MMM yyyy") : "-"}</TableCell>
+                        <TableCell className="text-sm text-right font-mono whitespace-nowrap tabular-nums">₦{(bill.total_amount || 0).toLocaleString()}</TableCell>
+                        <TableCell className="text-sm text-right font-mono whitespace-nowrap tabular-nums text-emerald-500">₦{paidAmt.toLocaleString()}</TableCell>
+                        <TableCell className="text-sm text-right font-mono whitespace-nowrap tabular-nums">{balance > 0 ? `₦${balance.toLocaleString()}` : "-"}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={`text-[10px] ${STATUS_COLORS[displayStatus] || ""}`}>{displayStatus}</Badge>
+                          <Badge variant="outline" className={`text-xs px-2 py-0.5 capitalize ${STATUS_COLORS[displayStatus] || ""}`}>{displayStatus}</Badge>
                         </TableCell>
-                        {activeErp.connected && <TableCell className="text-xs text-muted-foreground">-</TableCell>}
+                        {activeErp.connected && <TableCell className="text-sm text-muted-foreground">-</TableCell>}
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-7 w-7">
+                              <Button variant="ghost" size="icon" className="h-8 w-8">
                                 <MoreVertical className="w-4 h-4" />
                               </Button>
                             </DropdownMenuTrigger>
@@ -467,117 +467,117 @@ export default function BillsPage() {
       {/* ─── Create Bill Dialog (Full Form) ─── */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="w-screen h-screen max-w-none max-h-none m-0 rounded-none flex flex-col overflow-hidden p-0">
-          <DialogHeader className="px-6 pt-5 pb-4 border-b shrink-0">
-            <DialogTitle className="text-lg">Create New Bill</DialogTitle>
+          <DialogHeader className="px-8 pt-6 pb-5 border-b shrink-0">
+            <DialogTitle className="text-xl">Create New Bill</DialogTitle>
           </DialogHeader>
-          <div className="flex-1 overflow-y-auto px-6 py-5">
-          <div className="max-w-5xl mx-auto space-y-5">
+          <div className="flex-1 overflow-y-auto px-8 py-6">
+          <div className="max-w-6xl mx-auto space-y-6">
 
           {/* Vendor */}
           <div>
-            <Label className="text-xs font-semibold">Vendor Name *</Label>
+            <Label className="text-sm font-semibold">Vendor Name *</Label>
             <Select value={form.vendor_name} onValueChange={v => setForm(f => ({ ...f, vendor_name: v }))}>
-              <SelectTrigger className="mt-1"><SelectValue placeholder="Select a Vendor" /></SelectTrigger>
+              <SelectTrigger className="mt-1.5 h-10 text-sm"><SelectValue placeholder="Select a Vendor" /></SelectTrigger>
               <SelectContent>
                 {(vendors || []).map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}
                 <SelectItem value="__new">+ Add new vendor</SelectItem>
               </SelectContent>
             </Select>
             {form.vendor_name === "__new" && (
-              <Input className="mt-2 text-xs" placeholder="Enter vendor name" onChange={e => setForm(f => ({ ...f, vendor_name: e.target.value }))} />
+              <Input className="mt-2 text-sm h-10" placeholder="Enter vendor name" onChange={e => setForm(f => ({ ...f, vendor_name: e.target.value }))} />
             )}
           </div>
 
           {/* Bill # and Order # */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-5">
             <div>
-              <Label className="text-xs font-semibold">Bill # *</Label>
-              <Input className="mt-1 text-xs" placeholder="e.g. BILL-2026-001" value={form.bill_number} onChange={e => setForm(f => ({ ...f, bill_number: e.target.value }))} />
+              <Label className="text-sm font-semibold">Bill # *</Label>
+              <Input className="mt-1.5 h-10 text-sm" placeholder="e.g. BILL-2026-001" value={form.bill_number} onChange={e => setForm(f => ({ ...f, bill_number: e.target.value }))} />
             </div>
             <div>
-              <Label className="text-xs font-semibold">Order Number</Label>
-              <Input className="mt-1 text-xs" placeholder="Purchase order reference" value={form.order_number} onChange={e => setForm(f => ({ ...f, order_number: e.target.value }))} />
+              <Label className="text-sm font-semibold">Order Number</Label>
+              <Input className="mt-1.5 h-10 text-sm" placeholder="Purchase order reference" value={form.order_number} onChange={e => setForm(f => ({ ...f, order_number: e.target.value }))} />
             </div>
           </div>
 
           {/* Dates + Payment Terms */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-3 gap-5">
             <div>
-              <Label className="text-xs font-semibold">Bill Date *</Label>
-              <Input type="date" className="mt-1 text-xs" value={form.bill_date} onChange={e => setForm(f => ({ ...f, bill_date: e.target.value }))} />
+              <Label className="text-sm font-semibold">Bill Date *</Label>
+              <Input type="date" className="mt-1.5 h-10 text-sm" value={form.bill_date} onChange={e => setForm(f => ({ ...f, bill_date: e.target.value }))} />
             </div>
             <div>
-              <Label className="text-xs font-semibold">Due Date</Label>
-              <Input type="date" className="mt-1 text-xs" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} />
+              <Label className="text-sm font-semibold">Due Date</Label>
+              <Input type="date" className="mt-1.5 h-10 text-sm" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} />
             </div>
             <div>
-              <Label className="text-xs font-semibold">Payment Terms</Label>
+              <Label className="text-sm font-semibold">Payment Terms</Label>
               <Select value={form.payment_terms} onValueChange={v => setForm(f => ({ ...f, payment_terms: v }))}>
-                <SelectTrigger className="mt-1 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>{PAYMENT_TERMS.map(t => <SelectItem key={t.value} value={t.value} className="text-xs">{t.label}</SelectItem>)}</SelectContent>
+                <SelectTrigger className="mt-1.5 h-10 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>{PAYMENT_TERMS.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</SelectContent>
               </Select>
             </div>
           </div>
 
           {/* Item Table */}
           <div>
-            <Label className="text-xs font-semibold mb-2 block">Item Table</Label>
+            <Label className="text-sm font-semibold mb-3 block">Item Table</Label>
             <div className="border rounded-lg overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="text-xs text-primary min-w-[160px]">Item Details</TableHead>
-                    <TableHead className="text-xs text-primary min-w-[120px]">Account</TableHead>
-                    <TableHead className="text-xs text-primary min-w-[90px]">Tonnage</TableHead>
-                    <TableHead className="text-xs text-primary w-16">Qty</TableHead>
-                    <TableHead className="text-xs text-primary min-w-[120px]">Rate (₦)</TableHead>
-                    <TableHead className="text-xs text-primary min-w-[90px]">VAT</TableHead>
-                    <TableHead className="text-xs text-primary min-w-[120px]">Customer</TableHead>
-                    <TableHead className="text-xs text-primary text-right min-w-[110px] whitespace-nowrap">Amount</TableHead>
-                    <TableHead className="w-8"></TableHead>
+                    <TableHead className="text-sm font-semibold text-primary min-w-[200px] whitespace-nowrap">Item Details</TableHead>
+                    <TableHead className="text-sm font-semibold text-primary min-w-[150px] whitespace-nowrap">Account</TableHead>
+                    <TableHead className="text-sm font-semibold text-primary min-w-[110px] whitespace-nowrap">Tonnage</TableHead>
+                    <TableHead className="text-sm font-semibold text-primary w-20 whitespace-nowrap">Qty</TableHead>
+                    <TableHead className="text-sm font-semibold text-primary min-w-[140px] whitespace-nowrap">Rate (₦)</TableHead>
+                    <TableHead className="text-sm font-semibold text-primary min-w-[120px] whitespace-nowrap">VAT</TableHead>
+                    <TableHead className="text-sm font-semibold text-primary min-w-[160px] whitespace-nowrap">Customer</TableHead>
+                    <TableHead className="text-sm font-semibold text-primary text-right min-w-[140px] whitespace-nowrap">Amount</TableHead>
+                    <TableHead className="w-10"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {lines.map(line => (
                     <TableRow key={line.id}>
-                      <TableCell className="p-1">
-                        <Input className="h-8 text-xs border-0 bg-transparent" placeholder="Type or describe item" value={line.item_details} onChange={e => updateLine(line.id, "item_details", e.target.value)} />
+                      <TableCell className="p-1.5">
+                        <Input className="h-9 text-sm border-0 bg-transparent" placeholder="Type or describe item" value={line.item_details} onChange={e => updateLine(line.id, "item_details", e.target.value)} />
                       </TableCell>
-                      <TableCell className="p-1">
+                      <TableCell className="p-1.5">
                         <Select value={line.account} onValueChange={v => updateLine(line.id, "account", v)}>
-                          <SelectTrigger className="h-8 text-xs border-0"><SelectValue placeholder="Select..." /></SelectTrigger>
-                          <SelectContent>{ACCOUNTS.map(a => <SelectItem key={a} value={a} className="text-xs">{a}</SelectItem>)}</SelectContent>
+                          <SelectTrigger className="h-9 text-sm border-0"><SelectValue placeholder="Select..." /></SelectTrigger>
+                          <SelectContent>{ACCOUNTS.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}</SelectContent>
                         </Select>
                       </TableCell>
-                      <TableCell className="p-1">
+                      <TableCell className="p-1.5">
                         <Select value={line.tonnage} onValueChange={v => updateLine(line.id, "tonnage", v)}>
-                          <SelectTrigger className="h-8 text-xs border-0"><SelectValue placeholder="Select..." /></SelectTrigger>
-                          <SelectContent>{TONNAGE_OPTIONS.map(t => <SelectItem key={t} value={t} className="text-xs">{t}</SelectItem>)}</SelectContent>
+                          <SelectTrigger className="h-9 text-sm border-0"><SelectValue placeholder="Select..." /></SelectTrigger>
+                          <SelectContent>{TONNAGE_OPTIONS.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
                         </Select>
                       </TableCell>
-                      <TableCell className="p-1">
-                        <Input type="number" className="h-8 text-xs border-0 bg-transparent w-14" value={line.quantity} onChange={e => updateLine(line.id, "quantity", Number(e.target.value))} />
+                      <TableCell className="p-1.5">
+                        <Input type="number" className="h-9 text-sm border-0 bg-transparent w-16" value={line.quantity} onChange={e => updateLine(line.id, "quantity", Number(e.target.value))} />
                       </TableCell>
-                      <TableCell className="p-1">
-                        <Input type="number" className="h-8 text-xs border-0 bg-transparent min-w-[100px]" value={line.rate} onChange={e => updateLine(line.id, "rate", Number(e.target.value))} />
+                      <TableCell className="p-1.5">
+                        <Input type="number" className="h-9 text-sm border-0 bg-transparent min-w-[120px]" value={line.rate} onChange={e => updateLine(line.id, "rate", Number(e.target.value))} />
                       </TableCell>
-                      <TableCell className="p-1">
+                      <TableCell className="p-1.5">
                         <Select value={line.vat_type} onValueChange={v => updateLine(line.id, "vat_type", v)}>
-                          <SelectTrigger className="h-8 text-xs border-0"><SelectValue /></SelectTrigger>
-                          <SelectContent>{VAT_OPTIONS.map(v => <SelectItem key={v.value} value={v.value} className="text-xs">{v.label}</SelectItem>)}</SelectContent>
+                          <SelectTrigger className="h-9 text-sm border-0"><SelectValue /></SelectTrigger>
+                          <SelectContent>{VAT_OPTIONS.map(v => <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>)}</SelectContent>
                         </Select>
                       </TableCell>
-                      <TableCell className="p-1">
+                      <TableCell className="p-1.5">
                         <Select value={line.customer_id} onValueChange={v => updateLine(line.id, "customer_id", v)}>
-                          <SelectTrigger className="h-8 text-xs border-0"><SelectValue placeholder="Select..." /></SelectTrigger>
-                          <SelectContent>{(customers || []).map((c: any) => <SelectItem key={c.id} value={c.id} className="text-xs">{c.company_name}</SelectItem>)}</SelectContent>
+                          <SelectTrigger className="h-9 text-sm border-0"><SelectValue placeholder="Select..." /></SelectTrigger>
+                          <SelectContent>{(customers || []).map((c: any) => <SelectItem key={c.id} value={c.id}>{c.company_name}</SelectItem>)}</SelectContent>
                         </Select>
                       </TableCell>
-                      <TableCell className="p-1 text-right text-xs font-mono whitespace-nowrap tabular-nums">₦{calcLineAmount(line).toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
-                      <TableCell className="p-1">
+                      <TableCell className="p-1.5 text-right text-sm font-mono whitespace-nowrap tabular-nums">₦{calcLineAmount(line).toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                      <TableCell className="p-1.5">
                         {lines.length > 1 && (
-                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setLines(prev => prev.filter(l => l.id !== line.id))}>
-                            <Trash2 className="w-3 h-3 text-destructive" />
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setLines(prev => prev.filter(l => l.id !== line.id))}>
+                            <Trash2 className="w-4 h-4 text-destructive" />
                           </Button>
                         )}
                       </TableCell>
@@ -586,51 +586,51 @@ export default function BillsPage() {
                 </TableBody>
               </Table>
             </div>
-            <Button variant="ghost" size="sm" className="mt-2 text-xs text-primary" onClick={() => setLines(prev => [...prev, emptyLine()])}>
-              <Plus className="w-3 h-3 mr-1" /> Add New Row
+            <Button variant="ghost" size="sm" className="mt-2 text-sm text-primary" onClick={() => setLines(prev => [...prev, emptyLine()])}>
+              <Plus className="w-4 h-4 mr-1" /> Add New Row
             </Button>
           </div>
 
           {/* Totals */}
           <div className="flex justify-end">
-            <div className="w-[320px] space-y-2 text-xs">
+            <div className="w-[380px] space-y-3 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Sub Total</span>
                 <span className="font-mono font-semibold">₦{subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
               </div>
               <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">Discount</span>
-                <div className="flex items-center gap-1">
-                  <Input type="number" className="h-7 w-16 text-xs text-right" value={form.discount_percent} onChange={e => setForm(f => ({ ...f, discount_percent: Number(e.target.value) }))} />
+                <span className="text-muted-foreground whitespace-nowrap">Discount</span>
+                <div className="flex items-center gap-2">
+                  <Input type="number" className="h-8 w-20 text-sm text-right" value={form.discount_percent} onChange={e => setForm(f => ({ ...f, discount_percent: Number(e.target.value) }))} />
                   <span className="text-muted-foreground">%</span>
-                  <span className="font-mono w-24 text-right">₦{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                  <span className="font-mono w-28 text-right">₦{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                 </div>
               </div>
               <div className="flex items-center justify-between gap-2">
-                <Button variant="outline" size="sm" className="h-7 text-xs">Adjustment</Button>
-                <div className="flex items-center gap-1">
-                  <Input type="number" className="h-7 w-20 text-xs text-right" value={form.adjustment} onChange={e => setForm(f => ({ ...f, adjustment: Number(e.target.value) }))} />
-                  <span className="font-mono w-24 text-right">₦{form.adjustment.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                <Button variant="outline" size="sm" className="h-8 text-sm whitespace-nowrap">Adjustment</Button>
+                <div className="flex items-center gap-2">
+                  <Input type="number" className="h-8 w-24 text-sm text-right" value={form.adjustment} onChange={e => setForm(f => ({ ...f, adjustment: Number(e.target.value) }))} />
+                  <span className="font-mono w-28 text-right">₦{form.adjustment.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                 </div>
               </div>
-              <div className="flex justify-between pt-2 border-t border-border font-semibold">
+              <div className="flex justify-between pt-3 border-t border-border font-semibold text-base">
                 <span>Total</span>
-                <span className="font-mono text-base">₦{grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                <span className="font-mono">₦{grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
               </div>
             </div>
           </div>
 
           {/* Notes */}
           <div>
-            <Label className="text-xs font-semibold">Notes</Label>
-            <Textarea className="mt-1 text-xs h-16" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
+            <Label className="text-sm font-semibold">Notes</Label>
+            <Textarea className="mt-1.5 text-sm h-20" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
           </div>
 
           </div>
           </div>
-          <DialogFooter className="px-6 py-4 border-t shrink-0 bg-background">
-            <Button variant="outline" size="sm" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button size="sm" onClick={() => createBill.mutate()} disabled={!form.vendor_name || form.vendor_name === "__new"}>
+          <DialogFooter className="px-8 py-5 border-t shrink-0 bg-background">
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button onClick={() => createBill.mutate()} disabled={!form.vendor_name || form.vendor_name === "__new"}>
               Create Bill
             </Button>
           </DialogFooter>

@@ -1,5 +1,6 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -176,7 +177,13 @@ export function OnboardingAssistant() {
  */
 export function OnboardingBanner() {
   const navigate = useNavigate();
+  const { hasAnyRole } = useAuth();
   const { currentStep, progress, showOnboarding, loading } = useOnboarding();
+
+  // Only admins/org owners should see company setup prompts — not support or ops staff
+  if (!hasAnyRole(["super_admin", "org_admin", "admin"])) {
+    return null;
+  }
 
   if (loading || !showOnboarding || !currentStep) {
     return null;
