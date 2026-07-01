@@ -145,22 +145,40 @@ export const InvoicePreviewDialog = ({ invoice, open, onClose, onStatusUpdate }:
     ? lineItems
     : [{ id: "1", description: "Logistics / Delivery Service", tonnage: "-", quantity: 1, unit_price: invoice.amount, rate: invoice.amount, vat_rate: 0, vat_amount: 0, line_total: invoice.amount, amount: invoice.amount }];
 
-  // ── Helper: load image URL → base64 dataURL via canvas (avoids CORS issues) ──
-  const loadImageAsDataUrl = (url: string): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        canvas.getContext("2d")!.drawImage(img, 0, 0);
-        resolve(canvas.toDataURL("image/png"));
-      };
-      img.onerror = () => reject(new Error(`Failed to load image: ${url}`));
-      // Cache-busting suffix forces browser to fetch fresh and respect crossOrigin
-      img.src = url.includes("?") ? `${url}&_cb=${Date.now()}` : `${url}?_cb=${Date.now()}`;
-    });
+  // ── Helper: load image URL → base64 dataURL via canvas ──────────────────────
+  // Tries the public URL first; if CORS blocks it, falls back to a signed URL
+  const loadImageAsDataUrl = async (url: string): Promise<string> => {
+    const tryCanvas = (src: string): Promise<string> =>
+      new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => {
+          try {
+            const canvas = document.createElement("canvas");
+            canvas.width = img.naturalWidth || 300;
+            canvas.height = img.naturalHeight || 100;
+            canvas.getContext("2d")!.drawImage(img, 0, 0);
+            resolve(canvas.toDataURL("image/png"));
+          } catch (e) { reject(e); }
+        };
+        img.onerror = () => reject(new Error(`Failed to load: ${src}`));
+        img.src = src.includes("?") ? `${src}&_cb=${Date.now()}` : `${src}?_cb=${Date.now()}`;
+      });
+
+    try {
+      return await tryCanvas(url);
+    } catch {
+      // Fallback: generate a signed URL from Supabase Storage
+      const match = url.match(/\/storage\/v1\/object\/public\/(.+)/);
+      if (match) {
+        const [bucket, ...rest] = match[1].split("/");
+        const path = rest.join("/");
+        const { data } = await supabase.storage.from(bucket).createSignedUrl(path, 300);
+        if (data?.signedUrl) return await tryCanvas(data.signedUrl);
+      }
+      throw new Error(`Cannot load image: ${url}`);
+    }
+  };
 
   // ─── PDF generation matching Glyde invoice style ─────────────────────────
   const generatePDF = async (): Promise<jsPDF> => {

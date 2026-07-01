@@ -210,6 +210,25 @@ const SettingsPage = () => {
   const logoInputRef = useRef<HTMLInputElement>(null);
   const [signaturePreview, setSignaturePreview] = useState<string>("");
   const [logoPreview, setLogoPreview] = useState<string>("");
+
+  // Fallback: if public URL fails to load (bucket not public), swap to signed URL
+  const handleImgError = async (
+    e: React.SyntheticEvent<HTMLImageElement>,
+    setter: (url: string) => void,
+  ) => {
+    const img = e.currentTarget;
+    const publicUrl = img.src;
+    // Extract the storage path from the public URL
+    const match = publicUrl.match(/\/storage\/v1\/object\/public\/(.+)/);
+    if (!match) return;
+    const [bucket, ...rest] = match[1].split("/");
+    const path = rest.join("/");
+    const { data } = await supabase.storage.from(bucket).createSignedUrl(path, 3600);
+    if (data?.signedUrl) {
+      setter(data.signedUrl);
+      img.src = data.signedUrl;
+    }
+  };
   const [uploadingSignature, setUploadingSignature] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
 
@@ -995,10 +1014,11 @@ const SettingsPage = () => {
                     >
                       {signaturePreview ? (
                         <div className="space-y-2">
-                          <img 
-                            src={signaturePreview} 
-                            alt="Signature" 
+                          <img
+                            src={signaturePreview}
+                            alt="Signature"
                             className="max-h-20 mx-auto object-contain"
+                            onError={(e) => handleImgError(e, setSignaturePreview)}
                           />
                           <p className="text-xs text-muted-foreground">Click to change</p>
                         </div>
@@ -1052,10 +1072,11 @@ const SettingsPage = () => {
                     >
                       {logoPreview ? (
                         <div className="space-y-2">
-                          <img 
-                            src={logoPreview} 
-                            alt="Logo" 
+                          <img
+                            src={logoPreview}
+                            alt="Logo"
                             className="max-h-20 mx-auto object-contain"
+                            onError={(e) => handleImgError(e, setLogoPreview)}
                           />
                           <p className="text-xs text-muted-foreground">Click to change</p>
                         </div>
