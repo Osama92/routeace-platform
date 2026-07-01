@@ -466,8 +466,12 @@ export default function BillsPage() {
 
       {/* ─── Create Bill Dialog (Full Form) ─── */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Create New Bill</DialogTitle></DialogHeader>
+        <DialogContent className="w-screen h-screen max-w-none max-h-none m-0 rounded-none flex flex-col overflow-hidden p-0">
+          <DialogHeader className="px-6 pt-5 pb-4 border-b shrink-0">
+            <DialogTitle className="text-lg">Create New Bill</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto px-6 py-5">
+          <div className="max-w-5xl mx-auto space-y-5">
 
           {/* Vendor */}
           <div>
@@ -622,7 +626,9 @@ export default function BillsPage() {
             <Textarea className="mt-1 text-xs h-16" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
           </div>
 
-          <DialogFooter>
+          </div>
+          </div>
+          <DialogFooter className="px-6 py-4 border-t shrink-0 bg-background">
             <Button variant="outline" size="sm" onClick={() => setCreateOpen(false)}>Cancel</Button>
             <Button size="sm" onClick={() => createBill.mutate()} disabled={!form.vendor_name || form.vendor_name === "__new"}>
               Create Bill
