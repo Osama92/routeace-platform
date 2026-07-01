@@ -174,7 +174,19 @@ export default function SupportCenter() {
           notes: statusUpdate.notes || null,
         },
       });
-      if (error) throw error;
+      if (error) {
+        // Extract the real error message from the response body if available
+        let msg = error.message ?? "Edge function error";
+        try {
+          const ctx = (error as any).context;
+          if (ctx) {
+            const body = ctx instanceof Response ? await ctx.clone().json() : (typeof ctx === "object" ? ctx : null);
+            if (body?.error) msg = body.error;
+          }
+        } catch { /* ignore parse errors */ }
+        console.error("[SupportCenter] update-delivery-status error:", msg, error);
+        throw new Error(msg);
+      }
       toast({
         title: "Status updated",
         description: data?.email_sent

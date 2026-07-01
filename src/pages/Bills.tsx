@@ -39,10 +39,14 @@ const PAYMENT_TERMS = [
   { value: "net_90", label: "Net 90" },
 ];
 
-const VAT_OPTIONS = [
-  { value: "no_vat", label: "No VAT" },
-  { value: "vat_7_5", label: "VAT 7.5%" },
-  { value: "vat_5", label: "VAT 5%" },
+type VatMode = "none" | "exclusive" | "inclusive";
+interface VatPreset { label: string; mode: VatMode; rate: number; }
+const VAT_PRESETS: VatPreset[] = [
+  { label: "No VAT",             mode: "none",      rate: 0    },
+  { label: "VAT 7.5% (Excl.)",  mode: "exclusive", rate: 7.5  },
+  { label: "VAT 5% (Excl.)",    mode: "exclusive", rate: 5    },
+  { label: "VAT 7.5% (Incl.)",  mode: "inclusive", rate: 7.5  },
+  { label: "VAT 5% (Incl.)",    mode: "inclusive", rate: 5    },
 ];
 
 const TONNAGE_OPTIONS = ["1T", "3T", "5T", "10T", "15T", "20T", "30T", "40T"];
@@ -67,7 +71,6 @@ interface LineItem {
   tonnage: string;
   quantity: number;
   rate: number;
-  vat_type: string;
   customer_id: string;
   amount: number;
 }
@@ -79,15 +82,18 @@ const emptyLine = (): LineItem => ({
   tonnage: "",
   quantity: 1,
   rate: 0,
-  vat_type: "no_vat",
   customer_id: "",
   amount: 0,
 });
 
-const calcLineAmount = (line: LineItem) => {
-  const base = line.quantity * line.rate;
-  const vatRate = line.vat_type === "vat_7_5" ? 0.075 : line.vat_type === "vat_5" ? 0.05 : 0;
-  return base + base * vatRate;
+// Base amount before VAT (always the entered rate × qty).
+// For inclusive VAT the line total IS rate×qty; VAT is extracted later in totals.
+const calcLineBase = (line: LineItem) => line.quantity * line.rate;
+
+const calcLineAmount = (line: LineItem, preset: VatPreset) => {
+  const base = calcLineBase(line);
+  if (preset.mode === "exclusive") return base + base * (preset.rate / 100);
+  return base; // inclusive or none: the entered rate already includes any VAT
 };
 
 export default function BillsPage() {
@@ -119,6 +125,8 @@ export default function BillsPage() {
     adjustment: 0,
   });
   const [lines, setLines] = useState<LineItem[]>([emptyLine()]);
+  const [vatPresetIdx, setVatPresetIdx] = useState(0);
+  const vatPreset = VAT_PRESETS[vatPresetIdx];
 
   // Customers for dropdown
   const { data: customers } = useQuery({
@@ -182,23 +190,31 @@ export default function BillsPage() {
   });
 
   // Line item calculations
-  const subtotal = useMemo(() => lines.reduce((s, l) => s + calcLineAmount(l), 0), [lines]);
-  const discountAmount = subtotal * (form.discount_percent / 100);
-  const grandTotal = subtotal - discountAmount + form.adjustment;
+  const lineAmounts = useMemo(() => lines.map(l => calcLineAmount(l, vatPreset)), [lines, vatPreset]);
   const taxTotal = useMemo(() => {
+    const r = vatPreset.rate / 100;
     return lines.reduce((s, l) => {
-      const base = l.quantity * l.rate;
-      const vatRate = l.vat_type === "vat_7_5" ? 0.075 : l.vat_type === "vat_5" ? 0.05 : 0;
-      return s + base * vatRate;
+      const base = calcLineBase(l);
+      if (vatPreset.mode === "exclusive") return s + base * r;
+      if (vatPreset.mode === "inclusive") return s + base - base / (1 + r);
+      return s;
     }, 0);
-  }, [lines]);
+  }, [lines, vatPreset]);
+  // subtotal = pre-VAT amount
+  const subtotal = useMemo(() => {
+    if (vatPreset.mode === "inclusive") {
+      const r = vatPreset.rate / 100;
+      return lines.reduce((s, l) => s + calcLineBase(l) / (1 + r), 0);
+    }
+    return lines.reduce((s, l) => s + calcLineBase(l), 0);
+  }, [lines, vatPreset]);
+  const discountAmount = subtotal * (form.discount_percent / 100);
+  const grandTotal = lineAmounts.reduce((s, a) => s + a, 0) - discountAmount + form.adjustment;
 
   const updateLine = (id: string, field: keyof LineItem, value: any) => {
     setLines(prev => prev.map(l => {
       if (l.id !== id) return l;
-      const updated = { ...l, [field]: value };
-      updated.amount = calcLineAmount(updated);
-      return updated;
+      return { ...l, [field]: value };
     }));
   };
 
@@ -225,16 +241,16 @@ export default function BillsPage() {
 
       // Insert line items
       if (bill && lines.some(l => l.item_details || l.rate > 0)) {
-        const items = lines.filter(l => l.item_details || l.rate > 0).map(l => ({
+        const items = lines.filter(l => l.item_details || l.rate > 0).map((l, idx) => ({
           bill_id: bill.id,
           item_details: l.item_details,
           account: l.account || null,
           tonnage: l.tonnage || null,
           quantity: l.quantity,
           rate: l.rate,
-          vat_type: l.vat_type,
+          vat_type: vatPreset.mode === "none" ? "no_vat" : `vat_${vatPreset.rate}`.replace(".", "_"),
           customer_id: l.customer_id || null,
-          amount: calcLineAmount(l),
+          amount: lineAmounts[idx] ?? calcLineAmount(l, vatPreset),
         }));
         const { error: itemErr } = await supabase.from("bill_items").insert(items as any);
         if (itemErr) console.error("Line items error:", itemErr);
@@ -245,6 +261,7 @@ export default function BillsPage() {
       setCreateOpen(false);
       setForm({ vendor_name: "", bill_number: "", order_number: "", bill_date: format(new Date(), "yyyy-MM-dd"), due_date: format(new Date(), "yyyy-MM-dd"), payment_terms: "due_on_receipt", notes: "", discount_percent: 0, adjustment: 0 });
       setLines([emptyLine()]);
+      setVatPresetIdx(0);
       toast({ title: "Bill created", description: "Bill has been recorded successfully." });
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -531,14 +548,13 @@ export default function BillsPage() {
                     <TableHead className="text-sm font-semibold text-primary min-w-[110px] whitespace-nowrap">Tonnage</TableHead>
                     <TableHead className="text-sm font-semibold text-primary w-20 whitespace-nowrap">Qty</TableHead>
                     <TableHead className="text-sm font-semibold text-primary min-w-[140px] whitespace-nowrap">Rate (₦)</TableHead>
-                    <TableHead className="text-sm font-semibold text-primary min-w-[120px] whitespace-nowrap">VAT</TableHead>
                     <TableHead className="text-sm font-semibold text-primary min-w-[160px] whitespace-nowrap">Customer</TableHead>
                     <TableHead className="text-sm font-semibold text-primary text-right min-w-[140px] whitespace-nowrap">Amount</TableHead>
                     <TableHead className="w-10"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {lines.map(line => (
+                  {lines.map((line, idx) => (
                     <TableRow key={line.id}>
                       <TableCell className="p-1.5">
                         <Input className="h-9 text-sm border-0 bg-transparent" placeholder="Type or describe item" value={line.item_details} onChange={e => updateLine(line.id, "item_details", e.target.value)} />
@@ -562,18 +578,12 @@ export default function BillsPage() {
                         <Input type="number" className="h-9 text-sm border-0 bg-transparent min-w-[120px]" value={line.rate} onChange={e => updateLine(line.id, "rate", Number(e.target.value))} />
                       </TableCell>
                       <TableCell className="p-1.5">
-                        <Select value={line.vat_type} onValueChange={v => updateLine(line.id, "vat_type", v)}>
-                          <SelectTrigger className="h-9 text-sm border-0"><SelectValue /></SelectTrigger>
-                          <SelectContent>{VAT_OPTIONS.map(v => <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>)}</SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell className="p-1.5">
                         <Select value={line.customer_id} onValueChange={v => updateLine(line.id, "customer_id", v)}>
                           <SelectTrigger className="h-9 text-sm border-0"><SelectValue placeholder="Select..." /></SelectTrigger>
                           <SelectContent>{(customers || []).map((c: any) => <SelectItem key={c.id} value={c.id}>{c.company_name}</SelectItem>)}</SelectContent>
                         </Select>
                       </TableCell>
-                      <TableCell className="p-1.5 text-right text-sm font-mono whitespace-nowrap tabular-nums">₦{calcLineAmount(line).toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                      <TableCell className="p-1.5 text-right text-sm font-mono whitespace-nowrap tabular-nums">₦{(lineAmounts[idx] ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
                       <TableCell className="p-1.5">
                         {lines.length > 1 && (
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setLines(prev => prev.filter(l => l.id !== line.id))}>
@@ -591,6 +601,26 @@ export default function BillsPage() {
             </Button>
           </div>
 
+          {/* VAT / Tax — document-level */}
+          <div className="p-3 bg-secondary/30 rounded-lg">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <Label className="font-semibold text-sm">VAT / Tax</Label>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  {vatPreset.mode === "none" && "No tax applied to this bill."}
+                  {vatPreset.mode === "exclusive" && `${vatPreset.rate}% added on top of each line amount.`}
+                  {vatPreset.mode === "inclusive" && `${vatPreset.rate}% already included in the entered rates.`}
+                </p>
+              </div>
+              <Select value={String(vatPresetIdx)} onValueChange={v => setVatPresetIdx(Number(v))}>
+                <SelectTrigger className="w-[210px] bg-background/50"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {VAT_PRESETS.map((p, i) => <SelectItem key={i} value={String(i)}>{p.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
           {/* Totals */}
           <div className="flex justify-end">
             <div className="w-[380px] space-y-3 text-sm">
@@ -598,6 +628,14 @@ export default function BillsPage() {
                 <span className="text-muted-foreground">Sub Total</span>
                 <span className="font-mono font-semibold">₦{subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
               </div>
+              {taxTotal > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground whitespace-nowrap">
+                    VAT ({vatPreset.rate}%{vatPreset.mode === "inclusive" ? " incl." : ""})
+                  </span>
+                  <span className="font-mono">₦{taxTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+              )}
               <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground whitespace-nowrap">Discount</span>
                 <div className="flex items-center gap-2">
