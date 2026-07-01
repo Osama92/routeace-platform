@@ -106,17 +106,33 @@ const handler = async (req: Request): Promise<Response> => {
       throw new Error("Dispatch not found");
     }
 
-    // Update dispatch status
+    // Update dispatch status.
+    // For "delivered" we first set status alone (which triggers the SLA breach trigger),
+    // then separately patch the timestamp fields so a trigger failure doesn't kill the status update.
+    const statusPayload: Record<string, unknown> = { status };
+    if (status === "picked_up") statusPayload.actual_pickup = new Date().toISOString();
+
     const { error: updateError } = await supabase
       .from("dispatches")
-      .update({
-        status,
-        ...(status === "picked_up" && { actual_pickup: new Date().toISOString() }),
-        ...(status === "delivered" && { actual_delivery: new Date().toISOString() }),
-      })
+      .update(statusPayload)
       .eq("id", dispatch_id);
 
-    if (updateError) throw updateError;
+    if (updateError) {
+      console.error("[update-delivery-status] dispatch update error:", JSON.stringify(updateError));
+      throw updateError;
+    }
+
+    // Patch actual_delivery separately (best-effort) so that if the SLA trigger
+    // on this column throws (e.g. breach record FK issue), it doesn't block the status update.
+    if (status === "delivered") {
+      const { error: tsErr } = await supabase
+        .from("dispatches")
+        .update({ actual_delivery: new Date().toISOString() })
+        .eq("id", dispatch_id);
+      if (tsErr) {
+        console.warn("[update-delivery-status] actual_delivery patch failed (non-fatal):", JSON.stringify(tsErr));
+      }
+    }
 
     // Create delivery update record
     const { error: insertError } = await supabase.from("delivery_updates").insert({
@@ -127,7 +143,10 @@ const handler = async (req: Request): Promise<Response> => {
       email_sent: false,
     });
 
-    if (insertError) throw insertError;
+    if (insertError) {
+      console.error("[update-delivery-status] delivery_updates insert error:", JSON.stringify(insertError));
+      throw insertError;
+    }
 
     // Best-effort geocode of free-text location so the Tracking map can show pins.
     const GMAPS_KEY = Deno.env.get("GOOGLE_MAPS_API_KEY") ?? "";
