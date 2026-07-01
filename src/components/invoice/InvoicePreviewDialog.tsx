@@ -51,7 +51,7 @@ interface Invoice {
   created_at: string;
   zoho_invoice_id?: string | null;
   zoho_synced_at?: string | null;
-  customers?: { company_name: string; address?: string; contact_name?: string; email?: string; phone?: string };
+  customers?: { company_name: string; address?: string; city?: string; state?: string; country?: string };
   dispatches?: { pickup_address: string; delivery_address: string; distance_km: number | null } | null;
 }
 
@@ -252,13 +252,15 @@ export const InvoicePreviewDialog = ({ invoice, open, onClose, onStatusUpdate }:
     doc.setFontSize(8.5);
     doc.setTextColor(80, 80, 80);
     let billY = y + 6;
-    if (invoice.customers?.contact_name) { billY += 4.5; doc.text(invoice.customers.contact_name, marginL, billY); }
-    if (invoice.customers?.address) {
-      const addrLines = doc.splitTextToSize(invoice.customers.address, 80);
+    // Full address: street, then "City, State"
+    const cust = invoice.customers;
+    if (cust?.address) {
+      const addrLines = doc.splitTextToSize(cust.address, 85);
       addrLines.forEach((line: string) => { billY += 4.5; doc.text(line, marginL, billY); });
     }
-    if (invoice.customers?.email) { billY += 4.5; doc.text(invoice.customers.email, marginL, billY); }
-    if (invoice.customers?.phone) { billY += 4.5; doc.text(invoice.customers.phone, marginL, billY); }
+    const cityState = [cust?.city, cust?.state].filter(Boolean).join(", ");
+    if (cityState) { billY += 4.5; doc.text(cityState, marginL, billY); }
+    if (cust?.country && cust.country !== "Nigeria") { billY += 4.5; doc.text(cust.country, marginL, billY); }
 
     // Right column: date / terms / due
     const metaRows: [string, string][] = [
@@ -526,17 +528,16 @@ export const InvoicePreviewDialog = ({ invoice, open, onClose, onStatusUpdate }:
                 <div>
                   <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Bill To</div>
                   <div className="font-semibold text-sm text-gray-700">{invoice.customers?.company_name || "N/A"}</div>
-                  {invoice.customers?.contact_name && (
-                    <div className="text-xs text-gray-500 mt-0.5">{invoice.customers.contact_name}</div>
-                  )}
                   {invoice.customers?.address && (
-                    <div className="text-xs text-gray-500 mt-0.5 whitespace-pre-line">{invoice.customers.address}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">{invoice.customers.address}</div>
                   )}
-                  {invoice.customers?.email && (
-                    <div className="text-xs text-gray-500 mt-0.5">{invoice.customers.email}</div>
+                  {(invoice.customers?.city || invoice.customers?.state) && (
+                    <div className="text-xs text-gray-500 mt-0.5">
+                      {[invoice.customers.city, invoice.customers.state].filter(Boolean).join(", ")}
+                    </div>
                   )}
-                  {invoice.customers?.phone && (
-                    <div className="text-xs text-gray-500 mt-0.5">{invoice.customers.phone}</div>
+                  {invoice.customers?.country && invoice.customers.country !== "Nigeria" && (
+                    <div className="text-xs text-gray-500 mt-0.5">{invoice.customers.country}</div>
                   )}
                 </div>
                 <div className="text-xs text-right space-y-1">

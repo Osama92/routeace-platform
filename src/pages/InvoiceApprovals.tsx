@@ -128,7 +128,7 @@ const InvoiceApprovalsPage = () => {
         .from("invoices")
         .select(`
           *,
-          customers(company_name, address, contact_name, email, phone)
+          customers(company_name, address, city, state, country)
         `)
         .not("approval_status", "is", null)
         .order("created_at", { ascending: false });

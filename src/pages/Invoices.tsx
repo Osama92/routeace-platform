@@ -112,7 +112,7 @@ const InvoicesPage = () => {
     try {
       const { data, error } = await supabase
         .from("invoices")
-        .select(`*, customers(company_name, address, contact_name, email, phone), dispatches(pickup_address, delivery_address, distance_km)`)
+        .select(`*, customers(company_name, address, city, state, country), dispatches(pickup_address, delivery_address, distance_km)`)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
