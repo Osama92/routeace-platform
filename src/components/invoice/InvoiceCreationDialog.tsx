@@ -30,6 +30,11 @@ import { Badge } from "@/components/ui/badge";
 interface Customer {
   id: string;
   company_name: string;
+  address?: string;
+  head_office_address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
 }
 
 interface Dispatch {
@@ -247,7 +252,10 @@ export const InvoiceCreationDialog = ({
   }, [open, editInvoiceId]);
 
   const fetchCustomers = async () => {
-    const { data } = await supabase.from("customers").select("id, company_name").order("company_name");
+    const { data } = await supabase
+      .from("customers")
+      .select("id, company_name, address, head_office_address, city, state, country")
+      .order("company_name");
     setCustomers(data || []);
   };
 
@@ -907,6 +915,19 @@ export const InvoiceCreationDialog = ({
                 <div>
                   <p className="text-[10px] text-muted-foreground mb-0.5">BILL TO</p>
                   <p className="font-medium">{selectedCustomer?.company_name || "Select Customer"}</p>
+                  {selectedCustomer && (selectedCustomer.address || selectedCustomer.head_office_address) && (
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      {selectedCustomer.address || selectedCustomer.head_office_address}
+                    </p>
+                  )}
+                  {selectedCustomer && (selectedCustomer.city || selectedCustomer.state) && (
+                    <p className="text-[10px] text-muted-foreground">
+                      {[selectedCustomer.city, selectedCustomer.state].filter(Boolean).join(", ")}
+                    </p>
+                  )}
+                  {selectedCustomer?.country && selectedCustomer.country.toLowerCase() !== "nigeria" && (
+                    <p className="text-[10px] text-muted-foreground">{selectedCustomer.country}</p>
+                  )}
                 </div>
                 <div className="text-right">
                   <p className="text-muted-foreground">Date: {formData.invoice_date}</p>
