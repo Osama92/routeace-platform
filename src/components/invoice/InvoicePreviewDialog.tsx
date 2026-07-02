@@ -103,6 +103,7 @@ export const InvoicePreviewDialog = ({ invoice, open, onClose, onStatusUpdate }:
   const [posting, setPosting] = useState(false);
   const [lineItems, setLineItems] = useState<LineItem[]>([]);
   const [showStablecoinPayment, setShowStablecoinPayment] = useState(false);
+  const [customerData, setCustomerData] = useState<Invoice["customers"] | null>(null);
   const { toast } = useToast();
   const { settings: cs, forceRefresh } = useCompanySettings();
   const { user, hasAnyRole } = useAuth();
@@ -118,7 +119,22 @@ export const InvoicePreviewDialog = ({ invoice, open, onClose, onStatusUpdate }:
     }
   }, [invoice?.id]);
 
+  // Always re-fetch full customer address data when the invoice changes —
+  // the parent list query may have been cached before address fields were selected.
+  useEffect(() => {
+    if (!invoice?.customer_id) { setCustomerData(null); return; }
+    supabase
+      .from("customers")
+      .select("company_name, address, head_office_address, city, state, country")
+      .eq("id", invoice.customer_id)
+      .single()
+      .then(({ data }) => { if (data) setCustomerData(data as Invoice["customers"]); });
+  }, [invoice?.customer_id]);
+
   if (!invoice) return null;
+
+  // Merge freshly-fetched customer data over whatever the parent prop has
+  const cust = customerData ?? invoice.customers;
 
   const companyName = cs?.company_name || "My Company";
   const companyAddress = cs?.address || "";
@@ -247,13 +263,11 @@ export const InvoicePreviewDialog = ({ invoice, open, onClose, onStatusUpdate }:
     doc.setFontSize(9);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(40, 40, 40);
-    doc.text(invoice.customers?.company_name || "N/A", marginL, y + 6);
+    doc.text(cust?.company_name || "N/A", marginL, y + 6);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.5);
     doc.setTextColor(80, 80, 80);
     let billY = y + 6;
-    // Full address: street (address or head_office_address fallback), then "City, State"
-    const cust = invoice.customers;
     const streetAddr = cust?.address || cust?.head_office_address;
     if (streetAddr) {
       const addrLines = doc.splitTextToSize(streetAddr, 85);
@@ -528,17 +542,17 @@ export const InvoicePreviewDialog = ({ invoice, open, onClose, onStatusUpdate }:
               <div className="flex justify-between items-start py-5">
                 <div>
                   <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Bill To</div>
-                  <div className="font-semibold text-sm text-gray-700">{invoice.customers?.company_name || "N/A"}</div>
-                  {(invoice.customers?.address || invoice.customers?.head_office_address) && (
-                    <div className="text-xs text-gray-500 mt-0.5">{invoice.customers.address || invoice.customers.head_office_address}</div>
+                  <div className="font-semibold text-sm text-gray-700">{cust?.company_name || "N/A"}</div>
+                  {(cust?.address || cust?.head_office_address) && (
+                    <div className="text-xs text-gray-500 mt-0.5">{cust?.address || cust?.head_office_address}</div>
                   )}
-                  {(invoice.customers?.city || invoice.customers?.state) && (
+                  {(cust?.city || cust?.state) && (
                     <div className="text-xs text-gray-500 mt-0.5">
-                      {[invoice.customers.city, invoice.customers.state].filter(Boolean).join(", ")}
+                      {[cust?.city, cust?.state].filter(Boolean).join(", ")}
                     </div>
                   )}
-                  {invoice.customers?.country && invoice.customers.country !== "Nigeria" && (
-                    <div className="text-xs text-gray-500 mt-0.5">{invoice.customers.country}</div>
+                  {cust?.country && cust.country !== "Nigeria" && (
+                    <div className="text-xs text-gray-500 mt-0.5">{cust?.country}</div>
                   )}
                 </div>
                 <div className="text-xs text-right space-y-1">
