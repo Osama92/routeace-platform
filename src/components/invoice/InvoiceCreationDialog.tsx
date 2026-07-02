@@ -256,7 +256,6 @@ export const InvoiceCreationDialog = ({
       .from("customers")
       .select("id, company_name, address, head_office_address, city, state, country")
       .order("company_name");
-    console.log("[InvoiceCreate] fetchCustomers result:", JSON.stringify(data?.[0], null, 2), "| total:", data?.length, "| error:", error);
     setCustomers(data || []);
   };
 
@@ -638,7 +637,6 @@ export const InvoiceCreationDialog = ({
 
   const { subtotal, totalVat, shippingVat, grandTotal } = calculateTotals();
   const selectedCustomer = customers.find((c) => c.id === formData.customer_id);
-  console.log("[InvoiceCreate] selectedCustomer JSON:", JSON.stringify(selectedCustomer, null, 2), "| customers count:", customers.length);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

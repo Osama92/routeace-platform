@@ -103,6 +103,8 @@ const Partners = () => {
   const [selectedPartner, setSelectedPartner] = useState<Partner | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [addressEdit, setAddressEdit] = useState({ address: "", city: "", state: "" });
+  const [savingAddress, setSavingAddress] = useState(false);
   const { toast } = useToast();
   const { user, hasAnyRole, organizationId, userRole } = useAuth();
   const { logChange } = useAuditLog();
@@ -449,7 +451,58 @@ const Partners = () => {
 
   const openDetailsDialog = (partner: Partner) => {
     setSelectedPartner(partner);
+    setAddressEdit({
+      address: partner.address || "",
+      city: partner.city || "",
+      state: partner.state || "",
+    });
     setIsDetailsDialogOpen(true);
+  };
+
+  const handleSaveAddress = async () => {
+    if (!selectedPartner) return;
+    setSavingAddress(true);
+    try {
+      // Update partners table
+      const { error } = await supabase
+        .from("partners")
+        .update({
+          address: addressEdit.address || null,
+          city: addressEdit.city || null,
+          state: addressEdit.state || null,
+        })
+        .eq("id", selectedPartner.id);
+      if (error) throw error;
+
+      // Also update customers table where company_name matches (keeps invoice address in sync)
+      if (organizationId) {
+        await supabase
+          .from("customers")
+          .update({
+            address: addressEdit.address || null,
+            head_office_address: addressEdit.address || null,
+            city: addressEdit.city || null,
+            state: addressEdit.state || null,
+          })
+          .eq("organization_id", organizationId)
+          .eq("company_name", selectedPartner.company_name);
+      }
+
+      await logChange({
+        table_name: "partners",
+        record_id: selectedPartner.id,
+        action: "update",
+        new_data: { address: addressEdit.address, city: addressEdit.city, state: addressEdit.state },
+      });
+
+      setSelectedPartner((prev) => prev ? { ...prev, ...addressEdit } : prev);
+      fetchPartners();
+      toast({ title: "Address Saved", description: "Partner address updated and synced to invoices." });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to save address", variant: "destructive" });
+    } finally {
+      setSavingAddress(false);
+    }
   };
 
   const openDeleteDialog = (partner: Partner) => {
@@ -1302,6 +1355,47 @@ const Partners = () => {
                   <p className="text-sm text-muted-foreground">Location</p>
                   <p className="font-medium">{selectedPartner.city || "-"}, {selectedPartner.state || "-"}</p>
                 </div>
+              </div>
+
+              {/* Inline address edit — syncs to customers table for invoice Bill To */}
+              <div className="border-t pt-4 space-y-3">
+                <h4 className="text-sm font-medium flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-muted-foreground" />
+                  Address
+                  <span className="text-[10px] text-muted-foreground font-normal">(used on invoices)</span>
+                </h4>
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">Street Address</Label>
+                  <Input
+                    value={addressEdit.address}
+                    onChange={(e) => setAddressEdit((p) => ({ ...p, address: e.target.value }))}
+                    placeholder="e.g. 123 Business District, Apapa"
+                    className="bg-secondary/50 text-sm"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">City</Label>
+                    <Input
+                      value={addressEdit.city}
+                      onChange={(e) => setAddressEdit((p) => ({ ...p, city: e.target.value }))}
+                      placeholder="Lagos"
+                      className="bg-secondary/50 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">State</Label>
+                    <Input
+                      value={addressEdit.state}
+                      onChange={(e) => setAddressEdit((p) => ({ ...p, state: e.target.value }))}
+                      placeholder="Lagos State"
+                      className="bg-secondary/50 text-sm"
+                    />
+                  </div>
+                </div>
+                <Button size="sm" onClick={handleSaveAddress} disabled={savingAddress} className="w-full">
+                  {savingAddress ? "Saving..." : "Save Address"}
+                </Button>
               </div>
 
               {(selectedPartner.cac_number || selectedPartner.tin_number) && (

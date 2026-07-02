@@ -123,14 +123,12 @@ export const InvoicePreviewDialog = ({ invoice, open, onClose, onStatusUpdate }:
   // the parent list query may have been cached before address fields were selected.
   useEffect(() => {
     if (!invoice?.customer_id) { setCustomerData(null); return; }
-    console.log("[InvoicePreview] fetching customer for id:", invoice.customer_id);
     supabase
       .from("customers")
       .select("company_name, address, head_office_address, city, state, country")
       .eq("id", invoice.customer_id)
       .single()
-      .then(({ data, error }) => {
-        console.log("[InvoicePreview] customer fetch result:", { data, error });
+      .then(({ data }) => {
         if (data) setCustomerData(data as Invoice["customers"]);
       });
   }, [invoice?.customer_id]);
@@ -139,7 +137,6 @@ export const InvoicePreviewDialog = ({ invoice, open, onClose, onStatusUpdate }:
 
   // Merge freshly-fetched customer data over whatever the parent prop has
   const cust = customerData ?? invoice.customers;
-  console.log("[InvoicePreview] cust resolved:", cust, "| invoice.customers prop:", invoice.customers, "| customerData state:", customerData);
 
   const companyName = cs?.company_name || "My Company";
   const companyAddress = cs?.address || "";
