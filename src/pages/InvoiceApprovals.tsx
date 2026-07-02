@@ -71,6 +71,10 @@ interface Invoice {
   notes: string | null;
   customers?: {
     company_name: string;
+    address?: string;
+    city?: string;
+    state?: string;
+    country?: string;
   };
   submitter?: {
     full_name: string;
