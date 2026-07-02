@@ -51,7 +51,7 @@ interface Invoice {
   created_at: string;
   zoho_invoice_id?: string | null;
   zoho_synced_at?: string | null;
-  customers?: { company_name: string; address?: string; city?: string; state?: string; country?: string };
+  customers?: { company_name: string; address?: string; head_office_address?: string; city?: string; state?: string; country?: string };
   dispatches?: { pickup_address: string; delivery_address: string; distance_km: number | null } | null;
 }
 
@@ -252,10 +252,11 @@ export const InvoicePreviewDialog = ({ invoice, open, onClose, onStatusUpdate }:
     doc.setFontSize(8.5);
     doc.setTextColor(80, 80, 80);
     let billY = y + 6;
-    // Full address: street, then "City, State"
+    // Full address: street (address or head_office_address fallback), then "City, State"
     const cust = invoice.customers;
-    if (cust?.address) {
-      const addrLines = doc.splitTextToSize(cust.address, 85);
+    const streetAddr = cust?.address || cust?.head_office_address;
+    if (streetAddr) {
+      const addrLines = doc.splitTextToSize(streetAddr, 85);
       addrLines.forEach((line: string) => { billY += 4.5; doc.text(line, marginL, billY); });
     }
     const cityState = [cust?.city, cust?.state].filter(Boolean).join(", ");
@@ -528,8 +529,8 @@ export const InvoicePreviewDialog = ({ invoice, open, onClose, onStatusUpdate }:
                 <div>
                   <div className="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Bill To</div>
                   <div className="font-semibold text-sm text-gray-700">{invoice.customers?.company_name || "N/A"}</div>
-                  {invoice.customers?.address && (
-                    <div className="text-xs text-gray-500 mt-0.5">{invoice.customers.address}</div>
+                  {(invoice.customers?.address || invoice.customers?.head_office_address) && (
+                    <div className="text-xs text-gray-500 mt-0.5">{invoice.customers.address || invoice.customers.head_office_address}</div>
                   )}
                   {(invoice.customers?.city || invoice.customers?.state) && (
                     <div className="text-xs text-gray-500 mt-0.5">

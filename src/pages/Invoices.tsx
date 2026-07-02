@@ -75,7 +75,7 @@ interface Invoice {
   zoho_invoice_id?: string | null;
   zoho_synced_at?: string | null;
   status_updated_at?: string | null;
-  customers?: { company_name: string; address?: string; city?: string; state?: string; country?: string };
+  customers?: { company_name: string; address?: string; head_office_address?: string; city?: string; state?: string; country?: string };
   dispatches?: { pickup_address: string; delivery_address: string; distance_km: number | null } | null;
 }
 
@@ -112,7 +112,7 @@ const InvoicesPage = () => {
     try {
       const { data, error } = await supabase
         .from("invoices")
-        .select(`*, customers(company_name, address, city, state, country), dispatches(pickup_address, delivery_address, distance_km)`)
+        .select(`*, customers(company_name, address, head_office_address, city, state, country), dispatches(pickup_address, delivery_address, distance_km)`)
         .order("created_at", { ascending: false });
 
       if (error) throw error;

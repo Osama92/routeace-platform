@@ -72,6 +72,7 @@ interface Invoice {
   customers?: {
     company_name: string;
     address?: string;
+    head_office_address?: string;
     city?: string;
     state?: string;
     country?: string;
@@ -132,7 +133,7 @@ const InvoiceApprovalsPage = () => {
         .from("invoices")
         .select(`
           *,
-          customers(company_name, address, city, state, country)
+          customers(company_name, address, head_office_address, city, state, country)
         `)
         .not("approval_status", "is", null)
         .order("created_at", { ascending: false });
