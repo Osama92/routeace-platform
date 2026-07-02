@@ -252,10 +252,11 @@ export const InvoiceCreationDialog = ({
   }, [open, editInvoiceId]);
 
   const fetchCustomers = async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("customers")
       .select("id, company_name, address, head_office_address, city, state, country")
       .order("company_name");
+    console.log("[InvoiceCreate] fetchCustomers result:", { data, error });
     setCustomers(data || []);
   };
 
@@ -637,6 +638,7 @@ export const InvoiceCreationDialog = ({
 
   const { subtotal, totalVat, shippingVat, grandTotal } = calculateTotals();
   const selectedCustomer = customers.find((c) => c.id === formData.customer_id);
+  console.log("[InvoiceCreate] selectedCustomer:", selectedCustomer, "| customers count:", customers.length);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
