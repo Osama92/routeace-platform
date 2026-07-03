@@ -12,6 +12,8 @@ const adminSupabase = createClient(
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   TrendingUp,
@@ -28,6 +30,7 @@ import {
   Truck,
   LogOut,
   Shield,
+  Search,
 } from "lucide-react";
 import CoreTeamManagement from "@/components/core/CoreTeamManagement";
 import AIInsightCards from "@/components/core/AIInsightCards";
@@ -66,6 +69,17 @@ interface PlatformMetrics {
   recentActivity: { action: string; time: string; table_name: string }[];
 }
 
+interface OrgSubscription {
+  id: string;
+  name: string;
+  ownerEmail: string;
+  plan: string;
+  status: "paid" | "trial" | "expired" | "cancelled" | "unknown";
+  trialDaysLeft: number | null;
+  expiresAt: string | null;
+  amountPaid: number;
+}
+
 interface UserInfo {
   email: string;
   displayName: string;
@@ -77,6 +91,9 @@ const CoreDashboard = () => {
   const [coreRole, setCoreRole] = useState<CoreRole | null>(null);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const [orgSubscriptions, setOrgSubscriptions] = useState<OrgSubscription[]>([]);
+  const [subFilter, setSubFilter] = useState<"all" | "paid" | "trial" | "expired">("all");
+  const [subSearch, setSubSearch] = useState("");
   const [metrics, setMetrics] = useState<PlatformMetrics>({
     totalUsers: 0,
     activeUsers30d: 0,
@@ -261,6 +278,82 @@ const CoreDashboard = () => {
         queueBacklog: 0,
         recentActivity,
       });
+
+      // Org subscription breakdown — fetch all active orgs with subscription metadata
+      const [orgSubRes, orgOwnerMembersRes] = await Promise.all([
+        adminSupabase
+          .from("organizations")
+          .select("id, name, subscription_tier, subscription_status, subscription_expires_at, is_active, created_at")
+          .eq("is_active", true)
+          .order("name"),
+        adminSupabase
+          .from("organization_members")
+          .select("organization_id, user_id")
+          .eq("is_owner", true)
+          .eq("is_active", true),
+      ]);
+
+      // Resolve owner emails
+      const ownerRows = orgOwnerMembersRes.data || [];
+      const ownerUserIds = [...new Set(ownerRows.map((r: any) => r.user_id).filter(Boolean))];
+      let profileEmailMap = new Map<string, string>();
+      if (ownerUserIds.length > 0) {
+        const { data: profData } = await adminSupabase
+          .from("profiles")
+          .select("user_id, email")
+          .in("user_id", ownerUserIds);
+        profileEmailMap = new Map((profData || []).map((p: any) => [p.user_id, p.email]));
+      }
+      const ownerOrgEmailMap = new Map<string, string>();
+      ownerRows.forEach((r: any) => {
+        if (r.organization_id && r.user_id && !ownerOrgEmailMap.has(r.organization_id)) {
+          const email = profileEmailMap.get(r.user_id) || "";
+          if (email) ownerOrgEmailMap.set(r.organization_id, email);
+        }
+      });
+
+      // Per-org total paid from subscription_invoices
+      const orgPaidMap = new Map<string, number>();
+      subInvoicesAll.forEach((inv: any) => {
+        if (inv.organization_id)
+          orgPaidMap.set(inv.organization_id, (orgPaidMap.get(inv.organization_id) || 0) + Number(inv.amount || 0));
+      });
+
+      const now = new Date();
+      const orgSubs: OrgSubscription[] = (orgSubRes.data || []).map((org: any) => {
+        const expires = org.subscription_expires_at ? new Date(org.subscription_expires_at) : null;
+        const daysLeft = expires ? Math.ceil((expires.getTime() - now.getTime()) / 86400000) : null;
+        const rawStatus = (org.subscription_status || "").toLowerCase();
+
+        let status: OrgSubscription["status"];
+        if (rawStatus === "trial" || rawStatus === "trialing") {
+          status = "trial";
+        } else if (rawStatus === "active" && orgPaidMap.has(org.id)) {
+          status = "paid";
+        } else if (rawStatus === "active") {
+          // Active but no payment recorded — treat as trial
+          status = "trial";
+        } else if (rawStatus === "expired" || (expires && daysLeft !== null && daysLeft < 0)) {
+          status = "expired";
+        } else if (rawStatus === "cancelled") {
+          status = "cancelled";
+        } else {
+          status = "unknown";
+        }
+
+        return {
+          id: org.id,
+          name: org.name,
+          ownerEmail: ownerOrgEmailMap.get(org.id) || "",
+          plan: org.subscription_tier || "—",
+          status,
+          trialDaysLeft: status === "trial" ? daysLeft : null,
+          expiresAt: org.subscription_expires_at || null,
+          amountPaid: orgPaidMap.get(org.id) || 0,
+        };
+      });
+
+      setOrgSubscriptions(orgSubs);
     } catch (error) {
       console.error("Error loading metrics:", error);
     }
@@ -466,12 +559,12 @@ const CoreDashboard = () => {
 
           {/* Revenue */}
           <TabsContent value="revenue" className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <MetricCard
                 title="Total Revenue"
                 value={`₦${(metrics.totalRevenue / 1_000_000).toFixed(2)}M`}
                 icon={DollarSign}
-                sub="All paid invoices"
+                sub="All paid subscription invoices"
               />
               <MetricCard
                 title="MRR"
@@ -480,10 +573,17 @@ const CoreDashboard = () => {
                 sub="Paid invoices this month"
               />
               <MetricCard
-                title="Active Orgs"
-                value={metrics.revenueByTier.length > 0 ? metrics.revenueByTier.reduce((s) => s + 1, 0).toString() : "—"}
-                icon={Building2}
-                sub="Tiers with revenue"
+                title="Paid Orgs"
+                value={orgSubscriptions.filter(o => o.status === "paid").length.toString()}
+                icon={CheckCircle}
+                sub="On active paid plan"
+                positive
+              />
+              <MetricCard
+                title="On Trial"
+                value={orgSubscriptions.filter(o => o.status === "trial").length.toString()}
+                icon={Clock}
+                sub="Trial / unverified payment"
               />
             </div>
 
@@ -516,6 +616,131 @@ const CoreDashboard = () => {
                 ) : (
                   <p className="text-sm text-muted-foreground">No subscription revenue data yet.</p>
                 )}
+              </CardContent>
+            </Card>
+
+            {/* Organization Subscription Breakdown */}
+            <Card className="border-border/50">
+              <CardHeader>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <CardTitle className="flex items-center gap-2">
+                    <Building2 className="w-5 h-5" />
+                    Organization Subscriptions
+                  </CardTitle>
+                  <div className="flex items-center gap-2">
+                    <div className="relative">
+                      <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        placeholder="Search org or email..."
+                        className="pl-8 h-8 w-52 text-sm"
+                        value={subSearch}
+                        onChange={e => setSubSearch(e.target.value)}
+                      />
+                    </div>
+                    <Select value={subFilter} onValueChange={(v) => setSubFilter(v as typeof subFilter)}>
+                      <SelectTrigger className="h-8 w-36 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All statuses</SelectItem>
+                        <SelectItem value="paid">Paid</SelectItem>
+                        <SelectItem value="trial">Trial</SelectItem>
+                        <SelectItem value="expired">Expired</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                {(() => {
+                  const filtered = orgSubscriptions.filter(o => {
+                    const matchesFilter = subFilter === "all" || o.status === subFilter;
+                    const q = subSearch.toLowerCase();
+                    const matchesSearch = !q || o.name.toLowerCase().includes(q) || o.ownerEmail.toLowerCase().includes(q);
+                    return matchesFilter && matchesSearch;
+                  });
+
+                  const statusBadge = (o: OrgSubscription) => {
+                    if (o.status === "paid") return <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-xs border">Paid</Badge>;
+                    if (o.status === "trial") return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30 text-xs border">Trial</Badge>;
+                    if (o.status === "expired") return <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-xs border">Expired</Badge>;
+                    if (o.status === "cancelled") return <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30 text-xs border">Cancelled</Badge>;
+                    return <Badge className="bg-secondary text-muted-foreground text-xs">Unknown</Badge>;
+                  };
+
+                  const planLabel = (plan: string) => {
+                    const map: Record<string, string> = {
+                      enterprise: "Enterprise", professional: "Professional", starter: "Starter",
+                      heavy_fleet: "Heavy Fleet", lc_enterprise: "LC Enterprise",
+                      lc_professional: "LC Professional", lc_starter: "LC Starter",
+                    };
+                    return map[plan?.toLowerCase()] || plan || "—";
+                  };
+
+                  const trialLabel = (o: OrgSubscription) => {
+                    if (o.status !== "trial" || o.trialDaysLeft === null) return "—";
+                    if (o.trialDaysLeft <= 0) return <span className="text-red-400 text-xs">Expired</span>;
+                    if (o.trialDaysLeft <= 7) return <span className="text-amber-400 text-xs">{o.trialDaysLeft}d left</span>;
+                    return <span className="text-blue-400 text-xs">{o.trialDaysLeft}d left</span>;
+                  };
+
+                  if (filtered.length === 0) {
+                    return (
+                      <div className="px-6 py-8 text-center text-sm text-muted-foreground">
+                        No organizations match this filter.
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-border bg-secondary/20">
+                            <th className="text-left py-2.5 px-4 font-medium text-muted-foreground">Organization</th>
+                            <th className="text-left py-2.5 px-4 font-medium text-muted-foreground">Owner Email</th>
+                            <th className="text-left py-2.5 px-4 font-medium text-muted-foreground">Plan</th>
+                            <th className="text-center py-2.5 px-4 font-medium text-muted-foreground">Status</th>
+                            <th className="text-center py-2.5 px-4 font-medium text-muted-foreground">Trial / Expiry</th>
+                            <th className="text-right py-2.5 px-4 font-medium text-muted-foreground">Total Paid</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filtered.map((o) => (
+                            <tr key={o.id} className="border-b border-border/40 hover:bg-secondary/20 transition-colors">
+                              <td className="py-3 px-4 font-medium">{o.name}</td>
+                              <td className="py-3 px-4">
+                                {o.ownerEmail
+                                  ? <a href={`mailto:${o.ownerEmail}`} className="text-blue-400 hover:underline text-xs">{o.ownerEmail}</a>
+                                  : <span className="text-muted-foreground text-xs">—</span>}
+                              </td>
+                              <td className="py-3 px-4">
+                                <span className="text-xs font-mono capitalize">{planLabel(o.plan)}</span>
+                              </td>
+                              <td className="py-3 px-4 text-center">{statusBadge(o)}</td>
+                              <td className="py-3 px-4 text-center text-xs">
+                                {o.status === "trial"
+                                  ? trialLabel(o)
+                                  : o.expiresAt
+                                    ? new Date(o.expiresAt) < new Date()
+                                      ? <span className="text-red-400">{new Date(o.expiresAt).toLocaleDateString()}</span>
+                                      : <span className="text-muted-foreground">{new Date(o.expiresAt).toLocaleDateString()}</span>
+                                    : <span className="text-muted-foreground">—</span>}
+                              </td>
+                              <td className="py-3 px-4 text-right font-mono text-xs">
+                                {o.amountPaid > 0
+                                  ? o.amountPaid >= 1_000_000
+                                    ? `₦${(o.amountPaid / 1_000_000).toFixed(2)}M`
+                                    : `₦${o.amountPaid.toLocaleString()}`
+                                  : <span className="text-muted-foreground">₦0</span>}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()}
               </CardContent>
             </Card>
           </TabsContent>
