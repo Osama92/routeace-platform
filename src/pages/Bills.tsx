@@ -98,7 +98,8 @@ const calcLineAmount = (line: LineItem, preset: VatPreset) => {
 
 export default function BillsPage() {
   const { toast } = useToast();
-  const { user, organizationId } = useAuth();
+  const { user, organizationId, hasAnyRole } = useAuth();
+  const canEditBills = hasAnyRole(["super_admin", "admin", "org_admin", "finance_manager"]);
   const qc = useQueryClient();
   const activeErp = useActiveErp();
   const [createOpen, setCreateOpen] = useState(false);
@@ -569,10 +570,14 @@ export default function BillsPage() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => openEditBill(bill)}>
-                                <Pencil className="w-4 h-4 mr-2" />Edit Bill
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
+                              {canEditBills && (
+                                <>
+                                  <DropdownMenuItem onClick={() => openEditBill(bill)}>
+                                    <Pencil className="w-4 h-4 mr-2" />Edit Bill
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                </>
+                              )}
                               <DropdownMenuItem onClick={() => markPaid.mutate(bill.id)}>
                                 <CheckCircle className="w-4 h-4 mr-2 text-emerald-500" />Mark as Paid
                               </DropdownMenuItem>
