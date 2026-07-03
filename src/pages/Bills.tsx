@@ -102,6 +102,15 @@ export default function BillsPage() {
   const qc = useQueryClient();
   const activeErp = useActiveErp();
   const [createOpen, setCreateOpen] = useState(false);
+  const [editBill, setEditBill] = useState<any | null>(null);
+  const [editLines, setEditLines] = useState<LineItem[]>([emptyLine()]);
+  const [editVatPresetIdx, setEditVatPresetIdx] = useState(0);
+  const [editForm, setEditForm] = useState({
+    vendor_name: "", bill_number: "", order_number: "",
+    bill_date: "", due_date: "", payment_terms: "due_on_receipt",
+    notes: "", discount_percent: 0, adjustment: 0,
+  });
+  const [loadingEditLines, setLoadingEditLines] = useState(false);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
 
@@ -306,6 +315,118 @@ export default function BillsPage() {
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const editVatPreset = VAT_PRESETS[editVatPresetIdx];
+  const editLineAmounts = useMemo(() => editLines.map(l => calcLineAmount(l, editVatPreset)), [editLines, editVatPreset]);
+  const editTaxTotal = useMemo(() => {
+    const r = editVatPreset.rate / 100;
+    return editLines.reduce((s, l) => {
+      const base = calcLineBase(l);
+      if (editVatPreset.mode === "exclusive") return s + base * r;
+      if (editVatPreset.mode === "inclusive") return s + base - base / (1 + r);
+      return s;
+    }, 0);
+  }, [editLines, editVatPreset]);
+  const editSubtotal = useMemo(() => {
+    if (editVatPreset.mode === "inclusive") {
+      const r = editVatPreset.rate / 100;
+      return editLines.reduce((s, l) => s + calcLineBase(l) / (1 + r), 0);
+    }
+    return editLines.reduce((s, l) => s + calcLineBase(l), 0);
+  }, [editLines, editVatPreset]);
+  const editDiscountAmount = editSubtotal * (editForm.discount_percent / 100);
+  const editGrandTotal = editLineAmounts.reduce((s, a) => s + a, 0) - editDiscountAmount + editForm.adjustment;
+
+  const updateEditLine = (id: string, field: keyof LineItem, value: any) => {
+    setEditLines(prev => prev.map(l => l.id !== id ? l : { ...l, [field]: value }));
+  };
+
+  const openEditBill = async (bill: any) => {
+    setEditBill(bill);
+    setEditForm({
+      vendor_name: bill.vendor_name || "",
+      bill_number: bill.bill_number || "",
+      order_number: bill.order_number || "",
+      bill_date: bill.bill_date ? bill.bill_date.slice(0, 10) : format(new Date(), "yyyy-MM-dd"),
+      due_date: bill.due_date ? bill.due_date.slice(0, 10) : "",
+      payment_terms: bill.payment_terms || "due_on_receipt",
+      notes: bill.notes || "",
+      discount_percent: bill.discount_percent || 0,
+      adjustment: bill.adjustment || 0,
+    });
+    setEditVatPresetIdx(0);
+    setLoadingEditLines(true);
+    try {
+      const { data: items } = await supabase
+        .from("bill_items")
+        .select("*")
+        .eq("bill_id", bill.id)
+        .order("id");
+      if (items && items.length > 0) {
+        setEditLines(items.map((it: any) => ({
+          id: crypto.randomUUID(),
+          item_details: it.item_details || "",
+          account: it.account || "",
+          tonnage: it.tonnage || "",
+          quantity: it.quantity || 1,
+          rate: it.rate || 0,
+          customer_id: it.customer_id || "",
+          amount: it.amount || 0,
+        })));
+      } else {
+        setEditLines([emptyLine()]);
+      }
+    } finally {
+      setLoadingEditLines(false);
+    }
+  };
+
+  const updateBill = useMutation({
+    mutationFn: async () => {
+      if (!editBill) return;
+      const { error } = await supabase.from("bills").update({
+        vendor_name: editForm.vendor_name,
+        bill_number: editForm.bill_number || null,
+        order_number: editForm.order_number || null,
+        bill_date: editForm.bill_date,
+        due_date: editForm.due_date || null,
+        payment_terms: editForm.payment_terms,
+        amount: editSubtotal - editTaxTotal,
+        tax_amount: editTaxTotal,
+        subtotal: editSubtotal,
+        discount_percent: editForm.discount_percent,
+        adjustment: editForm.adjustment,
+        total_amount: editGrandTotal,
+        notes: editForm.notes || null,
+      } as any).eq("id", editBill.id);
+      if (error) throw error;
+
+      // Replace line items
+      await supabase.from("bill_items").delete().eq("bill_id", editBill.id);
+      const validLines = editLines.filter(l => l.item_details || l.rate > 0);
+      if (validLines.length > 0) {
+        const items = validLines.map((l, idx) => ({
+          bill_id: editBill.id,
+          item_details: l.item_details,
+          account: l.account || null,
+          tonnage: l.tonnage || null,
+          quantity: l.quantity,
+          rate: l.rate,
+          vat_type: editVatPreset.mode === "none" ? "no_vat" : `vat_${editVatPreset.rate}`.replace(".", "_"),
+          customer_id: l.customer_id || null,
+          amount: editLineAmounts[idx] ?? calcLineAmount(l, editVatPreset),
+        }));
+        const { error: itemErr } = await supabase.from("bill_items").insert(items as any);
+        if (itemErr) console.error("Edit line items error:", itemErr);
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["bills"] });
+      setEditBill(null);
+      toast({ title: "Bill updated", description: "Changes saved successfully." });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const filtered = (bills || []).filter((b: any) =>
     b.vendor_name?.toLowerCase().includes(search.toLowerCase()) ||
     b.bill_number?.toLowerCase().includes(search.toLowerCase())
@@ -448,6 +569,10 @@ export default function BillsPage() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => openEditBill(bill)}>
+                                <Pencil className="w-4 h-4 mr-2" />Edit Bill
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
                               <DropdownMenuItem onClick={() => markPaid.mutate(bill.id)}>
                                 <CheckCircle className="w-4 h-4 mr-2 text-emerald-500" />Mark as Paid
                               </DropdownMenuItem>
@@ -480,6 +605,200 @@ export default function BillsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* ─── Edit Bill Dialog ─── */}
+      <Dialog open={!!editBill} onOpenChange={(o) => { if (!o) setEditBill(null); }}>
+        <DialogContent className="w-screen h-screen max-w-none max-h-none m-0 rounded-none flex flex-col overflow-hidden p-0">
+          <DialogHeader className="px-8 pt-6 pb-5 border-b shrink-0">
+            <DialogTitle className="text-xl">Edit Bill — {editBill?.bill_number}</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto px-8 py-6">
+          <div className="max-w-6xl mx-auto space-y-6">
+
+          {/* Vendor */}
+          <div>
+            <Label className="text-sm font-semibold">Vendor Name *</Label>
+            <Select value={editForm.vendor_name} onValueChange={v => setEditForm(f => ({ ...f, vendor_name: v }))}>
+              <SelectTrigger className="mt-1.5 h-10 text-sm"><SelectValue placeholder="Select a Vendor" /></SelectTrigger>
+              <SelectContent>
+                {(vendors || []).map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}
+                <SelectItem value="__new">+ Add new vendor</SelectItem>
+              </SelectContent>
+            </Select>
+            {editForm.vendor_name === "__new" && (
+              <Input className="mt-2 text-sm h-10" placeholder="Enter vendor name" onChange={e => setEditForm(f => ({ ...f, vendor_name: e.target.value }))} />
+            )}
+          </div>
+
+          {/* Bill # and Order # */}
+          <div className="grid grid-cols-2 gap-5">
+            <div>
+              <Label className="text-sm font-semibold">Bill #</Label>
+              <Input className="mt-1.5 h-10 text-sm" value={editForm.bill_number} onChange={e => setEditForm(f => ({ ...f, bill_number: e.target.value }))} />
+            </div>
+            <div>
+              <Label className="text-sm font-semibold">Order Number</Label>
+              <Input className="mt-1.5 h-10 text-sm" value={editForm.order_number} onChange={e => setEditForm(f => ({ ...f, order_number: e.target.value }))} />
+            </div>
+          </div>
+
+          {/* Dates + Payment Terms */}
+          <div className="grid grid-cols-3 gap-5">
+            <div>
+              <Label className="text-sm font-semibold">Bill Date</Label>
+              <Input type="date" className="mt-1.5 h-10 text-sm" value={editForm.bill_date} onChange={e => setEditForm(f => ({ ...f, bill_date: e.target.value }))} />
+            </div>
+            <div>
+              <Label className="text-sm font-semibold">Due Date</Label>
+              <Input type="date" className="mt-1.5 h-10 text-sm" value={editForm.due_date} onChange={e => setEditForm(f => ({ ...f, due_date: e.target.value }))} />
+            </div>
+            <div>
+              <Label className="text-sm font-semibold">Payment Terms</Label>
+              <Select value={editForm.payment_terms} onValueChange={v => setEditForm(f => ({ ...f, payment_terms: v }))}>
+                <SelectTrigger className="mt-1.5 h-10 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>{PAYMENT_TERMS.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Item Table */}
+          <div>
+            <Label className="text-sm font-semibold mb-3 block">Item Table</Label>
+            {loadingEditLines ? (
+              <div className="space-y-2">{Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
+            ) : (
+            <div className="border rounded-lg overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-sm font-semibold text-primary min-w-[200px]">Item Details</TableHead>
+                    <TableHead className="text-sm font-semibold text-primary min-w-[150px]">Account</TableHead>
+                    <TableHead className="text-sm font-semibold text-primary min-w-[110px]">Tonnage</TableHead>
+                    <TableHead className="text-sm font-semibold text-primary w-20">Qty</TableHead>
+                    <TableHead className="text-sm font-semibold text-primary min-w-[140px]">Rate (₦)</TableHead>
+                    <TableHead className="text-sm font-semibold text-primary min-w-[160px]">Customer</TableHead>
+                    <TableHead className="text-sm font-semibold text-primary text-right min-w-[140px]">Amount</TableHead>
+                    <TableHead className="w-10"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {editLines.map((line, idx) => (
+                    <TableRow key={line.id}>
+                      <TableCell className="p-1.5">
+                        <Input className="h-9 text-sm border-0 bg-transparent" value={line.item_details} onChange={e => updateEditLine(line.id, "item_details", e.target.value)} />
+                      </TableCell>
+                      <TableCell className="p-1.5">
+                        <Select value={line.account} onValueChange={v => updateEditLine(line.id, "account", v)}>
+                          <SelectTrigger className="h-9 text-sm border-0"><SelectValue placeholder="Select..." /></SelectTrigger>
+                          <SelectContent>{ACCOUNTS.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell className="p-1.5">
+                        <Select value={line.tonnage} onValueChange={v => updateEditLine(line.id, "tonnage", v)}>
+                          <SelectTrigger className="h-9 text-sm border-0"><SelectValue placeholder="Select..." /></SelectTrigger>
+                          <SelectContent>{TONNAGE_OPTIONS.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell className="p-1.5">
+                        <Input type="number" className="h-9 text-sm border-0 bg-transparent w-16" value={line.quantity} onChange={e => updateEditLine(line.id, "quantity", Number(e.target.value))} />
+                      </TableCell>
+                      <TableCell className="p-1.5">
+                        <Input type="number" className="h-9 text-sm border-0 bg-transparent min-w-[120px]" value={line.rate} onChange={e => updateEditLine(line.id, "rate", Number(e.target.value))} />
+                      </TableCell>
+                      <TableCell className="p-1.5">
+                        <Select value={line.customer_id} onValueChange={v => updateEditLine(line.id, "customer_id", v)}>
+                          <SelectTrigger className="h-9 text-sm border-0"><SelectValue placeholder="Select..." /></SelectTrigger>
+                          <SelectContent>{(customers || []).map((c: any) => <SelectItem key={c.id} value={c.id}>{c.company_name}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell className="p-1.5 text-right text-sm font-mono tabular-nums">₦{(editLineAmounts[idx] ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                      <TableCell className="p-1.5">
+                        {editLines.length > 1 && (
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditLines(prev => prev.filter(l => l.id !== line.id))}>
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            )}
+            <Button variant="ghost" size="sm" className="mt-2 text-sm text-primary" onClick={() => setEditLines(prev => [...prev, emptyLine()])}>
+              <Plus className="w-4 h-4 mr-1" /> Add New Row
+            </Button>
+          </div>
+
+          {/* VAT */}
+          <div className="p-3 bg-secondary/30 rounded-lg">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <Label className="font-semibold text-sm">VAT / Tax</Label>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  {editVatPreset.mode === "none" && "No tax applied to this bill."}
+                  {editVatPreset.mode === "exclusive" && `${editVatPreset.rate}% added on top of each line amount.`}
+                  {editVatPreset.mode === "inclusive" && `${editVatPreset.rate}% already included in the entered rates.`}
+                </p>
+              </div>
+              <Select value={String(editVatPresetIdx)} onValueChange={v => setEditVatPresetIdx(Number(v))}>
+                <SelectTrigger className="w-[210px] bg-background/50"><SelectValue /></SelectTrigger>
+                <SelectContent>{VAT_PRESETS.map((p, i) => <SelectItem key={i} value={String(i)}>{p.label}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Totals */}
+          <div className="flex justify-end">
+            <div className="w-[380px] space-y-3 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Sub Total</span>
+                <span className="font-mono font-semibold">₦{editSubtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              </div>
+              {editTaxTotal > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">VAT ({editVatPreset.rate}%{editVatPreset.mode === "inclusive" ? " incl." : ""})</span>
+                  <span className="font-mono">₦{editTaxTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-muted-foreground">Discount</span>
+                <div className="flex items-center gap-2">
+                  <Input type="number" className="h-8 w-20 text-sm text-right" value={editForm.discount_percent} onChange={e => setEditForm(f => ({ ...f, discount_percent: Number(e.target.value) }))} />
+                  <span className="text-muted-foreground">%</span>
+                  <span className="font-mono w-28 text-right">₦{editDiscountAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <Button variant="outline" size="sm" className="h-8 text-sm">Adjustment</Button>
+                <div className="flex items-center gap-2">
+                  <Input type="number" className="h-8 w-24 text-sm text-right" value={editForm.adjustment} onChange={e => setEditForm(f => ({ ...f, adjustment: Number(e.target.value) }))} />
+                  <span className="font-mono w-28 text-right">₦{editForm.adjustment.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+              </div>
+              <div className="flex justify-between pt-3 border-t border-border font-semibold text-base">
+                <span>Total</span>
+                <span className="font-mono">₦{editGrandTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div>
+            <Label className="text-sm font-semibold">Notes</Label>
+            <Textarea className="mt-1.5 text-sm h-20" value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} />
+          </div>
+
+          </div>
+          </div>
+          <DialogFooter className="px-8 py-5 border-t shrink-0 bg-background">
+            <Button variant="outline" onClick={() => setEditBill(null)}>Cancel</Button>
+            <Button onClick={() => updateBill.mutate()} disabled={updateBill.isPending || !editForm.vendor_name || editForm.vendor_name === "__new"}>
+              {updateBill.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ─── Create Bill Dialog (Full Form) ─── */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
