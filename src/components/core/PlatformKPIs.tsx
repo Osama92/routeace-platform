@@ -125,7 +125,8 @@ const PlatformKPIs = () => {
       const sixtyDaysAgo = new Date(now - 60 * 86400000).toISOString();
       const ninetyDaysAgo = new Date(now - 90 * 86400000).toISOString();
 
-      // Paginated fetches — never truncate at a fixed row cap
+      // Paginated fetches — each non-critical query has its own .catch so a
+      // single table error never zeros out the entire dashboard.
       const [allOrgs, members, dispatches, invoices, commissions, superAdminRes, owners] =
         await Promise.all([
           fetchAll<any>((from, to) =>
@@ -138,43 +139,44 @@ const PlatformKPIs = () => {
               .select("user_id, organization_id")
               .eq("is_active", true)
               .range(from, to)
-          ),
-          // Fetch dispatches with created_at so we can detect recency per org
+          ).catch((e) => { console.error("[PlatformKPIs] members:", e); return [] as any[]; }),
           fetchAll<any>((from, to) =>
             adminSupabase.from("dispatches")
               .select("id, organization_id, created_at")
               .not("organization_id", "is", null)
               .range(from, to)
-          ),
+          ).catch((e) => { console.error("[PlatformKPIs] dispatches:", e); return [] as any[]; }),
           fetchAll<any>((from, to) =>
             adminSupabase.from("invoices")
               .select("id, organization_id, total_amount, status, created_at")
               .range(from, to)
-          ),
+          ).catch((e) => { console.error("[PlatformKPIs] invoices:", e); return [] as any[]; }),
           fetchAll<any>((from, to) =>
             adminSupabase.from("commission_ledger")
               .select("source_org_id, gross_amount, routeace_amount")
               .range(from, to)
           ).catch(() => [] as any[]),
           adminSupabase.from("user_roles").select("id", { count: "exact", head: true }).eq("role", "super_admin"),
-          // Owner email per org — join organization_members (is_owner=true) → profiles
+          // Owner email: join organization_members (is_owner=true) to profiles.
+          // Uses left join (no !inner) so orgs without a matching profile row still appear.
           fetchAll<any>((from, to) =>
             adminSupabase.from("organization_members")
-              .select("organization_id, profiles!inner(email)")
+              .select("organization_id, profiles(email)")
               .eq("is_owner", true)
               .eq("is_active", true)
               .range(from, to)
-          ),
+          ).catch((e) => { console.error("[PlatformKPIs] owners:", e); return [] as any[]; }),
         ]);
 
       const activeOrgs = allOrgs.filter((o: any) => o.is_active !== false);
 
-      // Owner email lookup — first owner record wins per org
+      // Owner email lookup — profiles join may return object or array depending on FK cardinality
       const orgOwnerEmailMap = new Map<string, string>();
       owners.forEach((o: any) => {
-        if (o.organization_id && !orgOwnerEmailMap.has(o.organization_id)) {
-          orgOwnerEmailMap.set(o.organization_id, o.profiles?.email || "");
-        }
+        if (!o.organization_id || orgOwnerEmailMap.has(o.organization_id)) return;
+        const profile = Array.isArray(o.profiles) ? o.profiles[0] : o.profiles;
+        const email = profile?.email || "";
+        if (email) orgOwnerEmailMap.set(o.organization_id, email);
       });
 
       // Per-org user count
