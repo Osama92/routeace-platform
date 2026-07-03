@@ -157,11 +157,11 @@ const PlatformKPIs = () => {
               .range(from, to)
           ).catch(() => [] as any[]),
           adminSupabase.from("user_roles").select("id", { count: "exact", head: true }).eq("role", "super_admin"),
-          // Owner email: join organization_members (is_owner=true) to profiles.
-          // Uses left join (no !inner) so orgs without a matching profile row still appear.
+          // Owner members — fetch user_id + org_id for is_owner rows; we resolve
+          // email in a separate profiles query below to avoid FK join issues.
           fetchAll<any>((from, to) =>
             adminSupabase.from("organization_members")
-              .select("organization_id, profiles(email)")
+              .select("organization_id, user_id")
               .eq("is_owner", true)
               .eq("is_active", true)
               .range(from, to)
@@ -170,14 +170,25 @@ const PlatformKPIs = () => {
 
       const activeOrgs = allOrgs.filter((o: any) => o.is_active !== false);
 
-      // Owner email lookup — profiles join may return object or array depending on FK cardinality
+      // Two-step owner email resolution: org_id → user_id → profiles.email
+      // Avoids PostgREST FK join issues (profiles PK is 'id', not 'user_id').
       const orgOwnerEmailMap = new Map<string, string>();
-      owners.forEach((o: any) => {
-        if (!o.organization_id || orgOwnerEmailMap.has(o.organization_id)) return;
-        const profile = Array.isArray(o.profiles) ? o.profiles[0] : o.profiles;
-        const email = profile?.email || "";
-        if (email) orgOwnerEmailMap.set(o.organization_id, email);
-      });
+      if (owners.length > 0) {
+        const ownerUserIds = [...new Set(owners.map((o: any) => o.user_id).filter(Boolean))];
+        const { data: ownerProfiles } = await adminSupabase
+          .from("profiles")
+          .select("user_id, email")
+          .in("user_id", ownerUserIds);
+        const profileEmailMap = new Map<string, string>(
+          (ownerProfiles || []).map((p: any) => [p.user_id, p.email] as [string, string])
+        );
+        owners.forEach((o: any) => {
+          if (o.organization_id && o.user_id && !orgOwnerEmailMap.has(o.organization_id)) {
+            const email = profileEmailMap.get(o.user_id) || "";
+            if (email) orgOwnerEmailMap.set(o.organization_id, email);
+          }
+        });
+      }
 
       // Per-org user count
       const orgUserMap = new Map<string, number>();
