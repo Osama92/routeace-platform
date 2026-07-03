@@ -90,6 +90,27 @@ const PlatformKPIs = () => {
     loadPlatformMetrics();
   }, []);
 
+  // Fetches all rows from a table by paginating in 1 000-row pages so we
+  // never silently truncate results as the platform grows.
+  const fetchAll = async <T,>(
+    builder: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: any }>
+  ): Promise<T[]> => {
+    const PAGE = 1000;
+    let all: T[] = [];
+    let page = 0;
+    while (true) {
+      const from = page * PAGE;
+      const to = from + PAGE - 1;
+      const { data, error } = await builder(from, to);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      all = all.concat(data);
+      if (data.length < PAGE) break;
+      page++;
+    }
+    return all;
+  };
+
   const loadPlatformMetrics = async () => {
     try {
       if (!import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY) {
@@ -98,53 +119,68 @@ const PlatformKPIs = () => {
         return;
       }
 
-      const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
-      const sixtyDaysAgo = new Date(Date.now() - 60 * 86400000).toISOString();
+      const now = Date.now();
+      const thirtyDaysAgo = new Date(now - 30 * 86400000).toISOString();
+      const sixtyDaysAgo = new Date(now - 60 * 86400000).toISOString();
+      const ninetyDaysAgo = new Date(now - 90 * 86400000).toISOString();
 
-      // All queries use adminSupabase (service role) to bypass RLS for cross-org aggregation
-      const [orgsRes, membersRes, dispatchesRes, invoicesRes, superAdminRes, commissionRes] =
+      // Paginated fetches — never truncate at a fixed row cap
+      const [allOrgs, members, dispatches, invoices, commissions, superAdminRes] =
         await Promise.all([
-          adminSupabase.from("organizations").select("id, name, subscription_tier, is_active, created_at").limit(1000),
-          adminSupabase.from("organization_members").select("user_id, organization_id").eq("is_active", true).limit(10000),
-          adminSupabase.from("dispatches").select("id, organization_id").not("organization_id", "is", null).limit(10000),
-          adminSupabase.from("invoices").select("id, organization_id, total_amount, status, created_at").limit(5000),
+          fetchAll<any>((from, to) =>
+            adminSupabase.from("organizations")
+              .select("id, name, subscription_tier, subscription_status, is_active, created_at, subscription_expires_at")
+              .range(from, to)
+          ),
+          fetchAll<any>((from, to) =>
+            adminSupabase.from("organization_members")
+              .select("user_id, organization_id")
+              .eq("is_active", true)
+              .range(from, to)
+          ),
+          // Fetch dispatches with created_at so we can detect recency per org
+          fetchAll<any>((from, to) =>
+            adminSupabase.from("dispatches")
+              .select("id, organization_id, created_at")
+              .not("organization_id", "is", null)
+              .range(from, to)
+          ),
+          fetchAll<any>((from, to) =>
+            adminSupabase.from("invoices")
+              .select("id, organization_id, total_amount, status, created_at")
+              .range(from, to)
+          ),
+          fetchAll<any>((from, to) =>
+            adminSupabase.from("commission_ledger")
+              .select("source_org_id, gross_amount, routeace_amount")
+              .range(from, to)
+          ).catch(() => [] as any[]),
           adminSupabase.from("user_roles").select("id", { count: "exact", head: true }).eq("role", "super_admin"),
-          adminSupabase.from("commission_ledger").select("source_org_id, gross_amount, routeace_amount").limit(5000).then((r) => r).catch(() => ({ data: [] as any[], error: null })),
         ]);
 
-      if (orgsRes.error) {
-        console.error("[PlatformKPIs] orgs error:", orgsRes.error);
-        toast.error("Failed to load organizations: " + orgsRes.error.message);
-      }
+      const activeOrgs = allOrgs.filter((o: any) => o.is_active !== false);
 
-      const allOrgs = orgsRes.data || [];
-      const activeOrgs = allOrgs.filter((o) => o.is_active !== false);
-      const members = membersRes.data || [];
-      const dispatches = dispatchesRes.data || [];
-      const invoices = invoicesRes.data || [];
-      const commissions = (commissionRes as any).data || [];
-
-      console.log("[PlatformKPIs] orgs:", allOrgs.length, "active:", activeOrgs.length);
-      console.log("[PlatformKPIs] members:", members.length, "error:", membersRes.error);
-      console.log("[PlatformKPIs] dispatches:", dispatches.length, "error:", dispatchesRes.error);
-
-      // Per-org user count via organization_members
+      // Per-org user count
       const orgUserMap = new Map<string, number>();
       members.forEach((m: any) => {
         if (m.organization_id) orgUserMap.set(m.organization_id, (orgUserMap.get(m.organization_id) || 0) + 1);
       });
 
+      // Per-org dispatch count + most recent dispatch date (for health scoring)
       const orgDispatchMap = new Map<string, number>();
+      const orgLastDispatchMap = new Map<string, string>();
       dispatches.forEach((d: any) => {
-        if (d.organization_id) orgDispatchMap.set(d.organization_id, (orgDispatchMap.get(d.organization_id) || 0) + 1);
+        if (!d.organization_id) return;
+        orgDispatchMap.set(d.organization_id, (orgDispatchMap.get(d.organization_id) || 0) + 1);
+        const prev = orgLastDispatchMap.get(d.organization_id);
+        if (!prev || d.created_at > prev) orgLastDispatchMap.set(d.organization_id, d.created_at);
       });
 
-      console.log("[PlatformKPIs] orgUserMap sample:", [...orgUserMap.entries()].slice(0, 5));
-      console.log("[PlatformKPIs] orgDispatchMap sample:", [...orgDispatchMap.entries()].slice(0, 5));
-
+      // Per-org paid revenue
       const orgRevenueMap = new Map<string, number>();
       invoices.filter((i: any) => i.status === "paid").forEach((i: any) => {
-        if (i.organization_id) orgRevenueMap.set(i.organization_id, (orgRevenueMap.get(i.organization_id) || 0) + Number(i.total_amount || 0));
+        if (i.organization_id)
+          orgRevenueMap.set(i.organization_id, (orgRevenueMap.get(i.organization_id) || 0) + Number(i.total_amount || 0));
       });
       commissions.forEach((c: any) => {
         if (c.source_org_id && !orgRevenueMap.has(c.source_org_id))
@@ -152,17 +188,70 @@ const PlatformKPIs = () => {
       });
 
       // Platform aggregates
-      const totalRevenue = invoices.filter((i: any) => i.status === "paid")
+      const totalRevenue = invoices
+        .filter((i: any) => i.status === "paid")
         .reduce((s: number, i: any) => s + Number(i.total_amount || 0), 0);
       const monthlyRevenue = invoices
         .filter((i: any) => i.status === "paid" && i.created_at >= thirtyDaysAgo)
         .reduce((s: number, i: any) => s + Number(i.total_amount || 0), 0);
       const routeaceCommission = commissions.reduce((s: number, c: any) => s + Number(c.routeace_amount || 0), 0);
       const resellerVolume = commissions.reduce((s: number, c: any) => s + Number(c.gross_amount || 0), 0);
-      const recentOrgs = allOrgs.filter((o) => o.created_at >= thirtyDaysAgo).length;
-      const priorOrgs = allOrgs.filter((o) => o.created_at >= sixtyDaysAgo && o.created_at < thirtyDaysAgo).length;
-      const growthRate = priorOrgs > 0 ? ((recentOrgs - priorOrgs) / priorOrgs) * 100 : (recentOrgs > 0 ? 100 : 0);
+      const recentOrgs = allOrgs.filter((o: any) => o.created_at >= thirtyDaysAgo).length;
+      const priorOrgs = allOrgs.filter((o: any) => o.created_at >= sixtyDaysAgo && o.created_at < thirtyDaysAgo).length;
+      const growthRate = priorOrgs > 0 ? ((recentOrgs - priorOrgs) / priorOrgs) * 100 : recentOrgs > 0 ? 100 : 0;
       const churnRate = allOrgs.length > 0 ? ((allOrgs.length - activeOrgs.length) / allOrgs.length) * 100 : 0;
+
+      // Multi-factor churn risk scoring
+      // Each signal contributes a risk score 0–3; total 0–2 = low, 3–5 = medium, 6+ = high.
+      //
+      // Signal 1 — Recency of last dispatch (are they actually using the product?)
+      //   last dispatch <30d → 0 pts  |  30-90d → 2 pts  |  never / >90d → 3 pts
+      // Signal 2 — Subscription health (are they paid and current?)
+      //   active & not expired → 0 pts  |  expiring within 14d → 1 pt  |  expired/inactive → 3 pts
+      // Signal 3 — User engagement (is the team logged in / active?)
+      //   ≥2 users → 0 pts  |  1 user → 1 pt  |  0 users → 2 pts
+      // Signal 4 — Invoice payment history (do they pay their bills?)
+      //   has paid invoices → 0 pts  |  only unpaid invoices → 1 pt  |  no invoices at all → 0 pts (new, not risky yet)
+      const scoreChurnRisk = (org: any): "low" | "medium" | "high" => {
+        let score = 0;
+
+        // Signal 1: dispatch recency
+        const lastDispatch = orgLastDispatchMap.get(org.id);
+        if (!lastDispatch) {
+          // Never dispatched — only risky if they're not brand new (joined >30d ago)
+          score += org.created_at < thirtyDaysAgo ? 3 : 0;
+        } else if (lastDispatch < ninetyDaysAgo) {
+          score += 3;
+        } else if (lastDispatch < thirtyDaysAgo) {
+          score += 2;
+        }
+
+        // Signal 2: subscription status
+        const expired = org.subscription_expires_at && org.subscription_expires_at < new Date().toISOString();
+        const expiringIn14d = org.subscription_expires_at &&
+          org.subscription_expires_at < new Date(now + 14 * 86400000).toISOString() &&
+          org.subscription_expires_at >= new Date().toISOString();
+        if (expired || org.subscription_status === "expired" || org.subscription_status === "cancelled") {
+          score += 3;
+        } else if (expiringIn14d) {
+          score += 1;
+        }
+
+        // Signal 3: team size
+        const userCount = orgUserMap.get(org.id) || 0;
+        if (userCount === 0) score += 2;
+        else if (userCount === 1) score += 1;
+
+        // Signal 4: has paid invoices
+        const orgInvoices = invoices.filter((i: any) => i.organization_id === org.id);
+        if (orgInvoices.length > 0 && !orgInvoices.some((i: any) => i.status === "paid")) {
+          score += 1;
+        }
+
+        if (score <= 2) return "low";
+        if (score <= 5) return "medium";
+        return "high";
+      };
 
       setMetrics({
         totalOrganizations: allOrgs.length,
@@ -180,15 +269,15 @@ const PlatformKPIs = () => {
 
       setOrganizations(
         [...activeOrgs]
-          .sort((a, b) => a.name.localeCompare(b.name))
-          .map((org) => ({
+          .sort((a: any, b: any) => a.name.localeCompare(b.name))
+          .map((org: any) => ({
             id: org.id,
             name: org.name,
             tier: org.subscription_tier || "starter",
             revenue: orgRevenueMap.get(org.id) || 0,
             users: orgUserMap.get(org.id) || 0,
             dispatches: orgDispatchMap.get(org.id) || 0,
-            churnRisk: (orgDispatchMap.get(org.id) || 0) > 5 ? "low" : (orgDispatchMap.get(org.id) || 0) > 0 ? "medium" : "high",
+            churnRisk: scoreChurnRisk(org),
           }))
       );
     } catch (error) {

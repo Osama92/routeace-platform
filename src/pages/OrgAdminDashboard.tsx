@@ -163,16 +163,19 @@ const OrgAdminDashboardInner = () => {
     enabled: !!user,
   });
 
-  // Fetch pending payouts for approval
+  // Fetch pending payouts for approval — explicitly scoped to this org so we
+  // never surface another tenant's payouts even if RLS is misconfigured.
   const { data: pendingPayouts } = useQuery({
-    queryKey: ["pending-org-payouts"],
+    queryKey: ["pending-org-payouts", organizationId],
+    enabled: !!organizationId,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("payout_approvals")
         .select("*")
+        .eq("organization_id", organizationId!)
         .eq("status", "pending_org_admin")
         .order("created_at", { ascending: false });
-      
+
       if (error) throw error;
       return data;
     }

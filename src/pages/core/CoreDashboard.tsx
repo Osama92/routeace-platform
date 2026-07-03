@@ -130,34 +130,56 @@ const CoreDashboard = () => {
     }
   };
 
+  // Fetches every row by paginating in 1 000-row pages — no silent truncation.
+  const fetchAll = async <T,>(
+    builder: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: any }>
+  ): Promise<T[]> => {
+    const PAGE = 1000;
+    let all: T[] = [];
+    let page = 0;
+    while (true) {
+      const from = page * PAGE;
+      const { data, error } = await builder(from, from + PAGE - 1);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      all = all.concat(data);
+      if (data.length < PAGE) break;
+      page++;
+    }
+    return all;
+  };
+
   const loadMetrics = async () => {
     try {
-      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
       const thisMonthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
 
       const [
-        membersRes,
-        dispatchesRes,
-        billingPaymentsRes,
-        billingPaymentsMRRRes,
-        billingAccountsRes,
-        orgsRes,
+        members,
+        dispatches,
+        subInvoicesAll,
+        orgs,
         auditLogsRes,
         failedJobsRes,
         driversRes,
         vehiclesRes,
         invoicesRes,
       ] = await Promise.all([
-        adminSupabase.from("organization_members").select("user_id").eq("is_active", true).limit(10000),
-        adminSupabase.from("dispatches").select("id, status, organization_id").limit(10000),
-        // Paid subscription invoices from Paystack
-        adminSupabase.from("subscription_invoices").select("amount, organization_id, plan_name").eq("status", "paid").limit(5000),
-        // This month's paid subscription invoices for MRR
-        adminSupabase.from("subscription_invoices").select("amount").eq("status", "paid").gte("created_at", thisMonthStart).limit(5000),
-        // Placeholder — not used anymore but keep array shape consistent
-        Promise.resolve({ data: [], error: null }),
-        adminSupabase.from("organizations").select("id, subscription_tier").eq("is_active", true).limit(1000),
+        fetchAll<any>((from, to) =>
+          adminSupabase.from("organization_members").select("user_id").eq("is_active", true).range(from, to)
+        ),
+        fetchAll<any>((from, to) =>
+          adminSupabase.from("dispatches").select("id, status, organization_id").range(from, to)
+        ),
+        // All paid subscription invoices — paginated so revenue is never undercounted
+        fetchAll<any>((from, to) =>
+          adminSupabase.from("subscription_invoices")
+            .select("amount, organization_id, plan_name, created_at")
+            .eq("status", "paid")
+            .range(from, to)
+        ),
+        fetchAll<any>((from, to) =>
+          adminSupabase.from("organizations").select("id, subscription_tier").eq("is_active", true).range(from, to)
+        ),
         adminSupabase.from("audit_logs").select("action, table_name, created_at").order("created_at", { ascending: false }).limit(5),
         adminSupabase.from("email_queue").select("id", { count: "exact", head: true }).eq("status", "failed"),
         adminSupabase.from("drivers").select("id", { count: "exact", head: true }),
@@ -166,33 +188,31 @@ const CoreDashboard = () => {
       ]);
 
       // Users — unique members across all orgs
-      const totalUsers = new Set((membersRes.data || []).map((m: any) => m.user_id)).size;
+      const totalUsers = new Set(members.map((m: any) => m.user_id)).size;
 
       // Dispatches
-      const dispatches = dispatchesRes.data || [];
       const totalDispatches = dispatches.length;
       const delivered = dispatches.filter((d: any) => d.status === "delivered").length;
       const dispatchSuccessRate = totalDispatches > 0 ? (delivered / totalDispatches) * 100 : 0;
 
-      // Revenue — from paid subscription_invoices (Paystack verified payments)
-      const subInvoices = billingPaymentsRes.data || [];
-      const totalRevenue = subInvoices.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
-      const mrr = (billingPaymentsMRRRes.data || []).reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
+      // Revenue — sum all paid subscription_invoices (Paystack-verified)
+      const totalRevenue = subInvoicesAll.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
+      // MRR = paid invoices created in the current calendar month
+      const mrr = subInvoicesAll
+        .filter((p: any) => p.created_at >= thisMonthStart)
+        .reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
 
-      // Revenue by subscription tier — subscription_invoices has plan_name directly
-      // Map plan_name to tier bucket
+      // Revenue by subscription tier
       const planToTier: Record<string, string> = {
         enterprise: "enterprise", professional: "professional", starter: "starter",
         lc_enterprise: "enterprise", lc_professional: "professional", lc_starter: "starter",
         ld_enterprise: "enterprise", ld_professional: "professional", ld_starter: "starter",
       };
       const tierRevenue: Record<string, number> = {};
-      subInvoices.forEach((p: any) => {
+      subInvoicesAll.forEach((p: any) => {
         const tier = planToTier[p.plan_name?.toLowerCase()] || p.plan_name || "starter";
         tierRevenue[tier] = (tierRevenue[tier] || 0) + Number(p.amount || 0);
       });
-
-      const orgs = orgsRes.data || [];
 
       const tierColors: Record<string, string> = { enterprise: "bg-amber-500", professional: "bg-blue-500", starter: "bg-green-500" };
       const tierLabels: Record<string, string> = { enterprise: "Enterprise", professional: "Professional", starter: "Starter" };
@@ -202,18 +222,15 @@ const CoreDashboard = () => {
         color: tierColors[tier] || "bg-purple-500",
       })).sort((a, b) => b.revenue - a.revenue);
 
-      // Feature adoption — orgs that have used each feature vs total orgs
+      // Feature adoption — distinct orgs that have used each feature vs total active orgs
       const totalOrgs = orgs.length || 1;
       const orgsWithDispatches = new Set(dispatches.map((d: any) => d.organization_id).filter(Boolean)).size;
-      const orgsWithInvoices = invoicesRes.count || 0;
-      const orgsWithDrivers = driversRes.count || 0;
-      const orgsWithVehicles = vehiclesRes.count || 0;
       const adoptionOf = (count: number) => Math.min(Math.round((count / totalOrgs) * 100), 100);
       const featureAdoption = [
         { feature: "Dispatch Creation", adoption: adoptionOf(orgsWithDispatches) },
-        { feature: "Invoice Generation", adoption: adoptionOf(orgsWithInvoices) },
-        { feature: "Driver Management", adoption: adoptionOf(orgsWithDrivers) },
-        { feature: "Fleet Management", adoption: adoptionOf(orgsWithVehicles) },
+        { feature: "Invoice Generation", adoption: adoptionOf(invoicesRes.count || 0) },
+        { feature: "Driver Management", adoption: adoptionOf(driversRes.count || 0) },
+        { feature: "Fleet Management", adoption: adoptionOf(vehiclesRes.count || 0) },
       ];
 
       // Engineering — email queue failures
