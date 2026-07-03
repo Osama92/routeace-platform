@@ -64,6 +64,7 @@ interface OrganizationSummary {
   users: number;
   dispatches: number;
   churnRisk: "low" | "medium" | "high";
+  ownerEmail: string;
 }
 
 const PlatformKPIs = () => {
@@ -125,7 +126,7 @@ const PlatformKPIs = () => {
       const ninetyDaysAgo = new Date(now - 90 * 86400000).toISOString();
 
       // Paginated fetches — never truncate at a fixed row cap
-      const [allOrgs, members, dispatches, invoices, commissions, superAdminRes] =
+      const [allOrgs, members, dispatches, invoices, commissions, superAdminRes, owners] =
         await Promise.all([
           fetchAll<any>((from, to) =>
             adminSupabase.from("organizations")
@@ -156,9 +157,25 @@ const PlatformKPIs = () => {
               .range(from, to)
           ).catch(() => [] as any[]),
           adminSupabase.from("user_roles").select("id", { count: "exact", head: true }).eq("role", "super_admin"),
+          // Owner email per org — join organization_members (is_owner=true) → profiles
+          fetchAll<any>((from, to) =>
+            adminSupabase.from("organization_members")
+              .select("organization_id, profiles!inner(email)")
+              .eq("is_owner", true)
+              .eq("is_active", true)
+              .range(from, to)
+          ),
         ]);
 
       const activeOrgs = allOrgs.filter((o: any) => o.is_active !== false);
+
+      // Owner email lookup — first owner record wins per org
+      const orgOwnerEmailMap = new Map<string, string>();
+      owners.forEach((o: any) => {
+        if (o.organization_id && !orgOwnerEmailMap.has(o.organization_id)) {
+          orgOwnerEmailMap.set(o.organization_id, o.profiles?.email || "");
+        }
+      });
 
       // Per-org user count
       const orgUserMap = new Map<string, number>();
@@ -254,7 +271,7 @@ const PlatformKPIs = () => {
       };
 
       setMetrics({
-        totalOrganizations: allOrgs.length,
+        totalOrganizations: activeOrgs.length,
         activeOrganizations: activeOrgs.length,
         totalSuperAdmins: superAdminRes.count || 0,
         totalRevenue,
@@ -278,6 +295,7 @@ const PlatformKPIs = () => {
             users: orgUserMap.get(org.id) || 0,
             dispatches: orgDispatchMap.get(org.id) || 0,
             churnRisk: scoreChurnRisk(org),
+            ownerEmail: orgOwnerEmailMap.get(org.id) || "",
           }))
       );
     } catch (error) {
@@ -386,8 +404,8 @@ const PlatformKPIs = () => {
               </Badge>
             </div>
             <p className="text-2xl font-bold">{metrics.totalOrganizations}</p>
-            <p className="text-sm text-muted-foreground">Total Organizations</p>
-            <p className="text-xs text-green-400 mt-1">{metrics.activeOrganizations} active</p>
+            <p className="text-sm text-muted-foreground">Active Organizations</p>
+            <p className="text-xs text-muted-foreground mt-1">On platform</p>
           </CardContent>
         </Card>
 
@@ -496,6 +514,7 @@ const PlatformKPIs = () => {
               <thead>
                 <tr className="border-b border-border">
                   <th className="text-left py-2 px-3">Organization</th>
+                  <th className="text-left py-2 px-3">Owner Email</th>
                   <th className="text-left py-2 px-3">Tier</th>
                   <th className="text-right py-2 px-3">Revenue</th>
                   <th className="text-right py-2 px-3">Users</th>
@@ -508,6 +527,18 @@ const PlatformKPIs = () => {
                 {organizations.map((org) => (
                   <tr key={org.id} className="border-b border-border/50 hover:bg-secondary/30">
                     <td className="py-2 px-3 font-medium">{org.name}</td>
+                    <td className="py-2 px-3">
+                      {org.ownerEmail ? (
+                        <a
+                          href={`mailto:${org.ownerEmail}`}
+                          className="text-blue-400 hover:text-blue-300 hover:underline text-xs"
+                        >
+                          {org.ownerEmail}
+                        </a>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      )}
+                    </td>
                     <td className="py-2 px-3">
                       <Badge className={`${getTierBadge(org.tier)} border capitalize text-xs`}>
                         {org.tier}
