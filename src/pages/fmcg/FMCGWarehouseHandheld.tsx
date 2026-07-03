@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import FMCGLayout from "@/components/fmcg/FMCGLayout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +11,7 @@ import {
   ArrowDownUp, ClipboardList, RotateCcw, QrCode, Warehouse, ArrowRight,
 } from "lucide-react";
 import { useWarehouseOps } from "@/hooks/useWarehouseOps";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 const FMCGWarehouseHandheld = () => {
   const [activeTab, setActiveTab] = useState("picking");

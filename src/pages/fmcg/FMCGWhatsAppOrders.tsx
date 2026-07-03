@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import FMCGLayout from "@/components/fmcg/FMCGLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +9,7 @@ import {
   MessageCircle, Bot, CheckCircle2, AlertTriangle, Clock,
   Package, ShoppingCart, ArrowRight, Sparkles, Phone,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 const sampleOrders = [
   {

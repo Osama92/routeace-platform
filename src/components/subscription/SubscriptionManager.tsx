@@ -1,9 +1,9 @@
-import { useState, useMemo } from "react";
+﻿import { useState, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { CreditCard, CheckCircle, Zap, Loader2, AlertTriangle } from "lucide-react";
 import useTenantMode from "@/hooks/useTenantMode";
 import { LC_PRICING_PLANS } from "@/config/lcPricingPlans";

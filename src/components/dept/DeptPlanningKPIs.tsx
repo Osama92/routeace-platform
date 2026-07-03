@@ -1,4 +1,4 @@
-/**
+﻿/**
  * DeptPlanningKPIs.tsx - DPO Planning Pillar features
  * Covers: S&OP Meeting Tracker, Inventory DOI Policy, Risk Register,
  * Peak Period Planner. Used by Logistics Manager (canLog=true) and
@@ -18,7 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Calendar, Package, Shield, Plus, AlertTriangle, Activity } from "lucide-react";
 
 interface Props { orgId: string; canLog: boolean; }

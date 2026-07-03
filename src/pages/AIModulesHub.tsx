@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import useTenantMode from "@/hooks/useTenantMode";
@@ -12,7 +12,7 @@ import {
   Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList,
   BreadcrumbPage, BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { useIsPaidPlan } from "@/hooks/useIsPaidPlan";
 import {
   Brain, Users, Globe, Trophy, Eye, DollarSign, Handshake, Target,

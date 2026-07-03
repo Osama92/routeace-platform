@@ -1,4 +1,4 @@
-/**
+﻿/**
  * WaybillManagement.tsx
  * Outbound POD desk:
  *   1. Pending POD upload (transporter hasn't uploaded yet)
@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FileText, CheckCircle, Clock, Archive, Eye, Download } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 const POD_BUCKET = "transporter-pod-photos";
 

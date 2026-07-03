@@ -134,7 +134,19 @@ function dispatch(action: Action) {
 
 type Toast = Omit<ToasterToast, "id">;
 
+// Lazy import to avoid circular deps — reporter module is tiny and side-effect-free
+const reportError = (message: string) => {
+  import("@/hooks/usePlatformErrorReporter").then(({ reportPlatformError }) => {
+    reportPlatformError(String(message), { error_type: "client", severity: "error" });
+  }).catch(() => {});
+};
+
 function toast({ ...props }: Toast) {
+  // Auto-report destructive toasts to platform_errors so engineering sees them
+  if (props.variant === "destructive") {
+    const msg = [props.title, props.description].filter(Boolean).join(" — ");
+    if (msg) reportError(msg);
+  }
   const id = genId();
 
   const update = (props: ToasterToast) =>

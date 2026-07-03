@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ConvertToDispatchDialog
  * Multi-select pending outbound requests → group into a single dispatch,
  * assign a 3PL transporter, and email the transporter.
@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Truck } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 interface Props {
   pendingRequests: any[];

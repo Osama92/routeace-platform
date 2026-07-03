@@ -1,4 +1,4 @@
-/**
+﻿/**
  * TransporterPortal.tsx
  *
  * 3PL Transporter portal for LOGISTICS_DEPARTMENT mode.
@@ -19,7 +19,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { format } from "date-fns";
 import {
   Truck, MapPin, CheckCircle, Clock, Upload, AlertTriangle,

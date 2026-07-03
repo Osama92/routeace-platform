@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ import {
   CheckCircle, Crown, Building2, Clock,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import heroTrucks from "@/assets/landing/img-8-hero-trucks.png";
 import brandMark from "@/assets/routeace-mark.png";
 import ThemeToggle from "@/components/theme/ThemeToggle";

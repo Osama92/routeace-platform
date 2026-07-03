@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import useAuditLog from "@/hooks/useAuditLog";
 import { useTenantMode } from "@/hooks/useTenantMode";
 import { isCompanyOnlyRoute } from "@/lib/tenant/featureRegistry";
 import { supabase } from "@/integrations/supabase/client";
-import { toast as sonnerToast } from "sonner";
+import { toast as sonnerToast } from "@/lib/toast";
 import PendingApprovalScreen from "./PendingApprovalScreen";
 import SuspendedAccountScreen from "./SuspendedAccountScreen";
 import TrialExpiredScreen from "./TrialExpiredScreen";

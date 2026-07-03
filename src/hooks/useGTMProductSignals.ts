@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+﻿import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 export function useGTMProductSignals(osContext: "logistics" | "industry" = "industry", industryType: string = "fmcg") {
   const { user } = useAuth();

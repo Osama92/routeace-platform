@@ -1,4 +1,4 @@
-/**
+﻿/**
  * DeptDeliveryKPIs.tsx - DPO Delivery Pillar KPIs
  * Covers: IN Full breakdown, Delivery Quality Index (DQI), Refusals,
  * KM Deviation, Capacity Occupation. Used by Logistics Manager (canLog=true)
@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   Target, TrendingDown, AlertTriangle, Package, Truck, CheckCircle, XCircle,
   Plus, BarChart3, Gauge,
