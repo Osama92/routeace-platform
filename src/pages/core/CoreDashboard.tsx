@@ -31,6 +31,10 @@ import {
   LogOut,
   Shield,
   Search,
+  XCircle,
+  RefreshCw,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import CoreTeamManagement from "@/components/core/CoreTeamManagement";
 import AIInsightCards from "@/components/core/AIInsightCards";
@@ -69,6 +73,21 @@ interface PlatformMetrics {
   recentActivity: { action: string; time: string; table_name: string }[];
 }
 
+interface PlatformError {
+  id: string;
+  user_email: string | null;
+  organization_id: string | null;
+  error_type: string;
+  severity: string;
+  message: string;
+  stack: string | null;
+  component: string | null;
+  page_url: string | null;
+  route: string | null;
+  extra: Record<string, unknown> | null;
+  occurred_at: string;
+}
+
 interface OrgSubscription {
   id: string;
   name: string;
@@ -94,6 +113,11 @@ const CoreDashboard = () => {
   const [orgSubscriptions, setOrgSubscriptions] = useState<OrgSubscription[]>([]);
   const [subFilter, setSubFilter] = useState<"all" | "paid" | "trial" | "expired">("all");
   const [subSearch, setSubSearch] = useState("");
+  const [platformErrors, setPlatformErrors] = useState<PlatformError[]>([]);
+  const [errorFilter, setErrorFilter] = useState<"all" | "critical" | "error" | "warning">("all");
+  const [errorSearch, setErrorSearch] = useState("");
+  const [expandedError, setExpandedError] = useState<string | null>(null);
+  const [errorsLoading, setErrorsLoading] = useState(false);
   const [metrics, setMetrics] = useState<PlatformMetrics>({
     totalUsers: 0,
     activeUsers30d: 0,
@@ -116,6 +140,7 @@ const CoreDashboard = () => {
   useEffect(() => {
     checkCoreAccess();
     loadMetrics();
+    loadErrors();
   }, []);
 
   const checkCoreAccess = async () => {
@@ -356,6 +381,22 @@ const CoreDashboard = () => {
       setOrgSubscriptions(orgSubs);
     } catch (error) {
       console.error("Error loading metrics:", error);
+    }
+  };
+
+  const loadErrors = async () => {
+    setErrorsLoading(true);
+    try {
+      const { data } = await adminSupabase
+        .from("platform_errors")
+        .select("id, user_email, organization_id, error_type, severity, message, stack, component, page_url, route, extra, occurred_at")
+        .order("occurred_at", { ascending: false })
+        .limit(200);
+      setPlatformErrors((data as PlatformError[]) || []);
+    } catch (e) {
+      console.error("[CoreDashboard] loadErrors:", e);
+    } finally {
+      setErrorsLoading(false);
     }
   };
 
@@ -785,35 +826,215 @@ const CoreDashboard = () => {
 
           {/* System */}
           <TabsContent value="system" className="space-y-6">
+            {/* KPI summary */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <MetricCard
-                title="API Calls (Total)"
-                value={metrics.apiCalls.toLocaleString()}
-                icon={Zap}
-                sub="Logged requests"
+                title="Total Errors (24h)"
+                value={platformErrors.filter(e => new Date(e.occurred_at) > new Date(Date.now() - 86400000)).length.toString()}
+                icon={XCircle}
+                sub="Client + API errors"
+                positive={platformErrors.filter(e => new Date(e.occurred_at) > new Date(Date.now() - 86400000)).length === 0}
               />
               <MetricCard
-                title="Avg Latency"
-                value={`${metrics.avgResponseTime.toFixed(0)}ms`}
-                icon={Clock}
-                sub="Mean response time"
-                positive={metrics.avgResponseTime < 300}
-              />
-              <MetricCard
-                title="Error Rate"
-                value={`${metrics.errorRate.toFixed(2)}%`}
+                title="Critical Errors"
+                value={platformErrors.filter(e => e.severity === "critical").length.toString()}
                 icon={AlertTriangle}
-                sub="4xx + 5xx responses"
-                positive={metrics.errorRate < 2}
+                sub="All time unresolved"
+                positive={platformErrors.filter(e => e.severity === "critical").length === 0}
               />
               <MetricCard
-                title="Success Rate"
-                value={`${(100 - metrics.errorRate).toFixed(2)}%`}
-                icon={CheckCircle}
-                sub="2xx + 3xx responses"
-                positive={metrics.errorRate < 2}
+                title="Affected Users"
+                value={new Set(platformErrors.map(e => e.user_email).filter(Boolean)).size.toString()}
+                icon={Users}
+                sub="Unique users with errors"
+                positive={new Set(platformErrors.map(e => e.user_email).filter(Boolean)).size === 0}
+              />
+              <MetricCard
+                title="Unique Routes"
+                value={new Set(platformErrors.map(e => e.route).filter(Boolean)).size.toString()}
+                icon={Activity}
+                sub="Pages with errors"
               />
             </div>
+
+            {/* Error log */}
+            <Card className="border-border/50">
+              <CardHeader>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <CardTitle className="flex items-center gap-2">
+                    <XCircle className="w-5 h-5 text-red-400" />
+                    Platform Error Log
+                    <Badge className="bg-secondary text-muted-foreground text-xs ml-1">{platformErrors.length} entries</Badge>
+                  </CardTitle>
+                  <div className="flex items-center gap-2">
+                    <div className="relative">
+                      <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        placeholder="Search message, user, route..."
+                        className="pl-8 h-8 w-56 text-sm"
+                        value={errorSearch}
+                        onChange={e => setErrorSearch(e.target.value)}
+                      />
+                    </div>
+                    <Select value={errorFilter} onValueChange={v => setErrorFilter(v as typeof errorFilter)}>
+                      <SelectTrigger className="h-8 w-36 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All severities</SelectItem>
+                        <SelectItem value="critical">Critical</SelectItem>
+                        <SelectItem value="error">Error</SelectItem>
+                        <SelectItem value="warning">Warning</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1.5 text-xs"
+                      onClick={loadErrors}
+                      disabled={errorsLoading}
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${errorsLoading ? "animate-spin" : ""}`} />
+                      Refresh
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                {(() => {
+                  const filtered = platformErrors.filter(e => {
+                    const matchesSeverity = errorFilter === "all" || e.severity === errorFilter;
+                    const q = errorSearch.toLowerCase();
+                    const matchesSearch = !q ||
+                      e.message.toLowerCase().includes(q) ||
+                      (e.user_email || "").toLowerCase().includes(q) ||
+                      (e.route || "").toLowerCase().includes(q) ||
+                      (e.component || "").toLowerCase().includes(q);
+                    return matchesSeverity && matchesSearch;
+                  });
+
+                  const severityBadge = (sev: string) => {
+                    if (sev === "critical") return <Badge className="bg-red-500/20 text-red-400 border-red-500/30 border text-xs">Critical</Badge>;
+                    if (sev === "error")    return <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 border text-xs">Error</Badge>;
+                    if (sev === "warning")  return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 border text-xs">Warning</Badge>;
+                    return <Badge className="bg-secondary text-muted-foreground text-xs">{sev}</Badge>;
+                  };
+
+                  const typeBadge = (type: string) => {
+                    if (type === "client")        return <span className="text-blue-400 text-xs font-mono">client</span>;
+                    if (type === "edge_function") return <span className="text-purple-400 text-xs font-mono">edge fn</span>;
+                    if (type === "api")           return <span className="text-amber-400 text-xs font-mono">api</span>;
+                    return <span className="text-muted-foreground text-xs font-mono">{type}</span>;
+                  };
+
+                  if (errorsLoading) {
+                    return (
+                      <div className="flex items-center justify-center py-12 text-sm text-muted-foreground gap-2">
+                        <RefreshCw className="w-4 h-4 animate-spin" /> Loading errors...
+                      </div>
+                    );
+                  }
+
+                  if (filtered.length === 0) {
+                    return (
+                      <div className="flex flex-col items-center justify-center py-12 gap-2 text-sm text-muted-foreground">
+                        <CheckCircle className="w-8 h-8 text-green-400" />
+                        {platformErrors.length === 0
+                          ? "No errors recorded yet. Errors will appear here as users encounter them."
+                          : "No errors match this filter."}
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="divide-y divide-border/40">
+                      {filtered.map(err => {
+                        const isExpanded = expandedError === err.id;
+                        const ts = new Date(err.occurred_at);
+                        const relTime = (() => {
+                          const diff = Date.now() - ts.getTime();
+                          if (diff < 60000) return `${Math.round(diff/1000)}s ago`;
+                          if (diff < 3600000) return `${Math.round(diff/60000)}m ago`;
+                          if (diff < 86400000) return `${Math.round(diff/3600000)}h ago`;
+                          return ts.toLocaleDateString();
+                        })();
+
+                        return (
+                          <div key={err.id} className="hover:bg-secondary/20 transition-colors">
+                            {/* Summary row */}
+                            <button
+                              className="w-full text-left px-4 py-3 flex items-start gap-3"
+                              onClick={() => setExpandedError(isExpanded ? null : err.id)}
+                            >
+                              <div className="mt-0.5 shrink-0">
+                                {isExpanded
+                                  ? <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                                  : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex flex-wrap items-center gap-2 mb-1">
+                                  {severityBadge(err.severity)}
+                                  {typeBadge(err.error_type)}
+                                  <span className="text-xs text-muted-foreground">{relTime}</span>
+                                  {err.route && (
+                                    <span className="text-xs text-muted-foreground font-mono truncate max-w-[200px]">{err.route}</span>
+                                  )}
+                                </div>
+                                <p className="text-sm font-medium truncate text-foreground">{err.message}</p>
+                                <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                                  {err.user_email && <span>{err.user_email}</span>}
+                                  {err.component && <span className="font-mono">{err.component}</span>}
+                                </div>
+                              </div>
+                            </button>
+
+                            {/* Expanded detail */}
+                            {isExpanded && (
+                              <div className="px-11 pb-4 space-y-3">
+                                <div className="grid grid-cols-2 gap-3 text-xs">
+                                  <div>
+                                    <p className="text-muted-foreground mb-0.5">Timestamp</p>
+                                    <p className="font-mono">{ts.toISOString()}</p>
+                                  </div>
+                                  {err.user_email && (
+                                    <div>
+                                      <p className="text-muted-foreground mb-0.5">User</p>
+                                      <a href={`mailto:${err.user_email}`} className="text-blue-400 hover:underline">{err.user_email}</a>
+                                    </div>
+                                  )}
+                                  {err.page_url && (
+                                    <div className="col-span-2">
+                                      <p className="text-muted-foreground mb-0.5">Page URL</p>
+                                      <p className="font-mono text-xs break-all">{err.page_url}</p>
+                                    </div>
+                                  )}
+                                </div>
+                                {err.stack && (
+                                  <div>
+                                    <p className="text-xs text-muted-foreground mb-1">Stack Trace</p>
+                                    <pre className="text-xs font-mono bg-black/40 border border-border/50 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-all text-red-300 max-h-48">
+                                      {err.stack}
+                                    </pre>
+                                  </div>
+                                )}
+                                {err.extra && Object.keys(err.extra).length > 0 && (
+                                  <div>
+                                    <p className="text-xs text-muted-foreground mb-1">Extra Context</p>
+                                    <pre className="text-xs font-mono bg-black/40 border border-border/50 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap text-amber-300 max-h-32">
+                                      {JSON.stringify(err.extra, null, 2)}
+                                    </pre>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* Engineering */}

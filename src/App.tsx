@@ -449,6 +449,7 @@ import {
 import LiquorAuth from "./pages/liquor/LiquorAuth";
 import LiquorRoleGuard from "./components/liquor/LiquorRoleGuard";
 import { useEffect } from "react";
+import { usePlatformErrorReporter } from "@/hooks/usePlatformErrorReporter";
 
 // Define role groups for easier management
 const ADMIN_ROLES = ["admin", "super_admin"] as const;
@@ -462,14 +463,9 @@ const WORKFORCE_APPROVER_ROLES = ["admin", "super_admin", "org_admin", "ops_mana
 const WORKFORCE_MANAGER_ROLES = ["admin", "super_admin", "org_admin", "ops_manager"] as const;
 
 const UnhandledRejectionGuard = () => {
-  useEffect(() => {
-    const handleRejection = (event: PromiseRejectionEvent) => {
-      console.error("[UnhandledRejection]", event.reason);
-      event.preventDefault();
-    };
-    window.addEventListener("unhandledrejection", handleRejection);
-    return () => window.removeEventListener("unhandledrejection", handleRejection);
-  }, []);
+  // Wire the platform error reporter — captures unhandled errors + rejections
+  // and writes them to platform_errors for the engineering team to review.
+  usePlatformErrorReporter();
   return null;
 };
 
