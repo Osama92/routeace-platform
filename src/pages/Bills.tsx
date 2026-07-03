@@ -39,22 +39,19 @@ const PAYMENT_TERMS = [
   { value: "net_90", label: "Net 90" },
 ];
 
-type VatMode = "none" | "exclusive" | "inclusive";
-interface VatPreset { label: string; mode: VatMode; rate: number; }
-const VAT_PRESETS: VatPreset[] = [
-  { label: "No VAT",             mode: "none",      rate: 0    },
-  { label: "VAT 7.5% (Excl.)",  mode: "exclusive", rate: 7.5  },
-  { label: "VAT 5% (Excl.)",    mode: "exclusive", rate: 5    },
-  { label: "VAT 7.5% (Incl.)",  mode: "inclusive", rate: 7.5  },
-  { label: "VAT 5% (Incl.)",    mode: "inclusive", rate: 5    },
-];
-
 const TONNAGE_OPTIONS = ["1T", "3T", "5T", "10T", "15T", "20T", "30T", "40T"];
 
 const ACCOUNTS = [
   "Cost of Sales", "Fuel & Oil", "Maintenance", "Rent & Lease",
   "Insurance", "Tolls & Permits", "Driver Pay", "Office Expenses",
   "Utilities", "Other Expenses",
+];
+
+const LINE_VAT_OPTIONS = [
+  { label: "No VAT", rate: 0 },
+  { label: "5%",     rate: 5 },
+  { label: "7.5%",   rate: 7.5 },
+  { label: "20%",    rate: 20 },
 ];
 
 const STATUS_COLORS: Record<string, string> = {
@@ -71,6 +68,7 @@ interface LineItem {
   tonnage: string;
   quantity: number;
   rate: number;
+  vat_rate: number;
   customer_id: string;
   amount: number;
 }
@@ -82,19 +80,17 @@ const emptyLine = (): LineItem => ({
   tonnage: "",
   quantity: 1,
   rate: 0,
+  vat_rate: 0,
   customer_id: "",
   amount: 0,
 });
 
-// Base amount before VAT (always the entered rate × qty).
-// For inclusive VAT the line total IS rate×qty; VAT is extracted later in totals.
 const calcLineBase = (line: LineItem) => line.quantity * line.rate;
-
-const calcLineAmount = (line: LineItem, preset: VatPreset) => {
+const calcLineAmount = (line: LineItem) => {
   const base = calcLineBase(line);
-  if (preset.mode === "exclusive") return base + base * (preset.rate / 100);
-  return base; // inclusive or none: the entered rate already includes any VAT
+  return base + base * (line.vat_rate / 100);
 };
+const calcLineTax = (line: LineItem) => calcLineBase(line) * (line.vat_rate / 100);
 
 export default function BillsPage() {
   const { toast } = useToast();
@@ -105,7 +101,6 @@ export default function BillsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editBill, setEditBill] = useState<any | null>(null);
   const [editLines, setEditLines] = useState<LineItem[]>([emptyLine()]);
-  const [editVatPresetIdx, setEditVatPresetIdx] = useState(0);
   const [editForm, setEditForm] = useState({
     vendor_name: "", bill_number: "", order_number: "",
     bill_date: "", due_date: "", payment_terms: "due_on_receipt",
@@ -135,8 +130,6 @@ export default function BillsPage() {
     adjustment: 0,
   });
   const [lines, setLines] = useState<LineItem[]>([emptyLine()]);
-  const [vatPresetIdx, setVatPresetIdx] = useState(0);
-  const vatPreset = VAT_PRESETS[vatPresetIdx];
 
   // Customers for dropdown
   const { data: customers } = useQuery({
@@ -199,25 +192,10 @@ export default function BillsPage() {
     },
   });
 
-  // Line item calculations
-  const lineAmounts = useMemo(() => lines.map(l => calcLineAmount(l, vatPreset)), [lines, vatPreset]);
-  const taxTotal = useMemo(() => {
-    const r = vatPreset.rate / 100;
-    return lines.reduce((s, l) => {
-      const base = calcLineBase(l);
-      if (vatPreset.mode === "exclusive") return s + base * r;
-      if (vatPreset.mode === "inclusive") return s + base - base / (1 + r);
-      return s;
-    }, 0);
-  }, [lines, vatPreset]);
-  // subtotal = pre-VAT amount
-  const subtotal = useMemo(() => {
-    if (vatPreset.mode === "inclusive") {
-      const r = vatPreset.rate / 100;
-      return lines.reduce((s, l) => s + calcLineBase(l) / (1 + r), 0);
-    }
-    return lines.reduce((s, l) => s + calcLineBase(l), 0);
-  }, [lines, vatPreset]);
+  // Line item calculations (per-line VAT)
+  const lineAmounts = useMemo(() => lines.map(l => calcLineAmount(l)), [lines]);
+  const taxTotal = useMemo(() => lines.reduce((s, l) => s + calcLineTax(l), 0), [lines]);
+  const subtotal = useMemo(() => lines.reduce((s, l) => s + calcLineBase(l), 0), [lines]);
   const discountAmount = subtotal * (form.discount_percent / 100);
   const grandTotal = lineAmounts.reduce((s, a) => s + a, 0) - discountAmount + form.adjustment;
 
@@ -258,9 +236,10 @@ export default function BillsPage() {
           tonnage: l.tonnage || null,
           quantity: l.quantity,
           rate: l.rate,
-          vat_type: vatPreset.mode === "none" ? "no_vat" : `vat_${vatPreset.rate}`.replace(".", "_"),
+          vat_rate: l.vat_rate,
+          vat_type: l.vat_rate === 0 ? "no_vat" : `vat_${l.vat_rate}`.replace(".", "_"),
           customer_id: l.customer_id || null,
-          amount: lineAmounts[idx] ?? calcLineAmount(l, vatPreset),
+          amount: lineAmounts[idx] ?? calcLineAmount(l),
         }));
         const { error: itemErr } = await supabase.from("bill_items").insert(items as any);
         if (itemErr) console.error("Line items error:", itemErr);
@@ -271,7 +250,6 @@ export default function BillsPage() {
       setCreateOpen(false);
       setForm({ vendor_name: "", bill_number: "", order_number: "", bill_date: format(new Date(), "yyyy-MM-dd"), due_date: format(new Date(), "yyyy-MM-dd"), payment_terms: "due_on_receipt", notes: "", discount_percent: 0, adjustment: 0 });
       setLines([emptyLine()]);
-      setVatPresetIdx(0);
       toast({ title: "Bill created", description: "Bill has been recorded successfully." });
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -316,24 +294,9 @@ export default function BillsPage() {
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  const editVatPreset = VAT_PRESETS[editVatPresetIdx];
-  const editLineAmounts = useMemo(() => editLines.map(l => calcLineAmount(l, editVatPreset)), [editLines, editVatPreset]);
-  const editTaxTotal = useMemo(() => {
-    const r = editVatPreset.rate / 100;
-    return editLines.reduce((s, l) => {
-      const base = calcLineBase(l);
-      if (editVatPreset.mode === "exclusive") return s + base * r;
-      if (editVatPreset.mode === "inclusive") return s + base - base / (1 + r);
-      return s;
-    }, 0);
-  }, [editLines, editVatPreset]);
-  const editSubtotal = useMemo(() => {
-    if (editVatPreset.mode === "inclusive") {
-      const r = editVatPreset.rate / 100;
-      return editLines.reduce((s, l) => s + calcLineBase(l) / (1 + r), 0);
-    }
-    return editLines.reduce((s, l) => s + calcLineBase(l), 0);
-  }, [editLines, editVatPreset]);
+  const editLineAmounts = useMemo(() => editLines.map(l => calcLineAmount(l)), [editLines]);
+  const editTaxTotal = useMemo(() => editLines.reduce((s, l) => s + calcLineTax(l), 0), [editLines]);
+  const editSubtotal = useMemo(() => editLines.reduce((s, l) => s + calcLineBase(l), 0), [editLines]);
   const editDiscountAmount = editSubtotal * (editForm.discount_percent / 100);
   const editGrandTotal = editLineAmounts.reduce((s, a) => s + a, 0) - editDiscountAmount + editForm.adjustment;
 
@@ -354,7 +317,6 @@ export default function BillsPage() {
       discount_percent: bill.discount_percent || 0,
       adjustment: bill.adjustment || 0,
     });
-    setEditVatPresetIdx(0);
     setLoadingEditLines(true);
     try {
       const { data: items } = await supabase
@@ -370,6 +332,7 @@ export default function BillsPage() {
           tonnage: it.tonnage || "",
           quantity: it.quantity || 1,
           rate: it.rate || 0,
+          vat_rate: it.vat_rate || 0,
           customer_id: it.customer_id || "",
           amount: it.amount || 0,
         })));
@@ -412,9 +375,10 @@ export default function BillsPage() {
           tonnage: l.tonnage || null,
           quantity: l.quantity,
           rate: l.rate,
-          vat_type: editVatPreset.mode === "none" ? "no_vat" : `vat_${editVatPreset.rate}`.replace(".", "_"),
+          vat_rate: l.vat_rate,
+          vat_type: l.vat_rate === 0 ? "no_vat" : `vat_${l.vat_rate}`.replace(".", "_"),
           customer_id: l.customer_id || null,
-          amount: editLineAmounts[idx] ?? calcLineAmount(l, editVatPreset),
+          amount: editLineAmounts[idx] ?? calcLineAmount(l),
         }));
         const { error: itemErr } = await supabase.from("bill_items").insert(items as any);
         if (itemErr) console.error("Edit line items error:", itemErr);
@@ -681,6 +645,7 @@ export default function BillsPage() {
                     <TableHead className="text-sm font-semibold text-primary min-w-[110px]">Tonnage</TableHead>
                     <TableHead className="text-sm font-semibold text-primary w-20">Qty</TableHead>
                     <TableHead className="text-sm font-semibold text-primary min-w-[140px]">Rate (₦)</TableHead>
+                    <TableHead className="text-sm font-semibold text-primary min-w-[110px]">VAT</TableHead>
                     <TableHead className="text-sm font-semibold text-primary min-w-[160px]">Customer</TableHead>
                     <TableHead className="text-sm font-semibold text-primary text-right min-w-[140px]">Amount</TableHead>
                     <TableHead className="w-10"></TableHead>
@@ -711,6 +676,12 @@ export default function BillsPage() {
                         <Input type="number" className="h-9 text-sm border-0 bg-transparent min-w-[120px]" value={line.rate} onChange={e => updateEditLine(line.id, "rate", Number(e.target.value))} />
                       </TableCell>
                       <TableCell className="p-1.5">
+                        <Select value={String(line.vat_rate)} onValueChange={v => updateEditLine(line.id, "vat_rate", Number(v))}>
+                          <SelectTrigger className="h-9 text-sm border-0"><SelectValue /></SelectTrigger>
+                          <SelectContent>{LINE_VAT_OPTIONS.map(o => <SelectItem key={o.rate} value={String(o.rate)}>{o.label}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell className="p-1.5">
                         <Select value={line.customer_id} onValueChange={v => updateEditLine(line.id, "customer_id", v)}>
                           <SelectTrigger className="h-9 text-sm border-0"><SelectValue placeholder="Select..." /></SelectTrigger>
                           <SelectContent>{(customers || []).map((c: any) => <SelectItem key={c.id} value={c.id}>{c.company_name}</SelectItem>)}</SelectContent>
@@ -735,24 +706,6 @@ export default function BillsPage() {
             </Button>
           </div>
 
-          {/* VAT */}
-          <div className="p-3 bg-secondary/30 rounded-lg">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <Label className="font-semibold text-sm">VAT / Tax</Label>
-                <p className="text-[11px] text-muted-foreground mt-0.5">
-                  {editVatPreset.mode === "none" && "No tax applied to this bill."}
-                  {editVatPreset.mode === "exclusive" && `${editVatPreset.rate}% added on top of each line amount.`}
-                  {editVatPreset.mode === "inclusive" && `${editVatPreset.rate}% already included in the entered rates.`}
-                </p>
-              </div>
-              <Select value={String(editVatPresetIdx)} onValueChange={v => setEditVatPresetIdx(Number(v))}>
-                <SelectTrigger className="w-[210px] bg-background/50"><SelectValue /></SelectTrigger>
-                <SelectContent>{VAT_PRESETS.map((p, i) => <SelectItem key={i} value={String(i)}>{p.label}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-          </div>
-
           {/* Totals */}
           <div className="flex justify-end">
             <div className="w-[380px] space-y-3 text-sm">
@@ -762,7 +715,7 @@ export default function BillsPage() {
               </div>
               {editTaxTotal > 0 && (
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">VAT ({editVatPreset.rate}%{editVatPreset.mode === "inclusive" ? " incl." : ""})</span>
+                  <span className="text-muted-foreground">VAT</span>
                   <span className="font-mono">₦{editTaxTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                 </div>
               )}
@@ -872,6 +825,7 @@ export default function BillsPage() {
                     <TableHead className="text-sm font-semibold text-primary min-w-[110px] whitespace-nowrap">Tonnage</TableHead>
                     <TableHead className="text-sm font-semibold text-primary w-20 whitespace-nowrap">Qty</TableHead>
                     <TableHead className="text-sm font-semibold text-primary min-w-[140px] whitespace-nowrap">Rate (₦)</TableHead>
+                    <TableHead className="text-sm font-semibold text-primary min-w-[110px] whitespace-nowrap">VAT</TableHead>
                     <TableHead className="text-sm font-semibold text-primary min-w-[160px] whitespace-nowrap">Customer</TableHead>
                     <TableHead className="text-sm font-semibold text-primary text-right min-w-[140px] whitespace-nowrap">Amount</TableHead>
                     <TableHead className="w-10"></TableHead>
@@ -902,6 +856,12 @@ export default function BillsPage() {
                         <Input type="number" className="h-9 text-sm border-0 bg-transparent min-w-[120px]" value={line.rate} onChange={e => updateLine(line.id, "rate", Number(e.target.value))} />
                       </TableCell>
                       <TableCell className="p-1.5">
+                        <Select value={String(line.vat_rate)} onValueChange={v => updateLine(line.id, "vat_rate", Number(v))}>
+                          <SelectTrigger className="h-9 text-sm border-0"><SelectValue /></SelectTrigger>
+                          <SelectContent>{LINE_VAT_OPTIONS.map(o => <SelectItem key={o.rate} value={String(o.rate)}>{o.label}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell className="p-1.5">
                         <Select value={line.customer_id} onValueChange={v => updateLine(line.id, "customer_id", v)}>
                           <SelectTrigger className="h-9 text-sm border-0"><SelectValue placeholder="Select..." /></SelectTrigger>
                           <SelectContent>{(customers || []).map((c: any) => <SelectItem key={c.id} value={c.id}>{c.company_name}</SelectItem>)}</SelectContent>
@@ -925,26 +885,6 @@ export default function BillsPage() {
             </Button>
           </div>
 
-          {/* VAT / Tax — document-level */}
-          <div className="p-3 bg-secondary/30 rounded-lg">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <Label className="font-semibold text-sm">VAT / Tax</Label>
-                <p className="text-[11px] text-muted-foreground mt-0.5">
-                  {vatPreset.mode === "none" && "No tax applied to this bill."}
-                  {vatPreset.mode === "exclusive" && `${vatPreset.rate}% added on top of each line amount.`}
-                  {vatPreset.mode === "inclusive" && `${vatPreset.rate}% already included in the entered rates.`}
-                </p>
-              </div>
-              <Select value={String(vatPresetIdx)} onValueChange={v => setVatPresetIdx(Number(v))}>
-                <SelectTrigger className="w-[210px] bg-background/50"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {VAT_PRESETS.map((p, i) => <SelectItem key={i} value={String(i)}>{p.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
           {/* Totals */}
           <div className="flex justify-end">
             <div className="w-[380px] space-y-3 text-sm">
@@ -954,9 +894,7 @@ export default function BillsPage() {
               </div>
               {taxTotal > 0 && (
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground whitespace-nowrap">
-                    VAT ({vatPreset.rate}%{vatPreset.mode === "inclusive" ? " incl." : ""})
-                  </span>
+                  <span className="text-muted-foreground whitespace-nowrap">VAT</span>
                   <span className="font-mono">₦{taxTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                 </div>
               )}

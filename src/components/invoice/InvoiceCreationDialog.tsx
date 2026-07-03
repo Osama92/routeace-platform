@@ -70,16 +70,6 @@ interface InvoiceCreationDialogProps {
 
 const TONNAGE_OPTIONS = ["1T", "3T", "5T", "10T", "15T", "20T", "30T", "40T", "Container 20ft", "Container 40ft", "Flatbed", "Other"];
 
-// Document-level VAT presets — best-in-class (Zoho/QuickBooks style)
-// "exclusive" means VAT is added on top of the rate; "inclusive" means VAT is already baked in
-const VAT_PRESETS = [
-  { label: "No VAT", rate: 0, mode: "none" as const },
-  { label: "VAT 7.5% (Nigeria)", rate: 7.5, mode: "exclusive" as const },
-  { label: "VAT 5%", rate: 5, mode: "exclusive" as const },
-  { label: "VAT 20% (UK)", rate: 20, mode: "exclusive" as const },
-  { label: "Tax Inclusive (7.5%)", rate: 7.5, mode: "inclusive" as const },
-];
-type VatMode = "none" | "exclusive" | "inclusive";
 
 const PAYMENT_TERMS = [
   { label: "Due on Receipt", value: "on_receipt" },
@@ -132,9 +122,13 @@ export const InvoiceCreationDialog = ({
   const isOperations = userRole === "operations";
   const isNonAdmin = userRole === "support" || userRole === "operations";
 
-  // Document-level VAT setting — applied uniformly to all line items
-  const [vatPresetIdx, setVatPresetIdx] = useState(0); // default: No VAT
-  const vatPreset = VAT_PRESETS[vatPresetIdx];
+  // Per-line VAT rates available
+  const LINE_VAT_OPTIONS = [
+    { label: "No VAT", rate: 0 },
+    { label: "5%", rate: 5 },
+    { label: "7.5%", rate: 7.5 },
+    { label: "20%", rate: 20 },
+  ];
 
   const [formData, setFormData] = useState({
     invoice_number: "",
@@ -318,62 +312,24 @@ export const InvoiceCreationDialog = ({
       prev.map((item) => {
         if (item.id !== id) return item;
         const updated = { ...item, ...updates };
-        // Line-level VAT is now driven by the document VAT preset — ignore per-line vat_rate edits
         const base = updated.quantity * updated.rate;
-        if (vatPreset.mode === "exclusive") {
-          updated.vat_rate = vatPreset.rate;
-          updated.vat_amount = base * (vatPreset.rate / 100);
-          updated.line_total = base + updated.vat_amount;
-        } else if (vatPreset.mode === "inclusive") {
-          // VAT is inside the rate — back-calculate
-          updated.vat_rate = vatPreset.rate;
-          updated.vat_amount = base - base / (1 + vatPreset.rate / 100);
-          updated.line_total = base; // total stays the same, VAT is extracted
-        } else {
-          updated.vat_rate = 0;
-          updated.vat_amount = 0;
-          updated.line_total = base;
-        }
+        const vat = base * (updated.vat_rate / 100);
+        updated.vat_amount = vat;
+        updated.line_total = base + vat;
         return updated;
       })
     );
   };
 
-  // Recompute all line items whenever the VAT preset changes
-  useEffect(() => {
-    setLineItems((prev) =>
-      prev.map((item) => {
-        const base = item.quantity * item.rate;
-        if (vatPreset.mode === "exclusive") {
-          const vat = base * (vatPreset.rate / 100);
-          return { ...item, vat_rate: vatPreset.rate, vat_amount: vat, line_total: base + vat };
-        } else if (vatPreset.mode === "inclusive") {
-          const vat = base - base / (1 + vatPreset.rate / 100);
-          return { ...item, vat_rate: vatPreset.rate, vat_amount: vat, line_total: base };
-        } else {
-          return { ...item, vat_rate: 0, vat_amount: 0, line_total: base };
-        }
-      })
-    );
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vatPresetIdx]);
-
   const calculateTotals = useCallback(() => {
-    const lineSubtotals = lineItems.map((item) => {
-      if (vatPreset.mode === "inclusive") {
-        // For inclusive VAT, subtotal = total minus the embedded VAT
-        return item.line_total - item.vat_amount;
-      }
-      return item.quantity * item.rate;
-    });
-    const subtotal = lineSubtotals.reduce((s, v) => s + v, 0);
+    const subtotal = lineItems.reduce((s, item) => s + item.quantity * item.rate, 0);
     const totalVat = lineItems.reduce((sum, item) => sum + item.vat_amount, 0);
     const shippingVat = formData.shipping_vat_applicable
       ? formData.shipping_charge * (formData.shipping_vat_rate / 100)
       : 0;
     const grandTotal = subtotal + totalVat + formData.shipping_charge + shippingVat;
     return { subtotal, totalVat, shippingVat, grandTotal };
-  }, [lineItems, vatPreset, formData.shipping_charge, formData.shipping_vat_applicable, formData.shipping_vat_rate]);
+  }, [lineItems, formData.shipping_charge, formData.shipping_vat_applicable, formData.shipping_vat_rate]);
 
   const generateInvoiceNumber = async (): Promise<string> => {
     const year = new Date().getFullYear();
@@ -495,7 +451,7 @@ export const InvoiceCreationDialog = ({
           total_amount: grandTotal,
           balance_due: grandTotal,
           amount_paid: 0,
-          tax_type: vatPreset.mode === "none" ? "none" : vatPreset.mode,
+          tax_type: totalVat > 0 ? "exclusive" : "none",
           invoice_date: formData.invoice_date,
           due_date: formData.due_date || null,
           payment_terms: formData.payment_terms,
@@ -608,7 +564,6 @@ export const InvoiceCreationDialog = ({
   };
 
   const resetForm = () => {
-    setVatPresetIdx(0);
     setFormData({
       invoice_number: "",
       auto_number: true,
@@ -746,30 +701,6 @@ export const InvoiceCreationDialog = ({
                 </div>
               </div>
 
-              {/* Document-level VAT — applied to all lines uniformly */}
-              <div className="p-3 bg-secondary/30 rounded-lg">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <Label className="font-semibold text-sm">VAT / Tax</Label>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                      {vatPreset.mode === "none" && "No tax applied to this invoice."}
-                      {vatPreset.mode === "exclusive" && `${vatPreset.rate}% added on top of each line amount.`}
-                      {vatPreset.mode === "inclusive" && `${vatPreset.rate}% already included in the entered rates.`}
-                    </p>
-                  </div>
-                  <Select value={String(vatPresetIdx)} onValueChange={(v) => setVatPresetIdx(Number(v))}>
-                    <SelectTrigger className="w-[210px] bg-background/50">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {VAT_PRESETS.map((p, i) => (
-                        <SelectItem key={i} value={String(i)}>{p.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
               {/* Line Items */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -787,12 +718,13 @@ export const InvoiceCreationDialog = ({
                   </div>
                 </div>
 
-                {/* Table Header — 11-col grid: 2 tonnage | 3 desc | 1 qty | 3 rate | 2 total | 1 del */}
+                {/* Table Header — 2 tonnage | 3 desc | 1 qty | 2 rate | 2 vat | 2 total */}
                 <div className="grid grid-cols-12 gap-2 text-xs text-muted-foreground font-medium px-3">
                   <div className="col-span-2">Tonnage</div>
-                  <div className="col-span-4">Description</div>
+                  <div className="col-span-3">Description</div>
                   <div className="col-span-1">Qty</div>
-                  <div className="col-span-3">Rate (₦)</div>
+                  <div className="col-span-2">Rate (₦)</div>
+                  <div className="col-span-2">VAT</div>
                   <div className="col-span-2 text-right">Amount (₦)</div>
                 </div>
 
@@ -807,20 +739,28 @@ export const InvoiceCreationDialog = ({
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="col-span-4 min-w-0">
+                      <div className="col-span-3 min-w-0">
                         <Input value={item.description} onChange={(e) => updateLineItem(item.id, { description: e.target.value })} className="bg-background/50 text-xs h-8 w-full" placeholder="Description" />
                       </div>
                       <div className="col-span-1 min-w-0">
                         <Input type="number" value={item.quantity} onChange={(e) => updateLineItem(item.id, { quantity: parseInt(e.target.value) || 1 })} className="bg-background/50 text-xs h-8 w-full" />
                       </div>
-                      <div className="col-span-3 min-w-0">
+                      <div className="col-span-2 min-w-0">
                         <Input type="number" value={item.rate || ""} onChange={(e) => updateLineItem(item.id, { rate: parseFloat(e.target.value) || 0 })} className="bg-background/50 text-xs h-8 w-full" placeholder="0" />
+                      </div>
+                      <div className="col-span-2 min-w-0">
+                        <Select value={String(item.vat_rate)} onValueChange={(v) => updateLineItem(item.id, { vat_rate: parseFloat(v) })}>
+                          <SelectTrigger className="bg-background/50 text-xs h-8"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {LINE_VAT_OPTIONS.map((o) => <SelectItem key={o.rate} value={String(o.rate)}>{o.label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
                       </div>
                       <div className="col-span-2 text-xs text-right font-semibold tabular-nums whitespace-nowrap pr-1 flex flex-col items-end justify-center gap-0.5">
                         <span>₦{item.line_total.toLocaleString()}</span>
                         {item.vat_amount > 0 && (
                           <span className="text-[10px] font-normal text-muted-foreground">
-                            {vatPreset.mode === "inclusive" ? "incl." : "+"} ₦{item.vat_amount.toLocaleString(undefined, { maximumFractionDigits: 2 })} VAT
+                            +₦{item.vat_amount.toLocaleString(undefined, { maximumFractionDigits: 2 })} VAT
                           </span>
                         )}
                         {lineItems.length > 1 && (
@@ -967,14 +907,12 @@ export const InvoiceCreationDialog = ({
               {/* Totals */}
               <div className="border-t border-border pt-2 space-y-1 text-xs">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">{vatPreset.mode === "inclusive" ? "Subtotal (ex. VAT)" : "Subtotal"}</span>
+                  <span className="text-muted-foreground">Subtotal</span>
                   <span>₦{subtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                 </div>
                 {totalVat > 0 && (
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">
-                      VAT ({vatPreset.rate}%{vatPreset.mode === "inclusive" ? " incl." : ""})
-                    </span>
+                    <span className="text-muted-foreground">VAT</span>
                     <span>₦{totalVat.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                   </div>
                 )}
