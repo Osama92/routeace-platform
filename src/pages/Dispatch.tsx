@@ -66,7 +66,7 @@ import SLACountdownTimer from "@/components/dispatch/SLACountdownTimer";
 import DelayReasonDialog from "@/components/dispatch/DelayReasonDialog";
 import PricingRecommendation from "@/components/dispatch/PricingRecommendation";
 import { ResendClientEmailButton } from "@/components/notifications/ResendClientEmailButton";
-import { loadGoogleMaps } from "@/lib/googleMaps";
+import { AddressAutocomplete } from "@/components/shared/AddressAutocomplete";
 
 interface Dropoff {
   id: string;
@@ -222,72 +222,8 @@ const DispatchPage = () => {
     longitude: null as number | null,
   });
 
-  // Status dialog — Google Places Autocomplete + history
-  const [locationSuggestions, setLocationSuggestions] = useState<{ description: string; placeId: string }[]>([]);
-  const [locationLoading, setLocationLoading] = useState(false);
-  const [showLocationDropdown, setShowLocationDropdown] = useState(false);
+  // Status dialog — history
   const [statusHistory, setStatusHistory] = useState<any[]>([]);
-  const locationDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const placesServiceRef = useRef<any>(null);
-  const autocompleteServiceRef = useRef<any>(null);
-
-  // Lazy-init Google Places services once Maps API is loaded
-  const ensurePlacesService = useCallback(() => {
-    if (!window.google?.maps?.places) return false;
-    if (!autocompleteServiceRef.current) {
-      autocompleteServiceRef.current = new window.google.maps.places.AutocompleteService();
-    }
-    if (!placesServiceRef.current) {
-      // PlacesService needs a DOM node — reuse an off-screen div
-      let el = document.getElementById("__ra_places_svc");
-      if (!el) { el = document.createElement("div"); el.id = "__ra_places_svc"; document.body.appendChild(el); }
-      placesServiceRef.current = new window.google.maps.places.PlacesService(el);
-    }
-    return true;
-  }, []);
-
-  const searchPlaces = useCallback((query: string) => {
-    if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current);
-    if (!query || query.length < 3) {
-      setLocationSuggestions([]);
-      setShowLocationDropdown(false);
-      return;
-    }
-    locationDebounceRef.current = setTimeout(() => {
-      if (!ensurePlacesService()) return;
-      setLocationLoading(true);
-      autocompleteServiceRef.current.getPlacePredictions(
-        { input: query, componentRestrictions: { country: "ng" }, types: ["geocode", "establishment"] },
-        (predictions: any[], status: string) => {
-          setLocationLoading(false);
-          if (status === "OK" && predictions?.length) {
-            setLocationSuggestions(predictions.map((p: any) => ({ description: p.description, placeId: p.place_id })));
-            setShowLocationDropdown(true);
-          } else {
-            setLocationSuggestions([]);
-            setShowLocationDropdown(false);
-          }
-        }
-      );
-    }, 200);
-  }, [ensurePlacesService]);
-
-  const selectPlace = useCallback((suggestion: { description: string; placeId: string }) => {
-    setStatusUpdate((prev) => ({ ...prev, location: suggestion.description, latitude: null, longitude: null }));
-    setShowLocationDropdown(false);
-    setLocationSuggestions([]);
-    if (!ensurePlacesService()) return;
-    placesServiceRef.current.getDetails(
-      { placeId: suggestion.placeId, fields: ["geometry"] },
-      (place: any, status: string) => {
-        if (status === "OK" && place?.geometry?.location) {
-          const lat = place.geometry.location.lat();
-          const lng = place.geometry.location.lng();
-          setStatusUpdate((prev) => ({ ...prev, latitude: lat, longitude: lng }));
-        }
-      }
-    );
-  }, [ensurePlacesService]);
 
   useEffect(() => {
     if (!isStatusDialogOpen || !selectedDispatch) { setStatusHistory([]); return; }
@@ -309,11 +245,6 @@ const DispatchPage = () => {
       .order("created_at", { ascending: true })
       .then(({ data }) => setStatusHistory(data || []));
   }, [isHistoryDialogOpen, selectedDispatch?.id]);
-
-  // Pre-load Google Maps + Places when the status dialog opens
-  useEffect(() => {
-    if (isStatusDialogOpen) loadGoogleMaps().catch(() => {});
-  }, [isStatusDialogOpen]);
 
   const [dropoffs, setDropoffs] = useState<Dropoff[]>([]);
 
@@ -1860,7 +1791,7 @@ const DispatchPage = () => {
               </Select>
             </div>
 
-            {/* Location with Google Places Autocomplete */}
+            {/* Location with AddressAutocomplete */}
             <div className="space-y-2">
               <Label className="flex items-center gap-2">
                 Current Location
@@ -1871,46 +1802,13 @@ const DispatchPage = () => {
                   </span>
                 )}
               </Label>
-              <div className="relative">
-                <div className="relative flex items-center">
-                  <MapPin className="absolute left-3 w-4 h-4 text-muted-foreground pointer-events-none" />
-                  <Input
-                    value={statusUpdate.location}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setStatusUpdate((prev) => ({ ...prev, location: v, latitude: null, longitude: null }));
-                      searchPlaces(v);
-                    }}
-                    onFocus={() => { if (locationSuggestions.length > 0) setShowLocationDropdown(true); }}
-                    onBlur={() => setTimeout(() => setShowLocationDropdown(false), 200)}
-                    placeholder="Search address or landmark..."
-                    className="bg-secondary/50 pl-9 pr-8"
-                    autoComplete="off"
-                  />
-                  {locationLoading && (
-                    <div className="absolute right-3 w-3 h-3 border border-primary/40 border-t-primary rounded-full animate-spin" />
-                  )}
-                </div>
-                {showLocationDropdown && locationSuggestions.length > 0 && (
-                  <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-popover border border-border rounded-md shadow-lg overflow-hidden max-h-52 overflow-y-auto">
-                    {locationSuggestions.map((s, i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        className="w-full text-left px-3 py-2 text-sm hover:bg-accent flex items-start gap-2 transition-colors"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          selectPlace(s);
-                        }}
-                      >
-                        <MapPin className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
-                        <span className="line-clamp-2 leading-snug">{s.description}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground">Pick a suggestion to pin the exact coordinates on the map.</p>
+              <AddressAutocomplete
+                value={statusUpdate.location}
+                onChange={(v) => setStatusUpdate((prev) => ({ ...prev, location: v, latitude: null, longitude: null }))}
+                onPlaceSelect={(p) => setStatusUpdate((prev) => ({ ...prev, location: p.formattedAddress, latitude: p.lat, longitude: p.lng }))}
+                placeholder="Search address or landmark..."
+                className="bg-secondary/50"
+              />
             </div>
 
             <div className="space-y-2">

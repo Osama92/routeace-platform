@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,7 +25,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useTenantMode } from "@/hooks/useTenantMode";
 import { SLABreachPanel, TicketAuditTimeline, TicketAttachments, ExportToolbar } from "@/components/support/SupportExtras";
-import { loadGoogleMaps } from "@/lib/googleMaps";
+import { AddressAutocomplete } from "@/components/shared/AddressAutocomplete";
 
 type TicketChannel = "phone" | "whatsapp" | "email" | "instagram" | "live_chat";
 type TicketStatus = "open" | "in_progress" | "escalated" | "resolved" | "closed";
@@ -163,69 +163,6 @@ export default function SupportCenter() {
   const [statusUpdate, setStatusUpdate] = useState({ status: "", location: "", notes: "", latitude: null as number | null, longitude: null as number | null });
   const [sendingStatus, setSendingStatus] = useState(false);
 
-  // Google Places Autocomplete for location field
-  const [locationSuggestions, setLocationSuggestions] = useState<{ description: string; placeId: string }[]>([]);
-  const [locationLoading, setLocationLoading] = useState(false);
-  const [showLocationDropdown, setShowLocationDropdown] = useState(false);
-  const locationDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const autocompleteServiceRef = useRef<any>(null);
-  const placesServiceRef = useRef<any>(null);
-
-  useEffect(() => {
-    if (statusDialogOpen) loadGoogleMaps().catch(() => {});
-  }, [statusDialogOpen]);
-
-  const ensurePlacesServices = useCallback(() => {
-    if (!window.google?.maps?.places) return false;
-    if (!autocompleteServiceRef.current)
-      autocompleteServiceRef.current = new window.google.maps.places.AutocompleteService();
-    if (!placesServiceRef.current) {
-      let el = document.getElementById("__ra_places_svc");
-      if (!el) { el = document.createElement("div"); el.id = "__ra_places_svc"; document.body.appendChild(el); }
-      placesServiceRef.current = new window.google.maps.places.PlacesService(el);
-    }
-    return true;
-  }, []);
-
-  const searchPlaces = useCallback((query: string) => {
-    if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current);
-    if (!query || query.length < 3) { setLocationSuggestions([]); setShowLocationDropdown(false); return; }
-    locationDebounceRef.current = setTimeout(() => {
-      if (!ensurePlacesServices()) return;
-      setLocationLoading(true);
-      autocompleteServiceRef.current.getPlacePredictions(
-        { input: query, componentRestrictions: { country: "ng" }, types: ["geocode", "establishment"] },
-        (predictions: any[], status: string) => {
-          setLocationLoading(false);
-          if (status === "OK" && predictions?.length) {
-            setLocationSuggestions(predictions.map((p: any) => ({ description: p.description, placeId: p.place_id })));
-            setShowLocationDropdown(true);
-          } else {
-            setLocationSuggestions([]); setShowLocationDropdown(false);
-          }
-        }
-      );
-    }, 200);
-  }, [ensurePlacesServices]);
-
-  const selectPlace = useCallback((s: { description: string; placeId: string }) => {
-    setStatusUpdate((prev) => ({ ...prev, location: s.description, latitude: null, longitude: null }));
-    setShowLocationDropdown(false);
-    setLocationSuggestions([]);
-    if (!ensurePlacesServices()) return;
-    placesServiceRef.current.getDetails(
-      { placeId: s.placeId, fields: ["geometry"] },
-      (place: any, status: string) => {
-        if (status === "OK" && place?.geometry?.location) {
-          setStatusUpdate((prev) => ({
-            ...prev,
-            latitude: place.geometry.location.lat(),
-            longitude: place.geometry.location.lng(),
-          }));
-        }
-      }
-    );
-  }, [ensurePlacesServices]);
 
   const handleStatusUpdate = async () => {
     if (!selectedDispatch || !statusUpdate.status || !statusUpdate.location.trim()) return;
@@ -1222,43 +1159,13 @@ export default function SupportCenter() {
                   </span>
                 )}
               </Label>
-              <div className="relative">
-                <div className="relative flex items-center">
-                  <MapPin className="absolute left-3 w-4 h-4 text-muted-foreground pointer-events-none" />
-                  <Input
-                    value={statusUpdate.location}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setStatusUpdate((p) => ({ ...p, location: v, latitude: null, longitude: null }));
-                      searchPlaces(v);
-                    }}
-                    onFocus={() => { if (locationSuggestions.length > 0) setShowLocationDropdown(true); }}
-                    onBlur={() => setTimeout(() => setShowLocationDropdown(false), 200)}
-                    placeholder="Search address or landmark..."
-                    className="bg-secondary/50 pl-9 pr-8"
-                    autoComplete="off"
-                  />
-                  {locationLoading && (
-                    <div className="absolute right-3 w-3 h-3 border border-primary/40 border-t-primary rounded-full animate-spin" />
-                  )}
-                </div>
-                {showLocationDropdown && locationSuggestions.length > 0 && (
-                  <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-popover border border-border rounded-md shadow-lg overflow-hidden max-h-52 overflow-y-auto">
-                    {locationSuggestions.map((s, i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        className="w-full text-left px-3 py-2 text-sm hover:bg-accent flex items-start gap-2 transition-colors"
-                        onMouseDown={(e) => { e.preventDefault(); selectPlace(s); }}
-                      >
-                        <MapPin className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
-                        <span className="line-clamp-2 leading-snug">{s.description}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground">Pick a suggestion to pin the exact GPS coordinates.</p>
+              <AddressAutocomplete
+                value={statusUpdate.location}
+                onChange={(v) => setStatusUpdate((p) => ({ ...p, location: v, latitude: null, longitude: null }))}
+                onPlaceSelect={(p) => setStatusUpdate((prev) => ({ ...prev, location: p.formattedAddress, latitude: p.lat, longitude: p.lng }))}
+                placeholder="Search address or landmark..."
+                className="bg-secondary/50"
+              />
             </div>
             <div className="space-y-2">
               <Label>Notes</Label>
