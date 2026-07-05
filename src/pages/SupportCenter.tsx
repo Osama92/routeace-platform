@@ -25,6 +25,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useTenantMode } from "@/hooks/useTenantMode";
 import { SLABreachPanel, TicketAuditTimeline, TicketAttachments, ExportToolbar } from "@/components/support/SupportExtras";
+import { loadGoogleMaps } from "@/lib/googleMaps";
 
 type TicketChannel = "phone" | "whatsapp" | "email" | "instagram" | "live_chat";
 type TicketStatus = "open" | "in_progress" | "escalated" | "resolved" | "closed";
@@ -171,17 +172,7 @@ export default function SupportCenter() {
   const placesServiceRef = useRef<any>(null);
 
   useEffect(() => {
-    if (!statusDialogOpen) return;
-    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? "";
-    if (!apiKey || window.google?.maps?.places) return;
-    if (!document.getElementById("gmaps-ra")) {
-      const s = document.createElement("script");
-      s.id = "gmaps-ra";
-      s.async = true;
-      s.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
-      s.onload = () => { (window as any)._raMapReady = true; };
-      document.head.appendChild(s);
-    }
+    if (statusDialogOpen) loadGoogleMaps().catch(() => {});
   }, [statusDialogOpen]);
 
   const ensurePlacesServices = useCallback(() => {

@@ -66,6 +66,7 @@ import SLACountdownTimer from "@/components/dispatch/SLACountdownTimer";
 import DelayReasonDialog from "@/components/dispatch/DelayReasonDialog";
 import PricingRecommendation from "@/components/dispatch/PricingRecommendation";
 import { ResendClientEmailButton } from "@/components/notifications/ResendClientEmailButton";
+import { loadGoogleMaps } from "@/lib/googleMaps";
 
 interface Dropoff {
   id: string;
@@ -309,19 +310,9 @@ const DispatchPage = () => {
       .then(({ data }) => setStatusHistory(data || []));
   }, [isHistoryDialogOpen, selectedDispatch?.id]);
 
-  // Load Google Maps + Places library when the status dialog opens (lazy, once)
+  // Pre-load Google Maps + Places when the status dialog opens
   useEffect(() => {
-    if (!isStatusDialogOpen) return;
-    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? "";
-    if (!apiKey || window.google?.maps?.places) return;
-    if (!document.getElementById("gmaps-ra")) {
-      const s = document.createElement("script");
-      s.id = "gmaps-ra";
-      s.async = true;
-      s.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
-      s.onload = () => { (window as any)._raMapReady = true; };
-      document.head.appendChild(s);
-    }
+    if (isStatusDialogOpen) loadGoogleMaps().catch(() => {});
   }, [isStatusDialogOpen]);
 
   const [dropoffs, setDropoffs] = useState<Dropoff[]>([]);

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { loadGoogleMaps } from "@/lib/googleMaps";
 
 export interface TrackingPin {
   id: string;
@@ -30,10 +31,7 @@ interface Props {
 }
 
 declare global {
-  interface Window {
-    google: any;
-    _raMapReady?: boolean;
-  }
+  interface Window { google: any; _raMapReady?: boolean; }
 }
 
 const SOURCE_STYLE: Record<
@@ -115,14 +113,9 @@ export function GoogleTrackingMap({ pins, apiKey, routes = [], selectedDispatchI
   const polylinesRef = useRef<any[]>([]);
 
   useEffect(() => {
-    if (!apiKey) {
-      console.warn("[GoogleTrackingMap] No API key — VITE_GOOGLE_MAPS_API_KEY is not set. Map will not load.");
-      return;
-    }
-
-    const initMap = () => {
-      if (!containerRef.current || mapRef.current) return;
-      console.log("[GoogleTrackingMap] initMap called, pins:", pins.length, "routes:", routes.length);
+    let cancelled = false;
+    loadGoogleMaps().then(() => {
+      if (cancelled || !containerRef.current || mapRef.current) return;
       const centre = pins.length > 0
         ? { lat: pins[0].lat, lng: pins[0].lng }
         : { lat: 9.082, lng: 8.6753 };
@@ -138,48 +131,17 @@ export function GoogleTrackingMap({ pins, apiKey, routes = [], selectedDispatchI
           { elementType: "labels.text.fill", stylers: [{ color: "#B8D4F0" }] },
         ],
       });
+      console.log("[GoogleTrackingMap] Map initialised, drawing", pins.length, "pins,", routes.length, "routes");
       drawAll(pins, routes, selectedDispatchId ?? null);
-    };
-
-    if (window.google?.maps) {
-      console.log("[GoogleTrackingMap] Google Maps already loaded, calling initMap");
-      initMap();
-      return;
-    }
-
-    if (!document.getElementById("gmaps-ra")) {
-      console.log("[GoogleTrackingMap] Loading Google Maps script, apiKey present:", !!apiKey);
-      const s = document.createElement("script");
-      s.id = "gmaps-ra";
-      s.async = true;
-      s.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
-      s.onload = () => {
-        console.log("[GoogleTrackingMap] Maps script loaded successfully");
-        window._raMapReady = true;
-        initMap();
-      };
-      s.onerror = (e) => {
-        console.error("[GoogleTrackingMap] Maps script failed to load:", e);
-      };
-      document.head.appendChild(s);
-    } else if (window._raMapReady) {
-      console.log("[GoogleTrackingMap] Script tag exists and ready, calling initMap");
-      initMap();
-    } else {
-      console.warn("[GoogleTrackingMap] Script tag exists but not ready yet — waiting for onload");
-      // Script is loading from a previous mount; wait for it
-      const existing = document.getElementById("gmaps-ra") as HTMLScriptElement;
-      existing.addEventListener("load", () => { window._raMapReady = true; initMap(); }, { once: true });
-    }
+    }).catch((err) => {
+      console.error("[GoogleTrackingMap] Could not load Google Maps:", err.message);
+    });
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiKey]);
+  }, []);
 
   useEffect(() => {
-    if (!mapRef.current || !window.google?.maps) {
-      console.log("[GoogleTrackingMap] pins/routes updated but map not ready yet — mapRef:", !!mapRef.current, "google.maps:", !!window.google?.maps);
-      return;
-    }
-    console.log("[GoogleTrackingMap] redrawing — pins:", pins.length, "routes:", routes.length, "selectedDispatch:", selectedDispatchId);
+    if (!mapRef.current || !window.google?.maps) return;
     drawAll(pins, routes, selectedDispatchId ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pins, routes, selectedDispatchId]);
