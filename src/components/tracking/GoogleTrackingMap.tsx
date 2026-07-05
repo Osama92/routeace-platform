@@ -146,7 +146,7 @@ export function GoogleTrackingMap({ pins, apiKey, routes = [], selectedDispatchI
       const s = document.createElement("script");
       s.id = "gmaps-ra";
       s.async = true;
-      s.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}`;
+      s.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
       s.onload = () => {
         window._raMapReady = true;
         initMap();

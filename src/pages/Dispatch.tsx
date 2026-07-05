@@ -217,14 +217,33 @@ const DispatchPage = () => {
     status: "",
     location: "",
     notes: "",
+    latitude: null as number | null,
+    longitude: null as number | null,
   });
 
-  // Status dialog — location autocomplete + history
-  const [locationSuggestions, setLocationSuggestions] = useState<{ description: string }[]>([]);
+  // Status dialog — Google Places Autocomplete + history
+  const [locationSuggestions, setLocationSuggestions] = useState<{ description: string; placeId: string }[]>([]);
   const [locationLoading, setLocationLoading] = useState(false);
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   const [statusHistory, setStatusHistory] = useState<any[]>([]);
   const locationDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const placesServiceRef = useRef<any>(null);
+  const autocompleteServiceRef = useRef<any>(null);
+
+  // Lazy-init Google Places services once Maps API is loaded
+  const ensurePlacesService = useCallback(() => {
+    if (!window.google?.maps?.places) return false;
+    if (!autocompleteServiceRef.current) {
+      autocompleteServiceRef.current = new window.google.maps.places.AutocompleteService();
+    }
+    if (!placesServiceRef.current) {
+      // PlacesService needs a DOM node — reuse an off-screen div
+      let el = document.getElementById("__ra_places_svc");
+      if (!el) { el = document.createElement("div"); el.id = "__ra_places_svc"; document.body.appendChild(el); }
+      placesServiceRef.current = new window.google.maps.places.PlacesService(el);
+    }
+    return true;
+  }, []);
 
   const searchPlaces = useCallback((query: string) => {
     if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current);
@@ -233,25 +252,41 @@ const DispatchPage = () => {
       setShowLocationDropdown(false);
       return;
     }
-    locationDebounceRef.current = setTimeout(async () => {
+    locationDebounceRef.current = setTimeout(() => {
+      if (!ensurePlacesService()) return;
       setLocationLoading(true);
-      try {
-        // Nominatim (OpenStreetMap) — no API key, no CORS issues, good Nigeria coverage
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=ng&limit=6&addressdetails=0`,
-          { headers: { "Accept-Language": "en", "User-Agent": "RouteAce/1.0 (routeace.app)" }, signal: AbortSignal.timeout(5000) }
-        );
-        const data = await res.json();
-        const results = (data as any[]).map((r: any) => ({ description: r.display_name as string }));
-        setLocationSuggestions(results);
-        setShowLocationDropdown(results.length > 0);
-      } catch {
-        // silently ignore; user can still type manually
-      } finally {
-        setLocationLoading(false);
+      autocompleteServiceRef.current.getPlacePredictions(
+        { input: query, componentRestrictions: { country: "ng" }, types: ["geocode", "establishment"] },
+        (predictions: any[], status: string) => {
+          setLocationLoading(false);
+          if (status === "OK" && predictions?.length) {
+            setLocationSuggestions(predictions.map((p: any) => ({ description: p.description, placeId: p.place_id })));
+            setShowLocationDropdown(true);
+          } else {
+            setLocationSuggestions([]);
+            setShowLocationDropdown(false);
+          }
+        }
+      );
+    }, 200);
+  }, [ensurePlacesService]);
+
+  const selectPlace = useCallback((suggestion: { description: string; placeId: string }) => {
+    setStatusUpdate((prev) => ({ ...prev, location: suggestion.description, latitude: null, longitude: null }));
+    setShowLocationDropdown(false);
+    setLocationSuggestions([]);
+    if (!ensurePlacesService()) return;
+    placesServiceRef.current.getDetails(
+      { placeId: suggestion.placeId, fields: ["geometry"] },
+      (place: any, status: string) => {
+        if (status === "OK" && place?.geometry?.location) {
+          const lat = place.geometry.location.lat();
+          const lng = place.geometry.location.lng();
+          setStatusUpdate((prev) => ({ ...prev, latitude: lat, longitude: lng }));
+        }
       }
-    }, 320);
-  }, []);
+    );
+  }, [ensurePlacesService]);
 
   useEffect(() => {
     if (!isStatusDialogOpen || !selectedDispatch) { setStatusHistory([]); return; }
@@ -274,8 +309,23 @@ const DispatchPage = () => {
       .then(({ data }) => setStatusHistory(data || []));
   }, [isHistoryDialogOpen, selectedDispatch?.id]);
 
+  // Load Google Maps + Places library when the status dialog opens (lazy, once)
+  useEffect(() => {
+    if (!isStatusDialogOpen) return;
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? "";
+    if (!apiKey || window.google?.maps?.places) return;
+    if (!document.getElementById("gmaps-ra")) {
+      const s = document.createElement("script");
+      s.id = "gmaps-ra";
+      s.async = true;
+      s.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
+      s.onload = () => { (window as any)._raMapReady = true; };
+      document.head.appendChild(s);
+    }
+  }, [isStatusDialogOpen]);
+
   const [dropoffs, setDropoffs] = useState<Dropoff[]>([]);
-  
+
   // Edit form state
   const [editFormData, setEditFormData] = useState({
     customer_id: "",
@@ -771,6 +821,8 @@ const DispatchPage = () => {
           status: statusUpdate.status,
           location: statusUpdate.location || null,
           notes: statusUpdate.notes || null,
+          latitude: statusUpdate.latitude ?? null,
+          longitude: statusUpdate.longitude ?? null,
         },
       });
 
@@ -784,7 +836,7 @@ const DispatchPage = () => {
       });
       setIsStatusDialogOpen(false);
       setSelectedDispatch(null);
-      setStatusUpdate({ status: "", location: "", notes: "" });
+      setStatusUpdate({ status: "", location: "", notes: "", latitude: null, longitude: null });
 
       // Record billable usage event when delivery completes (non-fatal)
       if (statusUpdate.status === "delivered" && organizationId) {
@@ -1588,6 +1640,8 @@ const DispatchPage = () => {
                         status: repeatableStatuses.includes(dispatch.status) ? dispatch.status : "",
                         location: "",
                         notes: "",
+                        latitude: null,
+                        longitude: null,
                       });
                       setStatusHistory([]);
                       setLocationSuggestions([]);
@@ -1815,9 +1869,17 @@ const DispatchPage = () => {
               </Select>
             </div>
 
-            {/* Location with autocomplete */}
+            {/* Location with Google Places Autocomplete */}
             <div className="space-y-2">
-              <Label>Current Location</Label>
+              <Label className="flex items-center gap-2">
+                Current Location
+                {statusUpdate.latitude != null && (
+                  <span className="text-xs text-green-500 font-normal flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
+                    GPS pinned
+                  </span>
+                )}
+              </Label>
               <div className="relative">
                 <div className="relative flex items-center">
                   <MapPin className="absolute left-3 w-4 h-4 text-muted-foreground pointer-events-none" />
@@ -1825,12 +1887,12 @@ const DispatchPage = () => {
                     value={statusUpdate.location}
                     onChange={(e) => {
                       const v = e.target.value;
-                      setStatusUpdate((prev) => ({ ...prev, location: v }));
+                      setStatusUpdate((prev) => ({ ...prev, location: v, latitude: null, longitude: null }));
                       searchPlaces(v);
                     }}
                     onFocus={() => { if (locationSuggestions.length > 0) setShowLocationDropdown(true); }}
                     onBlur={() => setTimeout(() => setShowLocationDropdown(false), 200)}
-                    placeholder="e.g., Lagos-Ibadan Expressway"
+                    placeholder="Search address or landmark..."
                     className="bg-secondary/50 pl-9 pr-8"
                     autoComplete="off"
                   />
@@ -1839,7 +1901,7 @@ const DispatchPage = () => {
                   )}
                 </div>
                 {showLocationDropdown && locationSuggestions.length > 0 && (
-                  <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-popover border border-border rounded-md shadow-lg overflow-hidden">
+                  <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-popover border border-border rounded-md shadow-lg overflow-hidden max-h-52 overflow-y-auto">
                     {locationSuggestions.map((s, i) => (
                       <button
                         key={i}
@@ -1847,18 +1909,17 @@ const DispatchPage = () => {
                         className="w-full text-left px-3 py-2 text-sm hover:bg-accent flex items-start gap-2 transition-colors"
                         onMouseDown={(e) => {
                           e.preventDefault();
-                          setStatusUpdate((prev) => ({ ...prev, location: s.description }));
-                          setShowLocationDropdown(false);
-                          setLocationSuggestions([]);
+                          selectPlace(s);
                         }}
                       >
                         <MapPin className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
-                        <span className="truncate">{s.description}</span>
+                        <span className="line-clamp-2 leading-snug">{s.description}</span>
                       </button>
                     ))}
                   </div>
                 )}
               </div>
+              <p className="text-xs text-muted-foreground">Pick a suggestion to pin the exact coordinates on the map.</p>
             </div>
 
             <div className="space-y-2">

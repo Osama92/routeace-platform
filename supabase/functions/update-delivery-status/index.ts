@@ -10,6 +10,8 @@ interface DeliveryUpdateRequest {
   status: string;
   location?: string;
   notes?: string;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 const handler = async (req: Request): Promise<Response> => {
@@ -63,7 +65,7 @@ const handler = async (req: Request): Promise<Response> => {
       });
     }
 
-    const { dispatch_id, status, location, notes }: DeliveryUpdateRequest = await req.json();
+    const { dispatch_id, status, location, notes, latitude, longitude }: DeliveryUpdateRequest = await req.json();
 
     // Whitelist allowed status values
     const ALLOWED_STATUSES = new Set([
@@ -134,48 +136,56 @@ const handler = async (req: Request): Promise<Response> => {
       }
     }
 
-    // Create delivery update record
-    const { error: insertError } = await supabase.from("delivery_updates").insert({
+    // Create delivery update record — include lat/lng when provided by client (Places Autocomplete)
+    const updateRow: Record<string, unknown> = {
       dispatch_id,
       status,
       location,
       notes,
       email_sent: false,
-    });
+    };
+    if (latitude != null && longitude != null) {
+      updateRow.latitude  = latitude;
+      updateRow.longitude = longitude;
+    }
+
+    const { error: insertError } = await supabase.from("delivery_updates").insert(updateRow);
 
     if (insertError) {
       console.error("[update-delivery-status] delivery_updates insert error:", JSON.stringify(insertError));
       throw insertError;
     }
 
-    // Best-effort geocode of free-text location so the Tracking map can show pins.
-    const GMAPS_KEY = Deno.env.get("GOOGLE_MAPS_API_KEY") ?? "";
-    if (location && GMAPS_KEY) {
-      try {
-        const geo = await fetch(
-          `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(location + ", Nigeria")}&key=${GMAPS_KEY}`
-        );
-        const geoJson = await geo.json();
-        const pt = geoJson?.results?.[0]?.geometry?.location;
-        if (pt?.lat && pt?.lng) {
-          // Update the most recent matching delivery_updates row
-          const { data: latest } = await supabase
-            .from("delivery_updates")
-            .select("id")
-            .eq("dispatch_id", dispatch_id)
-            .eq("status", status)
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          if ((latest as any)?.id) {
-            await supabase
+    // Best-effort server-side geocoding fallback — only runs when client didn't supply coords.
+    // Requires GOOGLE_MAPS_API_KEY secret set in Supabase dashboard.
+    if (location && (latitude == null || longitude == null)) {
+      const GMAPS_KEY = Deno.env.get("GOOGLE_MAPS_API_KEY") ?? "";
+      if (GMAPS_KEY) {
+        try {
+          const geo = await fetch(
+            `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(location + ", Nigeria")}&key=${GMAPS_KEY}`
+          );
+          const geoJson = await geo.json();
+          const pt = geoJson?.results?.[0]?.geometry?.location;
+          if (pt?.lat && pt?.lng) {
+            const { data: latest } = await supabase
               .from("delivery_updates")
-              .update({ latitude: pt.lat, longitude: pt.lng })
-              .eq("id", (latest as any).id);
+              .select("id")
+              .eq("dispatch_id", dispatch_id)
+              .eq("status", status)
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if ((latest as any)?.id) {
+              await supabase
+                .from("delivery_updates")
+                .update({ latitude: pt.lat, longitude: pt.lng })
+                .eq("id", (latest as any).id);
+            }
           }
+        } catch (_e) {
+          // geocoding failure never blocks the status update
         }
-      } catch (_e) {
-        // geocoding failure never blocks the status update
       }
     }
 
