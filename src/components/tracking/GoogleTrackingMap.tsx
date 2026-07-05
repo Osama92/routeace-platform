@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { loadGoogleMaps } from "@/lib/googleMaps";
 
 export interface TrackingPin {
@@ -111,17 +111,15 @@ export function GoogleTrackingMap({ pins, apiKey, routes = [], selectedDispatchI
   const mapRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
   const polylinesRef = useRef<any[]>([]);
+  const [mapError, setMapError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     loadGoogleMaps().then(() => {
       if (cancelled || !containerRef.current || mapRef.current) return;
-      const centre = pins.length > 0
-        ? { lat: pins[0].lat, lng: pins[0].lng }
-        : { lat: 9.082, lng: 8.6753 };
       mapRef.current = new window.google.maps.Map(containerRef.current, {
         zoom: 6,
-        center: centre,
+        center: { lat: 9.082, lng: 8.6753 },
         mapTypeId: "roadmap",
         streetViewControl: false,
         styles: [
@@ -135,6 +133,7 @@ export function GoogleTrackingMap({ pins, apiKey, routes = [], selectedDispatchI
       drawAll(pins, routes, selectedDispatchId ?? null);
     }).catch((err) => {
       console.error("[GoogleTrackingMap] Could not load Google Maps:", err.message);
+      if (!cancelled) setMapError(err.message);
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -193,10 +192,14 @@ export function GoogleTrackingMap({ pins, apiKey, routes = [], selectedDispatchI
       hasPoints = true;
     });
 
-    if (!hasPoints) return;
+    if (!hasPoints) {
+      // No pins at all — reset to Nigeria overview
+      mapRef.current.setCenter({ lat: 9.082, lng: 8.6753 });
+      mapRef.current.setZoom(6);
+      return;
+    }
 
     if (focusDispatchId) {
-      // Focus on the selected dispatch route
       const route = routeList.find((r) => r.dispatchId === focusDispatchId);
       if (route && route.pins.length > 0) {
         const fb = new window.google.maps.LatLngBounds();
@@ -209,7 +212,7 @@ export function GoogleTrackingMap({ pins, apiKey, routes = [], selectedDispatchI
     const allPins = [...data, ...routeList.flatMap((r) => r.pins)];
     if (allPins.length === 1) {
       mapRef.current.setCenter({ lat: allPins[0].lat, lng: allPins[0].lng });
-      mapRef.current.setZoom(12);
+      mapRef.current.setZoom(13);
     } else if (!bounds.isEmpty()) {
       mapRef.current.fitBounds(bounds, { padding: 40 });
     }
@@ -277,6 +280,18 @@ export function GoogleTrackingMap({ pins, apiKey, routes = [], selectedDispatchI
     { source: "waypoint",         color: "#007AFF", label: "Waypoint" },
     { source: "status_update",    color: "#F5A623", label: "Status update" },
   ].filter((e) => presentSources.has(e.source));
+
+  if (mapError) {
+    return (
+      <div className="w-full h-full rounded-lg bg-secondary/30 flex items-center justify-center min-h-[300px]">
+        <div className="text-center p-6">
+          <p className="text-sm font-medium text-destructive mb-1">Map failed to load</p>
+          <p className="text-xs text-muted-foreground max-w-xs">{mapError}</p>
+          <p className="text-xs text-muted-foreground mt-1">Check that VITE_GOOGLE_MAPS_API_KEY is set and the dev server has been restarted.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative w-full h-full">

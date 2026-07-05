@@ -517,19 +517,8 @@ const LiveTrackingPanel = () => {
           </Button>
         </div>
 
-        {!hasAnyMapData ? (
-          <div className="flex-1 bg-secondary/30 rounded-lg flex items-center justify-center min-h-[300px]">
-            <div className="text-center p-8">
-              <MapPin className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-              <p className="text-lg font-medium text-foreground mb-2">No vehicle locations yet</p>
-              <p className="text-sm text-muted-foreground max-w-md">
-                Route points appear when a dispatcher updates a dispatch status with a location,
-                or when a driver shares their GPS position via the Driver App.
-              </p>
-            </div>
-          </div>
-        ) : googleMapsKey ? (
-          <div className="flex-1 rounded-lg overflow-hidden min-h-[300px]">
+        {true ? (
+          <div className="flex-1 rounded-lg overflow-hidden min-h-[300px] relative">
             <GoogleTrackingMap
               pins={mapPins}
               apiKey={googleMapsKey}
@@ -538,6 +527,14 @@ const LiveTrackingPanel = () => {
                 : dispatchRoutes}
               selectedDispatchId={selectedDispatchId}
             />
+            {!hasAnyMapData && (
+              <div className="absolute inset-0 flex items-end justify-center pb-6 pointer-events-none">
+                <div className="bg-background/80 backdrop-blur-sm border border-border rounded-lg px-4 py-2 text-center">
+                  <p className="text-sm font-medium text-foreground">No route points yet</p>
+                  <p className="text-xs text-muted-foreground">Update a dispatch status with a location to see route tracking</p>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="flex-1 bg-secondary/30 rounded-lg p-4 overflow-auto min-h-[300px]">
