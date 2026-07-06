@@ -11,11 +11,9 @@ export interface TrackingPin {
   location: string | null;
   updatedAt: string;
   driverName?: string | null;
-  /** waypoint sequence number (1-based) — used when source === "waypoint" */
   sequence?: number;
 }
 
-/** A route to draw as a polyline, ordered pickup → waypoints → delivery */
 export interface DispatchRoute {
   dispatchId: string;
   label: string;
@@ -25,7 +23,6 @@ export interface DispatchRoute {
 interface Props {
   pins: TrackingPin[];
   apiKey: string;
-  /** When provided, draws route polylines and focuses the map on the selected dispatch */
   routes?: DispatchRoute[];
   selectedDispatchId?: string | null;
 }
@@ -34,68 +31,48 @@ declare global {
   interface Window { google: any; _raMapReady?: boolean; }
 }
 
-const SOURCE_STYLE: Record<
-  TrackingPin["source"],
-  { color: string; scale: number; zIndex: number }
-> = {
-  current_location: { color: "#FF3B30", scale: 14, zIndex: 10 },
-  driver_gps:       { color: "#00C9A7", scale: 11, zIndex: 9  },
-  pickup:           { color: "#34C759", scale: 10, zIndex: 8  },
-  delivery:         { color: "#FF9500", scale: 10, zIndex: 8  },
-  waypoint:         { color: "#007AFF", scale:  8, zIndex: 7  },
-  status_update:    { color: "#F5A623", scale:  8, zIndex: 6  },
+const SOURCE_STYLE: Record<TrackingPin["source"], { color: string; scale: number; zIndex: number }> = {
+  current_location: { color: "#E53935", scale: 13, zIndex: 10 },
+  driver_gps:       { color: "#00897B", scale: 10, zIndex: 9  },
+  pickup:           { color: "#2E7D32", scale:  9, zIndex: 8  },
+  delivery:         { color: "#E65100", scale:  9, zIndex: 8  },
+  waypoint:         { color: "#1565C0", scale:  7, zIndex: 7  },
+  status_update:    { color: "#F57C00", scale:  7, zIndex: 6  },
 };
 
 const SOURCE_LABEL: Record<TrackingPin["source"], string> = {
-  current_location: "📍 Current location (latest update)",
-  driver_gps:       "📱 Live GPS — Driver App",
-  pickup:           "🟢 Pickup point",
-  delivery:         "🟠 Delivery point",
-  waypoint:         "🔵 En-route waypoint",
-  status_update:    "📧 Last status update",
+  current_location: "Current location (latest)",
+  driver_gps:       "Live GPS — Driver App",
+  pickup:           "Pickup point",
+  delivery:         "Delivery point",
+  waypoint:         "En-route waypoint",
+  status_update:    "Status update",
 };
 
-function buildMarkerIcon(source: TrackingPin["source"], seq?: number) {
+// Standard light map style — clean, readable labels
+const MAP_STYLES: google.maps.MapTypeStyle[] = [
+  { featureType: "poi", stylers: [{ visibility: "off" }] },
+  { featureType: "poi.park", stylers: [{ visibility: "simplified" }] },
+  { featureType: "transit", stylers: [{ visibility: "off" }] },
+  { featureType: "road", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+];
+
+function buildMarkerIcon(source: TrackingPin["source"]) {
   const { color, scale } = SOURCE_STYLE[source];
   const G = window.google.maps;
 
   if (source === "current_location") {
-    // Pulsing star-shaped icon using SVG path
     return {
       path: "M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z",
       fillColor: color,
       fillOpacity: 1,
       strokeColor: "#FFFFFF",
       strokeWeight: 2,
-      scale: 1.6,
+      scale: 1.5,
       anchor: new G.Point(12, 12),
     };
   }
 
-  if (source === "pickup") {
-    return {
-      path: G.SymbolPath.CIRCLE,
-      scale,
-      fillColor: color,
-      fillOpacity: 1,
-      strokeColor: "#FFFFFF",
-      strokeWeight: 3,
-    };
-  }
-
-  if (source === "delivery") {
-    // Slightly different shape — downward-pointing marker
-    return {
-      path: G.SymbolPath.CIRCLE,
-      scale,
-      fillColor: color,
-      fillOpacity: 1,
-      strokeColor: "#FFFFFF",
-      strokeWeight: 3,
-    };
-  }
-
-  // waypoint, driver_gps, status_update
   return {
     path: G.SymbolPath.CIRCLE,
     scale,
@@ -108,47 +85,57 @@ function buildMarkerIcon(source: TrackingPin["source"], seq?: number) {
 
 export function GoogleTrackingMap({ pins, apiKey, routes = [], selectedDispatchId }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<any>(null);
-  const markersRef = useRef<any[]>([]);
+  const mapRef       = useRef<any>(null);
+  const markersRef   = useRef<any[]>([]);
   const polylinesRef = useRef<any[]>([]);
   const [mapError, setMapError] = useState<string | null>(null);
 
+  // Keep latest props accessible inside drawAll without re-registering effects
+  const pinsRef              = useRef(pins);
+  const routesRef            = useRef(routes);
+  const selectedDispatchRef  = useRef(selectedDispatchId);
+  pinsRef.current             = pins;
+  routesRef.current           = routes;
+  selectedDispatchRef.current = selectedDispatchId;
+
+  // ── Init map once ────────────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     loadGoogleMaps().then(() => {
       if (cancelled || !containerRef.current || mapRef.current) return;
+
       mapRef.current = new window.google.maps.Map(containerRef.current, {
-        zoom: 6,
-        center: { lat: 9.082, lng: 8.6753 },
+        zoom: 7,
+        center: { lat: 6.5244, lng: 3.3792 }, // Lagos
         mapTypeId: "roadmap",
         streetViewControl: false,
-        styles: [
-          { elementType: "geometry", stylers: [{ color: "#0A1628" }] },
-          { featureType: "road", elementType: "geometry", stylers: [{ color: "#162F58" }] },
-          { featureType: "water", elementType: "geometry", stylers: [{ color: "#0F2040" }] },
-          { elementType: "labels.text.fill", stylers: [{ color: "#B8D4F0" }] },
-        ],
+        fullscreenControlOptions: { position: window.google.maps.ControlPosition.TOP_RIGHT },
+        mapTypeControlOptions: { position: window.google.maps.ControlPosition.TOP_RIGHT },
+        zoomControlOptions:     { position: window.google.maps.ControlPosition.RIGHT_CENTER },
+        styles: MAP_STYLES,
       });
-      // Trigger resize after layout settles to fix blurry tile rendering
+
+      // Fire resize after layout settles so tiles render at correct DPI
       requestAnimationFrame(() => {
+        if (cancelled) return;
         window.google.maps.event.trigger(mapRef.current, "resize");
-        drawAll(pins, routes, selectedDispatchId ?? null);
+        drawAll(pinsRef.current, routesRef.current, selectedDispatchRef.current ?? null);
       });
-      console.log("[GoogleTrackingMap] Map initialised, drawing", pins.length, "pins,", routes.length, "routes");
     }).catch((err) => {
-      console.error("[GoogleTrackingMap] Could not load Google Maps:", err.message);
       if (!cancelled) setMapError(err.message);
     });
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── Redraw whenever data or selection changes ─────────────────────────────
   useEffect(() => {
     if (!mapRef.current || !window.google?.maps) return;
     drawAll(pins, routes, selectedDispatchId ?? null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pins, routes, selectedDispatchId]);
 
+  // ── Helpers ───────────────────────────────────────────────────────────────
   function clearOverlays() {
     markersRef.current.forEach((m) => m.setMap(null));
     markersRef.current = [];
@@ -156,74 +143,93 @@ export function GoogleTrackingMap({ pins, apiKey, routes = [], selectedDispatchI
     polylinesRef.current = [];
   }
 
-  function drawAll(
-    data: TrackingPin[],
-    routeList: DispatchRoute[],
-    focusDispatchId: string | null,
-  ) {
+  function drawAll(data: TrackingPin[], routeList: DispatchRoute[], focusId: string | null) {
+    if (!mapRef.current) return;
     clearOverlays();
+
     const bounds = new window.google.maps.LatLngBounds();
     let hasPoints = false;
+    const drawnIds = new Set<string>();
 
-    // Draw routes first (polylines + their specific pins)
-    const drawnPinIds = new Set<string>();
+    // Draw polylines + route pins
     routeList.forEach((route) => {
-      if (route.pins.length < 2) return;
-      const path = route.pins.map((p) => ({ lat: p.lat, lng: p.lng }));
-      const isSelected = focusDispatchId === route.dispatchId;
-      const line = new window.google.maps.Polyline({
-        path,
-        geodesic: true,
-        strokeColor: isSelected ? "#00C9A7" : "#4A6FA5",
-        strokeOpacity: isSelected ? 0.9 : 0.5,
-        strokeWeight: isSelected ? 3 : 2,
-        map: mapRef.current,
-        zIndex: isSelected ? 5 : 1,
-      });
-      polylinesRef.current.push(line);
-
+      const isSelected = focusId === route.dispatchId;
+      if (route.pins.length >= 2) {
+        polylinesRef.current.push(new window.google.maps.Polyline({
+          path: route.pins.map((p) => ({ lat: p.lat, lng: p.lng })),
+          geodesic: true,
+          strokeColor:   isSelected ? "#1976D2" : "#90A4AE",
+          strokeOpacity: isSelected ? 0.85 : 0.45,
+          strokeWeight:  isSelected ? 3 : 2,
+          map: mapRef.current,
+          zIndex: isSelected ? 5 : 1,
+        }));
+      }
       route.pins.forEach((pin) => {
         drawPin(pin, bounds);
-        drawnPinIds.add(pin.id);
+        drawnIds.add(pin.id);
         hasPoints = true;
       });
     });
 
-    // Draw remaining fleet pins that aren't part of a drawn route
+    // Draw remaining fleet pins
     data.forEach((pin) => {
-      if (drawnPinIds.has(pin.id)) return;
+      if (drawnIds.has(pin.id)) return;
       drawPin(pin, bounds);
       hasPoints = true;
     });
 
     if (!hasPoints) {
-      // No pins at all — reset to Nigeria overview
-      mapRef.current.setCenter({ lat: 9.082, lng: 8.6753 });
-      mapRef.current.setZoom(6);
+      mapRef.current.setCenter({ lat: 6.5244, lng: 3.3792 });
+      mapRef.current.setZoom(10);
       return;
     }
 
-    if (focusDispatchId) {
-      const route = routeList.find((r) => r.dispatchId === focusDispatchId);
+    // Focus zoom: selected route → fit its pins, else fit all
+    if (focusId) {
+      const route = routeList.find((r) => r.dispatchId === focusId);
       if (route && route.pins.length > 0) {
         const fb = new window.google.maps.LatLngBounds();
         route.pins.forEach((p) => fb.extend({ lat: p.lat, lng: p.lng }));
-        mapRef.current.fitBounds(fb, { padding: 60 });
+        if (route.pins.length === 1) {
+          mapRef.current.setCenter({ lat: route.pins[0].lat, lng: route.pins[0].lng });
+          mapRef.current.setZoom(13);
+        } else {
+          mapRef.current.fitBounds(fb, 80);
+          // Cap zoom so we don't over-zoom on nearby pins
+          const listener = window.google.maps.event.addListenerOnce(mapRef.current, "bounds_changed", () => {
+            if (mapRef.current.getZoom() > 14) mapRef.current.setZoom(14);
+          });
+          void listener;
+        }
+        return;
+      }
+
+      // Dispatch in list but no route pins — single fleet pin for this dispatch
+      const fleetPin = data.find((p) => p.id === focusId);
+      if (fleetPin) {
+        mapRef.current.setCenter({ lat: fleetPin.lat, lng: fleetPin.lng });
+        mapRef.current.setZoom(13);
         return;
       }
     }
 
-    const allPins = [...data, ...routeList.flatMap((r) => r.pins)];
-    if (allPins.length === 1) {
-      mapRef.current.setCenter({ lat: allPins[0].lat, lng: allPins[0].lng });
+    // No focus or no matching route — fit all pins
+    if (data.length + routeList.flatMap((r) => r.pins).length === 1) {
+      const only = data[0] ?? routeList[0]?.pins[0];
+      mapRef.current.setCenter({ lat: only.lat, lng: only.lng });
       mapRef.current.setZoom(13);
     } else if (!bounds.isEmpty()) {
-      mapRef.current.fitBounds(bounds, { padding: 40 });
+      mapRef.current.fitBounds(bounds, 60);
+      const listener = window.google.maps.event.addListenerOnce(mapRef.current, "bounds_changed", () => {
+        if (mapRef.current.getZoom() > 13) mapRef.current.setZoom(13);
+      });
+      void listener;
     }
   }
 
   function drawPin(pin: TrackingPin, bounds: any) {
-    const icon = buildMarkerIcon(pin.source, pin.sequence);
+    const icon  = buildMarkerIcon(pin.source);
     const style = SOURCE_STYLE[pin.source];
 
     const markerOptions: any = {
@@ -234,35 +240,26 @@ export function GoogleTrackingMap({ pins, apiKey, routes = [], selectedDispatchI
       zIndex: style.zIndex,
     };
 
-    // Add sequence label for waypoints
     if (pin.source === "waypoint" && pin.sequence != null) {
-      markerOptions.label = {
-        text: String(pin.sequence),
-        color: "#FFFFFF",
-        fontSize: "10px",
-        fontWeight: "bold",
-      };
+      markerOptions.label = { text: String(pin.sequence), color: "#FFFFFF", fontSize: "9px", fontWeight: "bold" };
     }
-
-    // Bold "P" label for pickup, "D" for delivery
     if (pin.source === "pickup") {
-      markerOptions.label = { text: "P", color: "#FFFFFF", fontSize: "10px", fontWeight: "bold" };
+      markerOptions.label = { text: "P", color: "#FFFFFF", fontSize: "9px", fontWeight: "bold" };
     }
     if (pin.source === "delivery") {
-      markerOptions.label = { text: "D", color: "#FFFFFF", fontSize: "10px", fontWeight: "bold" };
+      markerOptions.label = { text: "D", color: "#FFFFFF", fontSize: "9px", fontWeight: "bold" };
     }
 
     const marker = new window.google.maps.Marker(markerOptions);
 
-    const sourceLabel = SOURCE_LABEL[pin.source];
     const infoContent = `
-      <div style="font-family: system-ui; padding: 6px 4px; min-width: 190px;">
-        <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">${pin.label}</div>
-        ${pin.driverName ? `<div style="font-size: 12px; color: #555;">👤 ${pin.driverName}</div>` : ""}
-        ${pin.location ? `<div style="font-size: 12px; color: #555; margin-top:2px;">📍 ${pin.location}</div>` : ""}
-        <div style="font-size: 11px; color: ${SOURCE_STYLE[pin.source].color}; margin-top: 6px;">${sourceLabel}</div>
-        <div style="font-size: 11px; color: #888; margin-top: 2px;">
-          🕐 ${new Date(pin.updatedAt).toLocaleString("en-NG", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+      <div style="font-family:system-ui,sans-serif;padding:8px 6px;min-width:200px;max-width:260px;">
+        <div style="font-weight:600;font-size:13px;margin-bottom:4px;color:#111;">${pin.label}</div>
+        ${pin.driverName ? `<div style="font-size:12px;color:#444;margin-bottom:2px;">👤 ${pin.driverName}</div>` : ""}
+        ${pin.location   ? `<div style="font-size:12px;color:#444;margin-bottom:4px;">📍 ${pin.location}</div>` : ""}
+        <div style="font-size:11px;font-weight:500;color:${style.color};">${SOURCE_LABEL[pin.source]}</div>
+        <div style="font-size:11px;color:#888;margin-top:2px;">
+          ${new Date(pin.updatedAt).toLocaleString("en-NG", { day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" })}
         </div>
       </div>`;
 
@@ -273,25 +270,29 @@ export function GoogleTrackingMap({ pins, apiKey, routes = [], selectedDispatchI
     markersRef.current.push(marker);
   }
 
-  // Visible legend entries — only show what's actually present
-  const presentSources = new Set(pins.map((p) => p.source));
-  routes.forEach((r) => r.pins.forEach((p) => presentSources.add(p.source)));
-  const legendEntries: Array<{ color: string; label: string; source: TrackingPin["source"] }> = [
-    { source: "current_location", color: "#FF3B30", label: "Current location" },
-    { source: "driver_gps",       color: "#00C9A7", label: "Live GPS" },
-    { source: "pickup",           color: "#34C759", label: "Pickup" },
-    { source: "delivery",         color: "#FF9500", label: "Delivery" },
-    { source: "waypoint",         color: "#007AFF", label: "Waypoint" },
-    { source: "status_update",    color: "#F5A623", label: "Status update" },
-  ].filter((e) => presentSources.has(e.source));
+  // ── Legend (only sources present in current view) ─────────────────────────
+  const presentSources = new Set([
+    ...pins.map((p) => p.source),
+    ...routes.flatMap((r) => r.pins.map((p) => p.source)),
+  ]);
+  const legendEntries = ([
+    { source: "current_location" as const, color: "#E53935", label: "Current location" },
+    { source: "driver_gps"       as const, color: "#00897B", label: "Live GPS"          },
+    { source: "pickup"           as const, color: "#2E7D32", label: "Pickup"             },
+    { source: "delivery"         as const, color: "#E65100", label: "Delivery"           },
+    { source: "waypoint"         as const, color: "#1565C0", label: "Waypoint"           },
+    { source: "status_update"    as const, color: "#F57C00", label: "Status update"      },
+  ]).filter((e) => presentSources.has(e.source));
 
   if (mapError) {
     return (
-      <div className="w-full h-full rounded-lg bg-secondary/30 flex items-center justify-center min-h-[300px]">
+      <div className="w-full h-full rounded-lg bg-secondary/30 flex items-center justify-center">
         <div className="text-center p-6">
           <p className="text-sm font-medium text-destructive mb-1">Map failed to load</p>
           <p className="text-xs text-muted-foreground max-w-xs">{mapError}</p>
-          <p className="text-xs text-muted-foreground mt-1">Check that VITE_GOOGLE_MAPS_API_KEY is set and the dev server has been restarted.</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Ensure VITE_GOOGLE_MAPS_API_KEY is set, the dev server restarted, and the key has no HTTP referrer restrictions blocking localhost.
+          </p>
         </div>
       </div>
     );
@@ -301,21 +302,20 @@ export function GoogleTrackingMap({ pins, apiKey, routes = [], selectedDispatchI
     <div className="relative w-full h-full">
       <div ref={containerRef} className="w-full h-full rounded-lg overflow-hidden" />
 
+      {/* Legend — bottom-left so it doesn't clash with map type / fullscreen controls top-right */}
       {legendEntries.length > 0 && (
-        <div className="absolute top-3 left-3 bg-background/90 backdrop-blur rounded-lg px-3 py-2 text-xs space-y-1 border shadow-md">
+        <div className="absolute bottom-8 left-3 bg-white/90 backdrop-blur rounded-lg px-3 py-2 text-xs space-y-1 border shadow-md pointer-events-none">
           {legendEntries.map((e) => (
-            <div key={e.source} className="flex items-center gap-2">
-              <span
-                className="inline-block w-3 h-3 rounded-full border border-white shrink-0"
-                style={{ backgroundColor: e.color }}
-              />
-              <span>{e.label}</span>
+            <div key={e.source} className="flex items-center gap-2 text-gray-700">
+              <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: e.color }} />
+              {e.label}
             </div>
           ))}
         </div>
       )}
 
-      <div className="absolute bottom-3 right-3 bg-background/90 backdrop-blur rounded px-2 py-1 text-[10px] text-muted-foreground border">
+      {/* Refresh badge — bottom-left below legend, away from Google controls */}
+      <div className="absolute bottom-2 left-3 text-[10px] text-gray-500 pointer-events-none">
         Auto-refreshes every 30s
       </div>
     </div>
