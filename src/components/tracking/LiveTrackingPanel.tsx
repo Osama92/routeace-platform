@@ -304,7 +304,11 @@ const LiveTrackingPanel = () => {
     [filteredVehicles, page],
   );
 
-  const selectedVehicle   = vehicles.find((v) => v.id === selectedId) || pagedVehicles[0] || filteredVehicles[0] || null;
+  const selectedVehicle = vehicles.find((v) => v.id === selectedId)
+    || vehicles.find((v) => v.status === "active")
+    || pagedVehicles[0]
+    || filteredVehicles[0]
+    || null;
   const selectedDispatchId = selectedVehicle?.hasDispatch ? selectedVehicle.id : null;
   const activeCount  = vehicles.filter((v) => v.status === "active").length;
   const idleCount    = vehicles.filter((v) => v.status === "idle").length;
@@ -370,10 +374,26 @@ const LiveTrackingPanel = () => {
   const mapPins: TrackingPin[] = useMemo(() => {
     if (selectedDispatchId) {
       const route = dispatchRoutes.find((r) => r.dispatchId === selectedDispatchId);
-      return route ? route.pins : allMapPins;
+      if (route && route.pins.length > 0) return route.pins;
+      // Dispatch has no stored coords — show a single pin at its interpolated position if available
+      const v = vehicles.find((x) => x.id === selectedDispatchId);
+      if (v?.lat != null && v?.lng != null) {
+        return [{
+          id: selectedDispatchId,
+          lat: v.lat, lng: v.lng,
+          label: v.vehicleNumber,
+          vehicleType: v.vehicleType ?? "truck",
+          source: "status_update" as const,
+          location: v.origin || null,
+          updatedAt: v.lastUpdateRaw ?? new Date().toISOString(),
+          driverName: v.driverName,
+        }];
+      }
+      // No coords at all for this dispatch — show everything
+      return allMapPins;
     }
     return allMapPins;
-  }, [selectedDispatchId, dispatchRoutes, allMapPins]);
+  }, [selectedDispatchId, dispatchRoutes, allMapPins, vehicles]);
 
   const hasAnyMapData = allMapPins.length > 0 || dispatchRoutes.some((r) => r.pins.length > 0);
 
@@ -518,7 +538,7 @@ const LiveTrackingPanel = () => {
         </div>
 
         {true ? (
-          <div className="flex-1 rounded-lg overflow-hidden min-h-[300px] relative">
+          <div className="flex-1 rounded-lg overflow-hidden relative" style={{ height: "420px", minHeight: "420px" }}>
             <GoogleTrackingMap
               pins={mapPins}
               apiKey={googleMapsKey}

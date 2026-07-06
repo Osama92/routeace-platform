@@ -129,8 +129,12 @@ export function GoogleTrackingMap({ pins, apiKey, routes = [], selectedDispatchI
           { elementType: "labels.text.fill", stylers: [{ color: "#B8D4F0" }] },
         ],
       });
+      // Trigger resize after layout settles to fix blurry tile rendering
+      requestAnimationFrame(() => {
+        window.google.maps.event.trigger(mapRef.current, "resize");
+        drawAll(pins, routes, selectedDispatchId ?? null);
+      });
       console.log("[GoogleTrackingMap] Map initialised, drawing", pins.length, "pins,", routes.length, "routes");
-      drawAll(pins, routes, selectedDispatchId ?? null);
     }).catch((err) => {
       console.error("[GoogleTrackingMap] Could not load Google Maps:", err.message);
       if (!cancelled) setMapError(err.message);
