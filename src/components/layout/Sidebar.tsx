@@ -120,7 +120,6 @@ const fleetSection: NavSection = {
     { name: "Autonomous Company", href: "/autonomous-company", icon: Bot, roles: ["admin", "super_admin", "org_admin"] },
     { name: "Executive Command", href: "/executive-command", icon: Building, roles: ["admin", "super_admin", "org_admin"] },
     { name: "Drivers", href: "/drivers", icon: Users, roles: ["admin", "dispatcher", "super_admin", "org_admin", "ops_manager"] },
-    { name: "Customers", href: "/customers", icon: Building2, roles: ["admin", "support", "super_admin", "org_admin", "ops_manager"] },
   ],
 };
 
@@ -193,6 +192,7 @@ const partnersSection: NavSection = {
   icon: Handshake,
   items: [
     { name: "Partners", href: "/partners", icon: Handshake, roles: ["admin", "super_admin"] },
+    { name: "Customers", href: "/customers", icon: Building2, roles: ["admin", "support", "super_admin", "org_admin", "ops_manager"] },
     { name: "3PL Transporter Roster", href: "/dept/transporters", icon: Truck, roles: ["admin", "super_admin", "org_admin"] },
     { name: "Vendor Performance", href: "/vendor-performance", icon: TrendingUp, roles: ["admin", "super_admin", "org_admin"] },
     { name: "Staff", href: "/staff", icon: Briefcase, roles: ["admin", "super_admin", "org_admin"] },

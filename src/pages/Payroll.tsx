@@ -570,7 +570,7 @@ const PayrollPage = () => {
               </TabsTrigger>
               <TabsTrigger value="owned_staff" className="gap-2">
                 <Briefcase className="w-4 h-4" />
-                Owned Staff ({payrollPreview.ownedStaff.length})
+                Internal Staff ({payrollPreview.ownedStaff.length})
               </TabsTrigger>
               <TabsTrigger value="outsourced_staff" className="gap-2">
                 <Building2 className="w-4 h-4" />

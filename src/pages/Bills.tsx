@@ -85,12 +85,21 @@ const emptyLine = (): LineItem => ({
   amount: 0,
 });
 
-const calcLineBase = (line: LineItem) => line.quantity * line.rate;
-const calcLineAmount = (line: LineItem) => {
-  const base = calcLineBase(line);
-  return base + base * (line.vat_rate / 100);
+// vatInclusive=true  → rate already contains VAT; extract VAT from price
+// vatInclusive=false → rate is pre-tax; add VAT on top
+const calcLineBase = (line: LineItem, vatInclusive = false) => {
+  const gross = line.quantity * line.rate;
+  if (vatInclusive && line.vat_rate > 0) return gross / (1 + line.vat_rate / 100);
+  return gross;
 };
-const calcLineTax = (line: LineItem) => calcLineBase(line) * (line.vat_rate / 100);
+const calcLineTax = (line: LineItem, vatInclusive = false) => {
+  const gross = line.quantity * line.rate;
+  if (line.vat_rate === 0) return 0;
+  if (vatInclusive) return gross - gross / (1 + line.vat_rate / 100);
+  return gross * (line.vat_rate / 100);
+};
+const calcLineAmount = (line: LineItem, vatInclusive = false) =>
+  vatInclusive ? line.quantity * line.rate : calcLineBase(line) + calcLineTax(line);
 
 export default function BillsPage() {
   const { toast } = useToast();
@@ -101,6 +110,7 @@ export default function BillsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editBill, setEditBill] = useState<any | null>(null);
   const [editLines, setEditLines] = useState<LineItem[]>([emptyLine()]);
+  const [editVatInclusive, setEditVatInclusive] = useState(false);
   const [editForm, setEditForm] = useState({
     vendor_name: "", bill_number: "", order_number: "",
     bill_date: "", due_date: "", payment_terms: "due_on_receipt",
@@ -129,6 +139,7 @@ export default function BillsPage() {
     discount_percent: 0,
     adjustment: 0,
   });
+  const [vatInclusive, setVatInclusive] = useState(false);
   const [lines, setLines] = useState<LineItem[]>([emptyLine()]);
 
   // Customers for dropdown
@@ -192,10 +203,10 @@ export default function BillsPage() {
     },
   });
 
-  // Line item calculations (per-line VAT)
-  const lineAmounts = useMemo(() => lines.map(l => calcLineAmount(l)), [lines]);
-  const taxTotal = useMemo(() => lines.reduce((s, l) => s + calcLineTax(l), 0), [lines]);
-  const subtotal = useMemo(() => lines.reduce((s, l) => s + calcLineBase(l), 0), [lines]);
+  // Line item calculations (per-line VAT, respecting inclusive/exclusive mode)
+  const lineAmounts = useMemo(() => lines.map(l => calcLineAmount(l, vatInclusive)), [lines, vatInclusive]);
+  const taxTotal = useMemo(() => lines.reduce((s, l) => s + calcLineTax(l, vatInclusive), 0), [lines, vatInclusive]);
+  const subtotal = useMemo(() => lines.reduce((s, l) => s + calcLineBase(l, vatInclusive), 0), [lines, vatInclusive]);
   const discountAmount = subtotal * (form.discount_percent / 100);
   const grandTotal = lineAmounts.reduce((s, a) => s + a, 0) - discountAmount + form.adjustment;
 
@@ -215,12 +226,13 @@ export default function BillsPage() {
         bill_date: form.bill_date,
         due_date: form.due_date || null,
         payment_terms: form.payment_terms,
-        amount: subtotal - taxTotal,
+        amount: subtotal,
         tax_amount: taxTotal,
         subtotal,
         discount_percent: form.discount_percent,
         adjustment: form.adjustment,
         total_amount: grandTotal,
+        vat_type: taxTotal > 0 ? (vatInclusive ? "inclusive" : "exclusive") : "no_vat",
         category: "other",
         notes: form.notes || null,
         created_by: user?.id,
@@ -248,6 +260,7 @@ export default function BillsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["bills"] });
       setCreateOpen(false);
+      setVatInclusive(false);
       setForm({ vendor_name: "", bill_number: "", order_number: "", bill_date: format(new Date(), "yyyy-MM-dd"), due_date: format(new Date(), "yyyy-MM-dd"), payment_terms: "due_on_receipt", notes: "", discount_percent: 0, adjustment: 0 });
       setLines([emptyLine()]);
       toast({ title: "Bill created", description: "Bill has been recorded successfully." });
@@ -294,9 +307,9 @@ export default function BillsPage() {
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  const editLineAmounts = useMemo(() => editLines.map(l => calcLineAmount(l)), [editLines]);
-  const editTaxTotal = useMemo(() => editLines.reduce((s, l) => s + calcLineTax(l), 0), [editLines]);
-  const editSubtotal = useMemo(() => editLines.reduce((s, l) => s + calcLineBase(l), 0), [editLines]);
+  const editLineAmounts = useMemo(() => editLines.map(l => calcLineAmount(l, editVatInclusive)), [editLines, editVatInclusive]);
+  const editTaxTotal = useMemo(() => editLines.reduce((s, l) => s + calcLineTax(l, editVatInclusive), 0), [editLines, editVatInclusive]);
+  const editSubtotal = useMemo(() => editLines.reduce((s, l) => s + calcLineBase(l, editVatInclusive), 0), [editLines, editVatInclusive]);
   const editDiscountAmount = editSubtotal * (editForm.discount_percent / 100);
   const editGrandTotal = editLineAmounts.reduce((s, a) => s + a, 0) - editDiscountAmount + editForm.adjustment;
 
@@ -306,6 +319,7 @@ export default function BillsPage() {
 
   const openEditBill = async (bill: any) => {
     setEditBill(bill);
+    setEditVatInclusive(bill.vat_type === "inclusive");
     setEditForm({
       vendor_name: bill.vendor_name || "",
       bill_number: bill.bill_number || "",
@@ -354,12 +368,13 @@ export default function BillsPage() {
         bill_date: editForm.bill_date,
         due_date: editForm.due_date || null,
         payment_terms: editForm.payment_terms,
-        amount: editSubtotal - editTaxTotal,
+        amount: editSubtotal,
         tax_amount: editTaxTotal,
         subtotal: editSubtotal,
         discount_percent: editForm.discount_percent,
         adjustment: editForm.adjustment,
         total_amount: editGrandTotal,
+        vat_type: editTaxTotal > 0 ? (editVatInclusive ? "inclusive" : "exclusive") : "no_vat",
         notes: editForm.notes || null,
       } as any).eq("id", editBill.id);
       if (error) throw error;
@@ -630,6 +645,32 @@ export default function BillsPage() {
             </div>
           </div>
 
+          {/* VAT Mode toggle */}
+          <div className="flex items-center gap-4 p-3 rounded-lg bg-muted/40 border border-border">
+            <span className="text-sm font-semibold text-foreground">VAT Treatment</span>
+            <div className="flex items-center gap-1 rounded-md border bg-background p-0.5 text-sm">
+              <button
+                type="button"
+                onClick={() => setEditVatInclusive(false)}
+                className={`px-3 py-1 rounded text-sm font-medium transition-colors ${!editVatInclusive ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                Exclusive
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditVatInclusive(true)}
+                className={`px-3 py-1 rounded text-sm font-medium transition-colors ${editVatInclusive ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                Inclusive
+              </button>
+            </div>
+            <span className="text-xs text-muted-foreground">
+              {editVatInclusive
+                ? "Rates entered already include VAT — VAT is extracted from the price"
+                : "Rates are pre-tax — VAT is added on top of each line rate"}
+            </span>
+          </div>
+
           {/* Item Table */}
           <div>
             <Label className="text-sm font-semibold mb-3 block">Item Table</Label>
@@ -715,7 +756,9 @@ export default function BillsPage() {
               </div>
               {editTaxTotal > 0 && (
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">VAT</span>
+                  <span className="text-muted-foreground">
+                    VAT <span className="text-xs opacity-60">({editVatInclusive ? "incl." : "excl."})</span>
+                  </span>
                   <span className="font-mono">₦{editTaxTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                 </div>
               )}
@@ -813,6 +856,32 @@ export default function BillsPage() {
             </div>
           </div>
 
+          {/* VAT Mode toggle */}
+          <div className="flex items-center gap-4 p-3 rounded-lg bg-muted/40 border border-border">
+            <span className="text-sm font-semibold text-foreground">VAT Treatment</span>
+            <div className="flex items-center gap-1 rounded-md border bg-background p-0.5 text-sm">
+              <button
+                type="button"
+                onClick={() => setVatInclusive(false)}
+                className={`px-3 py-1 rounded text-sm font-medium transition-colors ${!vatInclusive ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                Exclusive
+              </button>
+              <button
+                type="button"
+                onClick={() => setVatInclusive(true)}
+                className={`px-3 py-1 rounded text-sm font-medium transition-colors ${vatInclusive ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                Inclusive
+              </button>
+            </div>
+            <span className="text-xs text-muted-foreground">
+              {vatInclusive
+                ? "Rates entered already include VAT — VAT is extracted from the price"
+                : "Rates are pre-tax — VAT is added on top of each line rate"}
+            </span>
+          </div>
+
           {/* Item Table */}
           <div>
             <Label className="text-sm font-semibold mb-3 block">Item Table</Label>
@@ -894,7 +963,9 @@ export default function BillsPage() {
               </div>
               {taxTotal > 0 && (
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground whitespace-nowrap">VAT</span>
+                  <span className="text-muted-foreground whitespace-nowrap">
+                    VAT <span className="text-xs opacity-60">({vatInclusive ? "incl." : "excl."})</span>
+                  </span>
                   <span className="font-mono">₦{taxTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                 </div>
               )}

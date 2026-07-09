@@ -130,6 +130,8 @@ export const InvoiceCreationDialog = ({
     { label: "20%", rate: 20 },
   ];
 
+  const [vatInclusive, setVatInclusive] = useState(false);
+
   const [formData, setFormData] = useState({
     invoice_number: "",
     auto_number: true,
@@ -205,6 +207,7 @@ export const InvoiceCreationDialog = ({
 
         if (!inv) return;
 
+        setVatInclusive(inv.tax_type === "inclusive");
         setEditInvoiceNumber(inv.invoice_number);
         setFormData({
           invoice_number: inv.invoice_number,
@@ -322,14 +325,29 @@ export const InvoiceCreationDialog = ({
   };
 
   const calculateTotals = useCallback(() => {
-    const subtotal = lineItems.reduce((s, item) => s + item.quantity * item.rate, 0);
-    const totalVat = lineItems.reduce((sum, item) => sum + item.vat_amount, 0);
+    let subtotal: number;
+    let totalVat: number;
+
+    if (vatInclusive) {
+      // Rate already includes VAT — extract VAT from gross
+      totalVat = lineItems.reduce((sum, item) => {
+        if (item.vat_rate === 0) return sum;
+        const gross = item.quantity * item.rate;
+        return sum + (gross - gross / (1 + item.vat_rate / 100));
+      }, 0);
+      subtotal = lineItems.reduce((s, item) => s + item.quantity * item.rate, 0) - totalVat;
+    } else {
+      // Rate is pre-tax — use vat_amount already computed per line
+      subtotal = lineItems.reduce((s, item) => s + item.quantity * item.rate, 0);
+      totalVat = lineItems.reduce((sum, item) => sum + item.vat_amount, 0);
+    }
+
     const shippingVat = formData.shipping_vat_applicable
       ? formData.shipping_charge * (formData.shipping_vat_rate / 100)
       : 0;
     const grandTotal = subtotal + totalVat + formData.shipping_charge + shippingVat;
     return { subtotal, totalVat, shippingVat, grandTotal };
-  }, [lineItems, formData.shipping_charge, formData.shipping_vat_applicable, formData.shipping_vat_rate]);
+  }, [lineItems, vatInclusive, formData.shipping_charge, formData.shipping_vat_applicable, formData.shipping_vat_rate]);
 
   const generateInvoiceNumber = async (): Promise<string> => {
     const year = new Date().getFullYear();
@@ -367,6 +385,7 @@ export const InvoiceCreationDialog = ({
         tax_amount: totalVat + shippingVat,
         total_amount: grandTotal,
         balance_due: grandTotal,
+        tax_type: totalVat > 0 ? (vatInclusive ? "inclusive" : "exclusive") : "none",
         status_updated_at: new Date().toISOString(),
       };
 
@@ -451,7 +470,7 @@ export const InvoiceCreationDialog = ({
           total_amount: grandTotal,
           balance_due: grandTotal,
           amount_paid: 0,
-          tax_type: totalVat > 0 ? "exclusive" : "none",
+          tax_type: totalVat > 0 ? (vatInclusive ? "inclusive" : "exclusive") : "none",
           invoice_date: formData.invoice_date,
           due_date: formData.due_date || null,
           payment_terms: formData.payment_terms,
@@ -699,6 +718,30 @@ export const InvoiceCreationDialog = ({
                     className="bg-secondary/50"
                   />
                 </div>
+              </div>
+
+              {/* VAT Treatment toggle */}
+              <div className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/40 border border-border">
+                <span className="text-xs font-semibold text-foreground whitespace-nowrap">VAT Treatment</span>
+                <div className="flex items-center gap-0.5 rounded-md border bg-background p-0.5 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setVatInclusive(false)}
+                    className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${!vatInclusive ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                  >
+                    Exclusive
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVatInclusive(true)}
+                    className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${vatInclusive ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                  >
+                    Inclusive
+                  </button>
+                </div>
+                <span className="text-[11px] text-muted-foreground">
+                  {vatInclusive ? "Rates include VAT — tax is extracted from the price" : "Rates are pre-tax — VAT added on top"}
+                </span>
               </div>
 
               {/* Line Items */}
