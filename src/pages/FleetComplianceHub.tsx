@@ -191,9 +191,13 @@ function Supervisory({ orgId }: { orgId: string }) {
 
   const deleteCheck = async (id: string) => {
     if (!window.confirm("Delete this supervisory check record?")) return;
-    const { error } = await sb.from("vehicle_checklists").delete().eq("id", id);
+    console.log("[deleteCheck] attempting delete, id=", id, "orgId=", orgId);
+    const { data, error } = await sb.from("vehicle_checklists").delete().eq("id", id).select();
+    console.log("[deleteCheck] result:", { data, error });
     if (error) { toast({ title: error.message, variant: "destructive" }); return; }
+    console.log("[deleteCheck] invalidating queryKey=", ["sup-history", orgId]);
     await qc.invalidateQueries({ queryKey: ["sup-history", orgId] });
+    console.log("[deleteCheck] invalidation done, history should refresh");
     toast({ title: "Record deleted" });
   };
 
