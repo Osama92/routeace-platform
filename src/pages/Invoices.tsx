@@ -103,7 +103,7 @@ const InvoicesPage = () => {
   const [editInvoiceId, setEditInvoiceId] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const { toast } = useToast();
-  const { hasAnyRole } = useAuth();
+  const { hasAnyRole, organizationId } = useAuth();
 
   const canManage = hasAnyRole(["admin", "operations", "finance_manager", "org_admin", "super_admin"]);
   const { erps: activeErps, primaryErp } = useActiveErp();
@@ -113,6 +113,7 @@ const InvoicesPage = () => {
       const { data, error } = await supabase
         .from("invoices")
         .select(`*, customers(company_name, address, head_office_address, city, state, country), dispatches(pickup_address, delivery_address, distance_km)`)
+        .eq("organization_id", organizationId ?? "00000000-0000-0000-0000-000000000000")
         .order("created_at", { ascending: false });
 
       if (error) throw error;

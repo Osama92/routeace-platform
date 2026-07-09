@@ -210,6 +210,7 @@ const DriversPage = () => {
       const { data, error } = await supabase
         .from("driver_documents")
         .select("*")
+        .eq("organization_id", organizationId ?? "00000000-0000-0000-0000-000000000000")
         .order("expiry_date", { ascending: true });
 
       if (error) throw error;

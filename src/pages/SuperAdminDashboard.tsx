@@ -40,9 +40,8 @@ import FleetKPIPanel from "@/components/fleet/FleetKPIPanel";
 import TopDelayReasonsCard from "@/components/analytics/TopDelayReasonsCard";
 import { AnalyticsPeriodSelector, getDefaultPeriodRange, type PeriodType, type PeriodRange } from "@/components/analytics/AnalyticsPeriodSelector";
 import CustomerVendorApprovalQueue from "@/components/approvals/CustomerVendorApprovalQueue";
-import { 
-  Building2, 
-  Shield, 
+import {
+  Shield,
   CreditCard, 
   Users, 
   Clock,
@@ -166,8 +165,6 @@ const SuperAdminDashboardInner = () => {
         sb.from("organization_members").select("user_id", { count: "exact", head: true }).eq("organization_id", organizationId!).eq("is_active", true),
         sb.from("organization_members").select("user_id").eq("organization_id", organizationId!).eq("is_active", true),
       ]);
-      const partners = { count: partnerIds.length };
-
       const memberIds = (memberRows.data ?? []).map((r: any) => r.user_id);
       let pendingCount = 0;
       if (memberIds.length > 0) {
@@ -183,7 +180,6 @@ const SuperAdminDashboardInner = () => {
       const mrr = activeSubscriptions.reduce((sum, s) => sum + (s.monthly_amount || 0), 0);
 
       return {
-        totalOrganizations: partners.count || 0,
         activeSubscriptions: activeSubscriptions.length,
         totalUsers: members.count || 0,
         pendingUsers: pendingCount,
@@ -192,9 +188,10 @@ const SuperAdminDashboardInner = () => {
     }
   });
 
-  // Fetch organizations/partners
+  // Fetch organizations/partners — scoped to current org only
   const { data: organizations } = useQuery({
-    queryKey: ["super-admin-organizations"],
+    queryKey: ["super-admin-organizations", organizationId],
+    enabled: !!organizationId,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("partners")
@@ -213,8 +210,9 @@ const SuperAdminDashboardInner = () => {
             expires_at
           )
         `)
+        .eq("organization_id", organizationId!)
         .order("created_at", { ascending: false });
-      
+
       if (error) throw error;
       return data as PartnerOrg[];
     }
@@ -386,20 +384,7 @@ const SuperAdminDashboardInner = () => {
 
       {/* Platform Stats - hidden in LOGISTICS_DEPARTMENT mode (no multi-tenant SaaS context) */}
       {tenantMode !== "LOGISTICS_DEPARTMENT" && (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-primary/10">
-                <Building2 className="w-5 h-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Organizations</p>
-                <p className="text-2xl font-bold">{platformStats?.totalOrganizations || 0}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
