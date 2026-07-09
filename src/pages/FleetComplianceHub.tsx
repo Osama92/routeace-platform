@@ -191,13 +191,9 @@ function Supervisory({ orgId }: { orgId: string }) {
 
   const deleteCheck = async (id: string) => {
     if (!window.confirm("Delete this supervisory check record?")) return;
-    console.log("[deleteCheck] attempting delete, id=", id, "orgId=", orgId);
-    const { data, error } = await sb.from("vehicle_checklists").delete().eq("id", id).select();
-    console.log("[deleteCheck] result:", { data, error });
+    const { data, error } = await sb.from("vehicle_checklists").delete().eq("id", id).eq("organization_id", orgId).select();
     if (error) { toast({ title: error.message, variant: "destructive" }); return; }
-    console.log("[deleteCheck] invalidating queryKey=", ["sup-history", orgId]);
     await qc.invalidateQueries({ queryKey: ["sup-history", orgId] });
-    console.log("[deleteCheck] invalidation done, history should refresh");
     toast({ title: "Record deleted" });
   };
 
@@ -300,7 +296,7 @@ function WorkOrders({ orgId }: { orgId: string }) {
 
   const deleteOrder = async (id: string) => {
     if (!window.confirm("Delete this work order permanently?")) return;
-    const { error } = await sb.from("work_orders").delete().eq("id", id);
+    const { error } = await sb.from("work_orders").delete().eq("id", id).eq("organization_id", orgId);
     if (error) { toast({ title: error.message, variant: "destructive" }); return; }
     qc.invalidateQueries({ queryKey: ["wo", orgId] });
     toast({ title: "Work order deleted" });
@@ -390,7 +386,7 @@ function FuelLogs({ orgId }: { orgId: string }) {
 
   const deleteFuelLog = async (id: string) => {
     if (!window.confirm("Delete this fuel log?")) return;
-    const { error } = await sb.from("fuel_logs").delete().eq("id", id);
+    const { error } = await sb.from("fuel_logs").delete().eq("id", id).eq("organization_id", orgId);
     if (error) { toast({ title: error.message, variant: "destructive" }); return; }
     qc.invalidateQueries({ queryKey: ["fuel-logs", orgId] });
     toast({ title: "Fuel log deleted" });
@@ -509,13 +505,13 @@ function FinesAndIncidents({ orgId }: { orgId: string }) {
   };
   const deleteFine = async (id: string) => {
     if (!window.confirm("Delete this fine record?")) return;
-    const { error } = await sb.from("vehicle_fines").delete().eq("id", id);
+    const { error } = await sb.from("vehicle_fines").delete().eq("id", id).eq("organization_id", orgId);
     if (error) { toast({ title: error.message, variant: "destructive" }); return; }
     qc.invalidateQueries({ queryKey: ["fines", orgId] }); toast({ title: "Fine deleted" });
   };
   const deleteIncident = async (id: string) => {
     if (!window.confirm("Delete this incident record?")) return;
-    const { error } = await sb.from("vehicle_incidents").delete().eq("id", id);
+    const { error } = await sb.from("vehicle_incidents").delete().eq("id", id).eq("organization_id", orgId);
     if (error) { toast({ title: error.message, variant: "destructive" }); return; }
     qc.invalidateQueries({ queryKey: ["incidents", orgId] }); toast({ title: "Incident deleted" });
   };
@@ -589,7 +585,7 @@ function Documents({ orgId }: { orgId: string }) {
 
   const deleteDoc = async (id: string) => {
     if (!window.confirm("Delete this document record?")) return;
-    const { error } = await supabase.from("vehicle_documents").delete().eq("id", id);
+    const { error } = await supabase.from("vehicle_documents").delete().eq("id", id).eq("organization_id", orgId);
     if (error) { toast({ title: error.message, variant: "destructive" }); return; }
     qc.invalidateQueries({ queryKey: ["docs", orgId] }); toast({ title: "Document deleted" });
   };
