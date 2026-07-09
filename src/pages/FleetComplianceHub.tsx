@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { format, differenceInDays, startOfMonth } from "date-fns";
-import { ClipboardCheck, Wrench, Fuel, AlertTriangle, FileText, Car } from "lucide-react";
+import { ClipboardCheck, Wrench, Fuel, AlertTriangle, FileText, Car, Trash2 } from "lucide-react";
 
 const sb = supabase as any;
 
@@ -96,8 +96,27 @@ function Dashboard({ orgId }: { orgId: string }) {
     },
   });
 
+  // Pull blocked-dispatch inspections from FleetInspectionEngine so both systems contribute to the KPI
+  const { data: blockedInspections = [] } = useQuery({
+    queryKey: ["fch-blocked-inspections", orgId],
+    enabled: vehicleIds.length > 0,
+    queryFn: async () => {
+      const { data } = await supabase.from("vehicle_inspections")
+        .select("vehicle_id")
+        .eq("organization_id", orgId)
+        .eq("blocked_dispatch", true)
+        .in("vehicle_id", vehicleIds);
+      return data ?? [];
+    },
+  });
+
   const total = vehicles.length;
-  const blocked = todayChecks.filter((c: any) => c.overall_result === "fail").length;
+  // "Blocked by safety" = failed checklist results today + active dispatch-blocked inspections (deduplicated by vehicle)
+  const blockedVehicleIds = new Set([
+    ...todayChecks.filter((c: any) => c.overall_result === "fail").map((c: any) => c.vehicle_id),
+    ...(blockedInspections as any[]).map((i: any) => i.vehicle_id),
+  ]);
+  const blocked = blockedVehicleIds.size;
   const completion = total > 0 ? Math.round((new Set(todayChecks.filter((c: any) => c.checklist_type === "pre_trip").map((c: any) => c.vehicle_id)).size / total) * 100) : 0;
   const expiringSoon = (docs as any[]).filter(d => d.expiry_date && differenceInDays(new Date(d.expiry_date), new Date()) <= 30 && differenceInDays(new Date(d.expiry_date), new Date()) >= 0).length;
   const available = vehicles.filter((v: any) => v.status === "active" || v.status === "available").length;
@@ -123,13 +142,14 @@ function Dashboard({ orgId }: { orgId: string }) {
         <table className="w-full text-sm">
           <thead className="bg-muted/40"><tr>
             <th className="text-left p-2">Vehicle</th><th className="text-left p-2">Type</th><th className="text-left p-2">Status</th>
-            <th className="text-left p-2">Pre-trip</th><th className="text-left p-2">Post-trip</th><th className="text-left p-2">Open WO</th>
+            <th className="text-left p-2">Pre-trip</th><th className="text-left p-2">Post-trip</th><th className="text-left p-2">Open WO</th><th className="text-left p-2">Dispatch</th>
           </tr></thead>
           <tbody>
             {vehicles.map((v: any) => {
               const pre = (todayChecks as any[]).find(c => c.vehicle_id === v.id && c.checklist_type === "pre_trip");
               const post = (todayChecks as any[]).find(c => c.vehicle_id === v.id && c.checklist_type === "post_trip");
               const wo = openWO.filter((w: any) => w.vehicle_id === v.id).length;
+              const isBlocked = blockedVehicleIds.has(v.id);
               const cell = (c: any) => c ? <Badge variant="outline" className={c.overall_result === "pass" ? "bg-green-500/15 text-green-700" : c.overall_result === "pass_with_issues" ? "bg-amber-500/15 text-amber-700" : "bg-red-500/15 text-red-700"}>{c.overall_result.replace(/_/g," ")}</Badge> : <span className="text-muted-foreground text-xs">missing</span>;
               return (<tr key={v.id} className="border-t">
                 <td className="p-2 font-medium">{v.registration_number}</td>
@@ -138,9 +158,10 @@ function Dashboard({ orgId }: { orgId: string }) {
                 <td className="p-2">{cell(pre)}</td>
                 <td className="p-2">{cell(post)}</td>
                 <td className="p-2">{wo > 0 ? <Badge variant="destructive">{wo}</Badge> : <span className="text-muted-foreground">-</span>}</td>
+                <td className="p-2">{isBlocked ? <Badge variant="destructive">Blocked</Badge> : <Badge variant="outline" className="bg-green-500/15 text-green-700">Clear</Badge>}</td>
               </tr>);
             })}
-            {vehicles.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">No vehicles in this organisation.</td></tr>}
+            {vehicles.length === 0 && <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">No vehicles in this organisation.</td></tr>}
           </tbody>
         </table>
       </CardContent></Card>
@@ -167,6 +188,14 @@ function Supervisory({ orgId }: { orgId: string }) {
       return data ?? [];
     },
   });
+
+  const deleteCheck = async (id: string) => {
+    if (!window.confirm("Delete this supervisory check record?")) return;
+    const { error } = await sb.from("vehicle_checklists").delete().eq("id", id);
+    if (error) { toast({ title: error.message, variant: "destructive" }); return; }
+    qc.invalidateQueries({ queryKey: ["sup-history"] });
+    toast({ title: "Record deleted" });
+  };
 
   const submit = async () => {
     if (!vehicleId || !user) { toast({ title: "Vehicle required", variant: "destructive" }); return; }
@@ -215,13 +244,13 @@ function Supervisory({ orgId }: { orgId: string }) {
 
       <Card><CardContent className="p-0 overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-muted/40"><tr><th className="text-left p-2">Date</th><th className="text-left p-2">Vehicle</th><th className="text-left p-2">Result</th></tr></thead>
+          <thead className="bg-muted/40"><tr><th className="text-left p-2">Date</th><th className="text-left p-2">Vehicle</th><th className="text-left p-2">Result</th><th className="p-2"></th></tr></thead>
           <tbody>
             {(history as any[]).map(h => {
               const v = (vehicles as any[]).find(x => x.id === h.vehicle_id);
-              return <tr key={h.id} className="border-t"><td className="p-2">{h.checklist_date}</td><td className="p-2">{v?.registration_number ?? h.vehicle_id}</td><td className="p-2">{h.overall_result}</td></tr>;
+              return <tr key={h.id} className="border-t"><td className="p-2">{h.checklist_date}</td><td className="p-2">{v?.registration_number ?? h.vehicle_id}</td><td className="p-2">{h.overall_result}</td><td className="p-2 text-right"><Button size="sm" variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 w-7 p-0" onClick={() => deleteCheck(h.id)}><Trash2 className="w-3.5 h-3.5" /></Button></td></tr>;
             })}
-            {history.length === 0 && <tr><td colSpan={3} className="p-6 text-center text-muted-foreground">No supervisory checks yet.</td></tr>}
+            {history.length === 0 && <tr><td colSpan={4} className="p-6 text-center text-muted-foreground">No supervisory checks yet.</td></tr>}
           </tbody>
         </table>
       </CardContent></Card>
@@ -263,6 +292,14 @@ function WorkOrders({ orgId }: { orgId: string }) {
     const notes = window.prompt("Resolution notes (optional)") ?? "";
     await sb.from("work_orders").update({ status: "resolved", resolved_at: new Date().toISOString(), resolution_notes: notes }).eq("id", id);
     qc.invalidateQueries({ queryKey: ["wo"] });
+  };
+
+  const deleteOrder = async (id: string) => {
+    if (!window.confirm("Delete this work order permanently?")) return;
+    const { error } = await sb.from("work_orders").delete().eq("id", id);
+    if (error) { toast({ title: error.message, variant: "destructive" }); return; }
+    qc.invalidateQueries({ queryKey: ["wo"] });
+    toast({ title: "Work order deleted" });
   };
 
   const open_ = (orders as any[]).filter(o => !["resolved","closed","cancelled"].includes(o.status));
@@ -315,7 +352,10 @@ function WorkOrders({ orgId }: { orgId: string }) {
                   <td className="p-2"><Badge variant="outline">{o.priority}</Badge></td>
                   <td className="p-2">{o.sla_breached ? <Badge variant="destructive">SLA Breach</Badge> : <Badge variant="outline">{o.status}</Badge>}</td>
                   <td className="p-2 text-xs">{o.due_by ? format(new Date(o.due_by), "PP p") : "-"}</td>
-                  <td className="p-2">{group.allowResolve && <Button size="sm" variant="outline" onClick={() => resolve(o.id)}>Resolve</Button>}</td>
+                  <td className="p-2 flex items-center gap-1">
+                    {group.allowResolve && <Button size="sm" variant="outline" onClick={() => resolve(o.id)}>Resolve</Button>}
+                    <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 w-7 p-0" onClick={() => deleteOrder(o.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
+                  </td>
                 </tr>);
               })}
               {group.rows.length === 0 && <tr><td colSpan={7} className="p-4 text-center text-muted-foreground">None</td></tr>}
@@ -343,6 +383,14 @@ function FuelLogs({ orgId }: { orgId: string }) {
   });
   const [open, setOpen] = useState(false);
   const [f, setF] = useState<any>({ vehicle_id: "", log_date: new Date().toISOString().split("T")[0], odometer_reading: "", litres_dispensed: "", cost_per_litre: "", fuel_station: "", receipt_number: "", fuel_type: "diesel", km_since_last_fill: "" });
+
+  const deleteFuelLog = async (id: string) => {
+    if (!window.confirm("Delete this fuel log?")) return;
+    const { error } = await sb.from("fuel_logs").delete().eq("id", id);
+    if (error) { toast({ title: error.message, variant: "destructive" }); return; }
+    qc.invalidateQueries({ queryKey: ["fuel-logs"] });
+    toast({ title: "Fuel log deleted" });
+  };
 
   const create = useMutation({
     mutationFn: async () => {
@@ -407,7 +455,7 @@ function FuelLogs({ orgId }: { orgId: string }) {
 
       <Card><CardContent className="p-0 overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-muted/40"><tr><th className="text-left p-2">Date</th><th className="text-left p-2">Vehicle</th><th className="text-left p-2">Litres</th><th className="text-left p-2">₦/L</th><th className="text-left p-2">Total</th><th className="text-left p-2">km/L</th><th className="text-left p-2">Flag</th></tr></thead>
+          <thead className="bg-muted/40"><tr><th className="text-left p-2">Date</th><th className="text-left p-2">Vehicle</th><th className="text-left p-2">Litres</th><th className="text-left p-2">₦/L</th><th className="text-left p-2">Total</th><th className="text-left p-2">km/L</th><th className="text-left p-2">Flag</th><th className="p-2"></th></tr></thead>
           <tbody>
             {(logs as any[]).map(l => {
               const v = (vehicles as any[]).find(x => x.id === l.vehicle_id);
@@ -419,9 +467,10 @@ function FuelLogs({ orgId }: { orgId: string }) {
                 <td className="p-2">₦{Number(l.total_cost ?? 0).toLocaleString()}</td>
                 <td className="p-2">{l.km_per_litre ?? "-"}</td>
                 <td className="p-2">{l.is_flagged ? <Badge variant="destructive">{l.flag_reason ?? "Flagged"}</Badge> : <Button size="sm" variant="ghost" onClick={async () => { const r = window.prompt("Flag reason"); if (r) { await sb.from("fuel_logs").update({ is_flagged: true, flag_reason: r }).eq("id", l.id); qc.invalidateQueries({ queryKey: ["fuel-logs"] }); } }}>Flag</Button>}</td>
+                <td className="p-2"><Button size="sm" variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 w-7 p-0" onClick={() => deleteFuelLog(l.id)}><Trash2 className="w-3.5 h-3.5" /></Button></td>
               </tr>);
             })}
-            {logs.length === 0 && <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">No fuel logs this month.</td></tr>}
+            {logs.length === 0 && <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">No fuel logs this month.</td></tr>}
           </tbody>
         </table>
       </CardContent></Card>
@@ -454,6 +503,18 @@ function FinesAndIncidents({ orgId }: { orgId: string }) {
     if (error) { toast({ title: error.message, variant: "destructive" }); return; }
     toast({ title: "Incident logged" }); setIncOpen(false); qc.invalidateQueries({ queryKey: ["incidents"] });
   };
+  const deleteFine = async (id: string) => {
+    if (!window.confirm("Delete this fine record?")) return;
+    const { error } = await sb.from("vehicle_fines").delete().eq("id", id);
+    if (error) { toast({ title: error.message, variant: "destructive" }); return; }
+    qc.invalidateQueries({ queryKey: ["fines"] }); toast({ title: "Fine deleted" });
+  };
+  const deleteIncident = async (id: string) => {
+    if (!window.confirm("Delete this incident record?")) return;
+    const { error } = await sb.from("vehicle_incidents").delete().eq("id", id);
+    if (error) { toast({ title: error.message, variant: "destructive" }); return; }
+    qc.invalidateQueries({ queryKey: ["incidents"] }); toast({ title: "Incident deleted" });
+  };
 
   return (
     <Tabs defaultValue="fines" className="space-y-3">
@@ -477,9 +538,9 @@ function FinesAndIncidents({ orgId }: { orgId: string }) {
             </DialogContent>
           </Dialog>
         </div>
-        <Card><CardContent className="p-0 overflow-x-auto"><table className="w-full text-sm"><thead className="bg-muted/40"><tr><th className="p-2 text-left">Date</th><th className="p-2 text-left">Vehicle</th><th className="p-2 text-left">Type</th><th className="p-2 text-left">Amount</th><th className="p-2 text-left">Status</th></tr></thead><tbody>
-          {(fines as any[]).map(f => { const v = (vehicles as any[]).find(x => x.id === f.vehicle_id); return <tr key={f.id} className="border-t"><td className="p-2">{f.fine_date}</td><td className="p-2">{v?.registration_number ?? "-"}</td><td className="p-2">{f.fine_type}</td><td className="p-2">₦{Number(f.fine_amount).toLocaleString()}</td><td className="p-2"><Badge variant="outline">{f.payment_status}</Badge></td></tr>; })}
-          {fines.length === 0 && <tr><td colSpan={5} className="p-6 text-center text-muted-foreground">No fines logged.</td></tr>}
+        <Card><CardContent className="p-0 overflow-x-auto"><table className="w-full text-sm"><thead className="bg-muted/40"><tr><th className="p-2 text-left">Date</th><th className="p-2 text-left">Vehicle</th><th className="p-2 text-left">Type</th><th className="p-2 text-left">Amount</th><th className="p-2 text-left">Status</th><th className="p-2"></th></tr></thead><tbody>
+          {(fines as any[]).map(f => { const v = (vehicles as any[]).find(x => x.id === f.vehicle_id); return <tr key={f.id} className="border-t"><td className="p-2">{f.fine_date}</td><td className="p-2">{v?.registration_number ?? "-"}</td><td className="p-2">{f.fine_type}</td><td className="p-2">₦{Number(f.fine_amount).toLocaleString()}</td><td className="p-2"><Badge variant="outline">{f.payment_status}</Badge></td><td className="p-2"><Button size="sm" variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 w-7 p-0" onClick={() => deleteFine(f.id)}><Trash2 className="w-3.5 h-3.5" /></Button></td></tr>; })}
+          {fines.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">No fines logged.</td></tr>}
         </tbody></table></CardContent></Card>
       </TabsContent>
       <TabsContent value="incidents" className="space-y-3">
@@ -501,9 +562,9 @@ function FinesAndIncidents({ orgId }: { orgId: string }) {
             </DialogContent>
           </Dialog>
         </div>
-        <Card><CardContent className="p-0 overflow-x-auto"><table className="w-full text-sm"><thead className="bg-muted/40"><tr><th className="p-2 text-left">Date</th><th className="p-2 text-left">Vehicle</th><th className="p-2 text-left">Type</th><th className="p-2 text-left">Severity</th><th className="p-2 text-left">Status</th><th className="p-2 text-left">Cost</th></tr></thead><tbody>
-          {(incidents as any[]).map(i => { const v = (vehicles as any[]).find(x => x.id === i.vehicle_id); return <tr key={i.id} className="border-t"><td className="p-2">{i.incident_date}</td><td className="p-2">{v?.registration_number ?? "-"}</td><td className="p-2">{i.incident_type}</td><td className="p-2">{i.severity}</td><td className="p-2"><Badge variant="outline">{i.status}</Badge></td><td className="p-2">₦{Number(i.repair_cost_estimate ?? 0).toLocaleString()}</td></tr>; })}
-          {incidents.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">No incidents logged.</td></tr>}
+        <Card><CardContent className="p-0 overflow-x-auto"><table className="w-full text-sm"><thead className="bg-muted/40"><tr><th className="p-2 text-left">Date</th><th className="p-2 text-left">Vehicle</th><th className="p-2 text-left">Type</th><th className="p-2 text-left">Severity</th><th className="p-2 text-left">Status</th><th className="p-2 text-left">Cost</th><th className="p-2"></th></tr></thead><tbody>
+          {(incidents as any[]).map(i => { const v = (vehicles as any[]).find(x => x.id === i.vehicle_id); return <tr key={i.id} className="border-t"><td className="p-2">{i.incident_date}</td><td className="p-2">{v?.registration_number ?? "-"}</td><td className="p-2">{i.incident_type}</td><td className="p-2">{i.severity}</td><td className="p-2"><Badge variant="outline">{i.status}</Badge></td><td className="p-2">₦{Number(i.repair_cost_estimate ?? 0).toLocaleString()}</td><td className="p-2"><Button size="sm" variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 w-7 p-0" onClick={() => deleteIncident(i.id)}><Trash2 className="w-3.5 h-3.5" /></Button></td></tr>; })}
+          {incidents.length === 0 && <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">No incidents logged.</td></tr>}
         </tbody></table></CardContent></Card>
       </TabsContent>
     </Tabs>
@@ -512,6 +573,8 @@ function FinesAndIncidents({ orgId }: { orgId: string }) {
 
 /* ---------- Tab 6 Documents ---------- */
 function Documents({ orgId }: { orgId: string }) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
   const { data: vehicles = [] } = useVehicles(orgId);
   const ids = vehicles.map((v: any) => v.id);
   const { data: docs = [] } = useQuery({
@@ -519,6 +582,13 @@ function Documents({ orgId }: { orgId: string }) {
     enabled: ids.length > 0,
     queryFn: async () => (await supabase.from("vehicle_documents").select("*").in("vehicle_id", ids).order("expiry_date", { ascending: true })).data ?? [],
   });
+
+  const deleteDoc = async (id: string) => {
+    if (!window.confirm("Delete this document record?")) return;
+    const { error } = await supabase.from("vehicle_documents").delete().eq("id", id);
+    if (error) { toast({ title: error.message, variant: "destructive" }); return; }
+    qc.invalidateQueries({ queryKey: ["docs"] }); toast({ title: "Document deleted" });
+  };
 
   const status = (d: any) => {
     if (!d.expiry_date) return { label: "No expiry", color: "bg-muted text-foreground" };
@@ -532,10 +602,10 @@ function Documents({ orgId }: { orgId: string }) {
   return (
     <Card><CardContent className="p-0 overflow-x-auto">
       <table className="w-full text-sm">
-        <thead className="bg-muted/40"><tr><th className="p-2 text-left">Vehicle</th><th className="p-2 text-left">Document</th><th className="p-2 text-left">Expiry</th><th className="p-2 text-left">Status</th></tr></thead>
+        <thead className="bg-muted/40"><tr><th className="p-2 text-left">Vehicle</th><th className="p-2 text-left">Document</th><th className="p-2 text-left">Expiry</th><th className="p-2 text-left">Status</th><th className="p-2"></th></tr></thead>
         <tbody>
-          {(docs as any[]).map(d => { const v = (vehicles as any[]).find(x => x.id === d.vehicle_id); const s = status(d); return <tr key={d.id} className="border-t"><td className="p-2">{v?.registration_number ?? "-"}</td><td className="p-2">{(d as any).document_type ?? (d as any).document_name ?? "-"}</td><td className="p-2">{d.expiry_date ?? "-"}</td><td className="p-2"><span className={`text-xs px-2 py-0.5 rounded ${s.color}`}>{s.label}</span></td></tr>; })}
-          {docs.length === 0 && <tr><td colSpan={4} className="p-6 text-center text-muted-foreground">No vehicle documents.</td></tr>}
+          {(docs as any[]).map(d => { const v = (vehicles as any[]).find(x => x.id === d.vehicle_id); const s = status(d); return <tr key={d.id} className="border-t"><td className="p-2">{v?.registration_number ?? "-"}</td><td className="p-2">{(d as any).document_type ?? (d as any).document_name ?? "-"}</td><td className="p-2">{d.expiry_date ?? "-"}</td><td className="p-2"><span className={`text-xs px-2 py-0.5 rounded ${s.color}`}>{s.label}</span></td><td className="p-2"><Button size="sm" variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 w-7 p-0" onClick={() => deleteDoc(d.id)}><Trash2 className="w-3.5 h-3.5" /></Button></td></tr>; })}
+          {docs.length === 0 && <tr><td colSpan={5} className="p-6 text-center text-muted-foreground">No vehicle documents.</td></tr>}
         </tbody>
       </table>
     </CardContent></Card>
