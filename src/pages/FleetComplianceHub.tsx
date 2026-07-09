@@ -193,7 +193,7 @@ function Supervisory({ orgId }: { orgId: string }) {
     if (!window.confirm("Delete this supervisory check record?")) return;
     const { error } = await sb.from("vehicle_checklists").delete().eq("id", id);
     if (error) { toast({ title: error.message, variant: "destructive" }); return; }
-    qc.invalidateQueries({ queryKey: ["sup-history"] });
+    await qc.invalidateQueries({ queryKey: ["sup-history", orgId] });
     toast({ title: "Record deleted" });
   };
 
@@ -212,7 +212,7 @@ function Supervisory({ orgId }: { orgId: string }) {
     await sb.from("vehicle_checklist_items").insert(CATEGORIES.map(c => ({ checklist_id: cl.id, category: c, item_name: c, condition: conds[c], is_safety_critical: true })));
     toast({ title: "Supervisory check recorded" });
     setVehicleId(""); setOdometer(""); setNotes(""); setConds(Object.fromEntries(CATEGORIES.map(c => [c, "good"])));
-    qc.invalidateQueries({ queryKey: ["sup-history"] });
+    qc.invalidateQueries({ queryKey: ["sup-history", orgId] });
   };
 
   return (
@@ -284,21 +284,21 @@ function WorkOrders({ orgId }: { orgId: string }) {
       });
       if (error) throw error;
     },
-    onSuccess: () => { toast({ title: "Work order created" }); setOpen(false); qc.invalidateQueries({ queryKey: ["wo"] }); setForm({ vehicle_id: "", title: "", description: "", category: "mechanical", priority: "medium", due_by: "", assigned_to: "" }); },
+    onSuccess: () => { toast({ title: "Work order created" }); setOpen(false); qc.invalidateQueries({ queryKey: ["wo", orgId] }); setForm({ vehicle_id: "", title: "", description: "", category: "mechanical", priority: "medium", due_by: "", assigned_to: "" }); },
     onError: (e: any) => toast({ title: e.message, variant: "destructive" }),
   });
 
   const resolve = async (id: string) => {
     const notes = window.prompt("Resolution notes (optional)") ?? "";
     await sb.from("work_orders").update({ status: "resolved", resolved_at: new Date().toISOString(), resolution_notes: notes }).eq("id", id);
-    qc.invalidateQueries({ queryKey: ["wo"] });
+    qc.invalidateQueries({ queryKey: ["wo", orgId] });
   };
 
   const deleteOrder = async (id: string) => {
     if (!window.confirm("Delete this work order permanently?")) return;
     const { error } = await sb.from("work_orders").delete().eq("id", id);
     if (error) { toast({ title: error.message, variant: "destructive" }); return; }
-    qc.invalidateQueries({ queryKey: ["wo"] });
+    qc.invalidateQueries({ queryKey: ["wo", orgId] });
     toast({ title: "Work order deleted" });
   };
 
@@ -388,7 +388,7 @@ function FuelLogs({ orgId }: { orgId: string }) {
     if (!window.confirm("Delete this fuel log?")) return;
     const { error } = await sb.from("fuel_logs").delete().eq("id", id);
     if (error) { toast({ title: error.message, variant: "destructive" }); return; }
-    qc.invalidateQueries({ queryKey: ["fuel-logs"] });
+    qc.invalidateQueries({ queryKey: ["fuel-logs", orgId] });
     toast({ title: "Fuel log deleted" });
   };
 
@@ -407,7 +407,7 @@ function FuelLogs({ orgId }: { orgId: string }) {
       });
       if (error) throw error;
     },
-    onSuccess: () => { toast({ title: "Fuel log added" }); setOpen(false); qc.invalidateQueries({ queryKey: ["fuel-logs"] }); },
+    onSuccess: () => { toast({ title: "Fuel log added" }); setOpen(false); qc.invalidateQueries({ queryKey: ["fuel-logs", orgId] }); },
     onError: (e: any) => toast({ title: e.message, variant: "destructive" }),
   });
 
@@ -466,7 +466,7 @@ function FuelLogs({ orgId }: { orgId: string }) {
                 <td className="p-2">{l.cost_per_litre ?? "-"}</td>
                 <td className="p-2">₦{Number(l.total_cost ?? 0).toLocaleString()}</td>
                 <td className="p-2">{l.km_per_litre ?? "-"}</td>
-                <td className="p-2">{l.is_flagged ? <Badge variant="destructive">{l.flag_reason ?? "Flagged"}</Badge> : <Button size="sm" variant="ghost" onClick={async () => { const r = window.prompt("Flag reason"); if (r) { await sb.from("fuel_logs").update({ is_flagged: true, flag_reason: r }).eq("id", l.id); qc.invalidateQueries({ queryKey: ["fuel-logs"] }); } }}>Flag</Button>}</td>
+                <td className="p-2">{l.is_flagged ? <Badge variant="destructive">{l.flag_reason ?? "Flagged"}</Badge> : <Button size="sm" variant="ghost" onClick={async () => { const r = window.prompt("Flag reason"); if (r) { await sb.from("fuel_logs").update({ is_flagged: true, flag_reason: r }).eq("id", l.id); qc.invalidateQueries({ queryKey: ["fuel-logs", orgId] }); } }}>Flag</Button>}</td>
                 <td className="p-2"><Button size="sm" variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 w-7 p-0" onClick={() => deleteFuelLog(l.id)}><Trash2 className="w-3.5 h-3.5" /></Button></td>
               </tr>);
             })}
@@ -495,25 +495,25 @@ function FinesAndIncidents({ orgId }: { orgId: string }) {
     if (!fine.vehicle_id || !user) { toast({ title: "Vehicle required", variant: "destructive" }); return; }
     const { error } = await sb.from("vehicle_fines").insert({ ...fine, fine_amount: parseFloat(fine.fine_amount) || 0, organization_id: orgId, logged_by: user.id });
     if (error) { toast({ title: error.message, variant: "destructive" }); return; }
-    toast({ title: "Fine logged" }); setFineOpen(false); qc.invalidateQueries({ queryKey: ["fines"] });
+    toast({ title: "Fine logged" }); setFineOpen(false); qc.invalidateQueries({ queryKey: ["fines", orgId] });
   };
   const submitInc = async () => {
     if (!inc.vehicle_id || !user || !inc.description) { toast({ title: "Vehicle & description required", variant: "destructive" }); return; }
     const { error } = await sb.from("vehicle_incidents").insert({ ...inc, repair_cost_estimate: parseFloat(inc.repair_cost_estimate) || 0, organization_id: orgId, logged_by: user.id });
     if (error) { toast({ title: error.message, variant: "destructive" }); return; }
-    toast({ title: "Incident logged" }); setIncOpen(false); qc.invalidateQueries({ queryKey: ["incidents"] });
+    toast({ title: "Incident logged" }); setIncOpen(false); qc.invalidateQueries({ queryKey: ["incidents", orgId] });
   };
   const deleteFine = async (id: string) => {
     if (!window.confirm("Delete this fine record?")) return;
     const { error } = await sb.from("vehicle_fines").delete().eq("id", id);
     if (error) { toast({ title: error.message, variant: "destructive" }); return; }
-    qc.invalidateQueries({ queryKey: ["fines"] }); toast({ title: "Fine deleted" });
+    qc.invalidateQueries({ queryKey: ["fines", orgId] }); toast({ title: "Fine deleted" });
   };
   const deleteIncident = async (id: string) => {
     if (!window.confirm("Delete this incident record?")) return;
     const { error } = await sb.from("vehicle_incidents").delete().eq("id", id);
     if (error) { toast({ title: error.message, variant: "destructive" }); return; }
-    qc.invalidateQueries({ queryKey: ["incidents"] }); toast({ title: "Incident deleted" });
+    qc.invalidateQueries({ queryKey: ["incidents", orgId] }); toast({ title: "Incident deleted" });
   };
 
   return (
@@ -587,7 +587,7 @@ function Documents({ orgId }: { orgId: string }) {
     if (!window.confirm("Delete this document record?")) return;
     const { error } = await supabase.from("vehicle_documents").delete().eq("id", id);
     if (error) { toast({ title: error.message, variant: "destructive" }); return; }
-    qc.invalidateQueries({ queryKey: ["docs"] }); toast({ title: "Document deleted" });
+    qc.invalidateQueries({ queryKey: ["docs", orgId] }); toast({ title: "Document deleted" });
   };
 
   const status = (d: any) => {
