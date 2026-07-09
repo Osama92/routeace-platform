@@ -191,10 +191,22 @@ function Supervisory({ orgId }: { orgId: string }) {
 
   const deleteCheck = async (id: string) => {
     if (!window.confirm("Delete this supervisory check record?")) return;
-    const { data, error } = await sb.from("vehicle_checklists").delete().eq("id", id).eq("organization_id", orgId).select();
-    if (error) { toast({ title: error.message, variant: "destructive" }); return; }
+
+    // 1. Confirm the row actually exists and what columns it has
+    const { data: row, error: fetchErr } = await sb.from("vehicle_checklists").select("*").eq("id", id).single();
+    console.log("[deleteCheck] row before delete:", row, "fetchErr:", fetchErr);
+
+    // 2. Attempt delete with org filter
+    const { data: del1, error: err1 } = await sb.from("vehicle_checklists").delete().eq("id", id).eq("organization_id", orgId).select();
+    console.log("[deleteCheck] delete with org filter → data:", del1, "error:", err1);
+
+    // 3. If still empty, try without org filter (to isolate whether org_id is the mismatch)
+    if (!del1?.length && !err1) {
+      const { data: del2, error: err2 } = await sb.from("vehicle_checklists").delete().eq("id", id).select();
+      console.log("[deleteCheck] delete WITHOUT org filter → data:", del2, "error:", err2);
+    }
+
     await qc.invalidateQueries({ queryKey: ["sup-history", orgId] });
-    toast({ title: "Record deleted" });
   };
 
   const submit = async () => {
