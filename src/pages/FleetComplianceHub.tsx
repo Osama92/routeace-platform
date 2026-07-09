@@ -585,7 +585,7 @@ function Documents({ orgId }: { orgId: string }) {
 
   const deleteDoc = async (id: string) => {
     if (!window.confirm("Delete this document record?")) return;
-    const { error } = await supabase.from("vehicle_documents").delete().eq("id", id).eq("organization_id", orgId);
+    const { error } = await supabase.from("vehicle_documents").delete().eq("id", id);
     if (error) { toast({ title: error.message, variant: "destructive" }); return; }
     qc.invalidateQueries({ queryKey: ["docs", orgId] }); toast({ title: "Document deleted" });
   };
