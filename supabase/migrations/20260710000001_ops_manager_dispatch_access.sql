@@ -1,39 +1,38 @@
--- Grant ops_manager full SELECT/INSERT/UPDATE on dispatches and related tables.
--- ops_manager must NOT be able to DELETE dispatches (delete stays admin/super_admin/org_admin only).
+-- Grant ops_manager full SELECT/INSERT/UPDATE on dispatches.
+-- ops_manager must NOT be able to DELETE dispatches.
 --
--- Current state after prior migrations:
---   SELECT  → dispatches_org_select (is_org_member, no role gate) — already correct
---   INSERT  → Org members can insert dispatches — already includes ops_manager
---   UPDATE  → Org members can update dispatches — already includes ops_manager
---   DELETE  → Org admins can delete dispatches — correctly excludes ops_manager
---
--- The old "Role-restricted dispatch view" policy (from 20260128081455) did not include
--- ops_manager and may still exist alongside dispatches_org_select. Drop it to prevent
--- any ambiguity, and re-assert the correct SELECT, INSERT, UPDATE policies explicitly.
+-- Root cause of previous attempt failing: policies checked public.user_roles but
+-- the authoritative role store for multi-tenant users is organization_members.role.
+-- All checks below use organization_members directly.
 
 -- ── dispatches SELECT ─────────────────────────────────────────────────────────
-DROP POLICY IF EXISTS "Role-restricted dispatch view" ON public.dispatches;
-DROP POLICY IF EXISTS "dispatches_org_select" ON public.dispatches;
+DROP POLICY IF EXISTS "Role-restricted dispatch view"        ON public.dispatches;
+DROP POLICY IF EXISTS "dispatches_org_select"               ON public.dispatches;
+DROP POLICY IF EXISTS "Org members read own dispatches"     ON public.dispatches;
+DROP POLICY IF EXISTS "Customer users read own dispatches"  ON public.dispatches;
 
 CREATE POLICY "dispatches_org_select"
   ON public.dispatches FOR SELECT TO authenticated
   USING (
-    -- Super admins see all
-    EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'super_admin')
-    OR
-    -- All org members (any role) see their own org's dispatches
+    -- Org members (any active role) see their org's dispatches
     organization_id IN (
       SELECT organization_id FROM public.organization_members
       WHERE user_id = auth.uid() AND is_active = true
     )
     OR
-    -- Assigned driver sees their dispatches
-    driver_id IN (
-      SELECT id FROM public.drivers WHERE user_id = auth.uid()
-    )
+    -- Assigned driver sees their own dispatches
+    driver_id IN (SELECT id FROM public.drivers WHERE user_id = auth.uid())
     OR
-    -- Customer portal users see their own dispatches
+    -- Customer portal
     (customer_id IS NOT NULL AND public.is_customer_user_for_customer(auth.uid(), customer_id))
+  );
+
+-- Restore customer portal policy as a separate named policy
+CREATE POLICY "Customer users read own dispatches"
+  ON public.dispatches FOR SELECT TO authenticated
+  USING (
+    customer_id IS NOT NULL
+    AND public.is_customer_user_for_customer(auth.uid(), customer_id)
   );
 
 -- ── dispatches INSERT ─────────────────────────────────────────────────────────
@@ -44,11 +43,8 @@ CREATE POLICY "Org members can insert dispatches"
   WITH CHECK (
     organization_id IN (
       SELECT organization_id FROM public.organization_members
-      WHERE user_id = auth.uid() AND is_active = true
-    )
-    AND EXISTS (
-      SELECT 1 FROM public.user_roles
       WHERE user_id = auth.uid()
+        AND is_active = true
         AND role IN ('admin', 'super_admin', 'org_admin', 'ops_manager', 'operations', 'dispatcher')
     )
   );
@@ -61,17 +57,13 @@ CREATE POLICY "Org members can update dispatches"
   USING (
     organization_id IN (
       SELECT organization_id FROM public.organization_members
-      WHERE user_id = auth.uid() AND is_active = true
-    )
-    AND EXISTS (
-      SELECT 1 FROM public.user_roles
       WHERE user_id = auth.uid()
+        AND is_active = true
         AND role IN ('admin', 'super_admin', 'org_admin', 'ops_manager', 'operations', 'dispatcher', 'support')
     )
   );
 
--- ── dispatches DELETE ─────────────────────────────────────────────────────────
--- ops_manager deliberately excluded — only admin-tier roles may delete.
+-- ── dispatches DELETE — ops_manager deliberately excluded ─────────────────────
 DROP POLICY IF EXISTS "Org admins can delete dispatches" ON public.dispatches;
 
 CREATE POLICY "Org admins can delete dispatches"
@@ -79,80 +71,67 @@ CREATE POLICY "Org admins can delete dispatches"
   USING (
     organization_id IN (
       SELECT organization_id FROM public.organization_members
-      WHERE user_id = auth.uid() AND is_active = true
-    )
-    AND EXISTS (
-      SELECT 1 FROM public.user_roles
       WHERE user_id = auth.uid()
+        AND is_active = true
         AND role IN ('admin', 'super_admin', 'org_admin')
     )
   );
 
--- ── dispatch_dropoffs: ops_manager access via org membership ──────────────────
--- dispatch_dropoffs has no organization_id; isolation is via the parent dispatch.
-DROP POLICY IF EXISTS "Org members can view dispatch_dropoffs" ON public.dispatch_dropoffs;
+-- ── dispatch_dropoffs ─────────────────────────────────────────────────────────
+DROP POLICY IF EXISTS "Org members can view dispatch_dropoffs"   ON public.dispatch_dropoffs;
+DROP POLICY IF EXISTS "Org members can insert dispatch_dropoffs" ON public.dispatch_dropoffs;
+DROP POLICY IF EXISTS "Org members can update dispatch_dropoffs" ON public.dispatch_dropoffs;
+DROP POLICY IF EXISTS "Org members can delete dispatch_dropoffs" ON public.dispatch_dropoffs;
+DROP POLICY IF EXISTS "Authenticated users can view dropoffs"    ON public.dispatch_dropoffs;
+DROP POLICY IF EXISTS "Operations can manage dropoffs"           ON public.dispatch_dropoffs;
+
 CREATE POLICY "Org members can view dispatch_dropoffs"
   ON public.dispatch_dropoffs FOR SELECT TO authenticated
   USING (
     dispatch_id IN (
-      SELECT id FROM public.dispatches
-      WHERE organization_id IN (
-        SELECT organization_id FROM public.organization_members
-        WHERE user_id = auth.uid() AND is_active = true
-      )
+      SELECT d.id FROM public.dispatches d
+      INNER JOIN public.organization_members om
+        ON om.organization_id = d.organization_id
+        AND om.user_id = auth.uid()
+        AND om.is_active = true
     )
   );
 
-DROP POLICY IF EXISTS "Org members can insert dispatch_dropoffs" ON public.dispatch_dropoffs;
 CREATE POLICY "Org members can insert dispatch_dropoffs"
   ON public.dispatch_dropoffs FOR INSERT TO authenticated
   WITH CHECK (
     dispatch_id IN (
-      SELECT id FROM public.dispatches
-      WHERE organization_id IN (
-        SELECT organization_id FROM public.organization_members
-        WHERE user_id = auth.uid() AND is_active = true
-      )
-    )
-    AND EXISTS (
-      SELECT 1 FROM public.user_roles
-      WHERE user_id = auth.uid()
-        AND role IN ('admin', 'super_admin', 'org_admin', 'ops_manager', 'operations', 'dispatcher')
+      SELECT d.id FROM public.dispatches d
+      INNER JOIN public.organization_members om
+        ON om.organization_id = d.organization_id
+        AND om.user_id = auth.uid()
+        AND om.is_active = true
+        AND om.role IN ('admin', 'super_admin', 'org_admin', 'ops_manager', 'operations', 'dispatcher')
     )
   );
 
-DROP POLICY IF EXISTS "Org members can update dispatch_dropoffs" ON public.dispatch_dropoffs;
 CREATE POLICY "Org members can update dispatch_dropoffs"
   ON public.dispatch_dropoffs FOR UPDATE TO authenticated
   USING (
     dispatch_id IN (
-      SELECT id FROM public.dispatches
-      WHERE organization_id IN (
-        SELECT organization_id FROM public.organization_members
-        WHERE user_id = auth.uid() AND is_active = true
-      )
-    )
-    AND EXISTS (
-      SELECT 1 FROM public.user_roles
-      WHERE user_id = auth.uid()
-        AND role IN ('admin', 'super_admin', 'org_admin', 'ops_manager', 'operations', 'dispatcher', 'support')
+      SELECT d.id FROM public.dispatches d
+      INNER JOIN public.organization_members om
+        ON om.organization_id = d.organization_id
+        AND om.user_id = auth.uid()
+        AND om.is_active = true
+        AND om.role IN ('admin', 'super_admin', 'org_admin', 'ops_manager', 'operations', 'dispatcher', 'support')
     )
   );
 
-DROP POLICY IF EXISTS "Org members can delete dispatch_dropoffs" ON public.dispatch_dropoffs;
 CREATE POLICY "Org members can delete dispatch_dropoffs"
   ON public.dispatch_dropoffs FOR DELETE TO authenticated
   USING (
     dispatch_id IN (
-      SELECT id FROM public.dispatches
-      WHERE organization_id IN (
-        SELECT organization_id FROM public.organization_members
-        WHERE user_id = auth.uid() AND is_active = true
-      )
-    )
-    AND EXISTS (
-      SELECT 1 FROM public.user_roles
-      WHERE user_id = auth.uid()
-        AND role IN ('admin', 'super_admin', 'org_admin', 'ops_manager', 'operations', 'dispatcher')
+      SELECT d.id FROM public.dispatches d
+      INNER JOIN public.organization_members om
+        ON om.organization_id = d.organization_id
+        AND om.user_id = auth.uid()
+        AND om.is_active = true
+        AND om.role IN ('admin', 'super_admin', 'org_admin', 'ops_manager', 'operations', 'dispatcher')
     )
   );
