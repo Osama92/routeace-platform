@@ -224,6 +224,8 @@ const DispatchPage = () => {
 
   // Status dialog — history
   const [statusHistory, setStatusHistory] = useState<any[]>([]);
+  const [locationSuggestions, setLocationSuggestions] = useState<string[]>([]);
+  const [showLocationDropdown, setShowLocationDropdown] = useState(false);
 
   useEffect(() => {
     if (!isStatusDialogOpen || !selectedDispatch) { setStatusHistory([]); return; }
