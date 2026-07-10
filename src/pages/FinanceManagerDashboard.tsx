@@ -23,9 +23,10 @@ import AssetProfitabilityCard from "@/components/kpi/AssetProfitabilityCard";
 import FinanceKPIIntelligence from "@/components/finance/FinanceKPIIntelligence";
 import PAYECalculator from "@/components/finance/PAYECalculator";
 import FinanceIntelligenceEngine from "@/components/finance/FinanceIntelligenceEngine";
-import { 
+import DispatchFinanceQueue from "@/components/finance/DispatchFinanceQueue";
+import {
   FileText, CreditCard, Wallet, Download, RefreshCw, CheckCircle,
-  Clock, TrendingUp, AlertTriangle, Plus, Send, BarChart3, Brain, Activity
+  Clock, TrendingUp, AlertTriangle, Plus, Send, BarChart3, Brain, Activity, Truck
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -67,15 +68,27 @@ const FinanceManagerDashboardInner = () => {
     queryFn: async () => {
       const today = new Date();
       const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString();
-      const [invoicesData, expensesData] = await Promise.all([
+      const [invoicesData, expensesData, dispatchFinanceData] = await Promise.all([
         (supabase.from("invoices") as any).select("total_amount, status").eq("organization_id", orgFilter).gte("created_at", startOfMonth),
-        (supabase.from("expenses") as any).select("amount, approval_status").eq("organization_id", orgFilter).gte("created_at", startOfMonth)
+        (supabase.from("expenses") as any).select("amount, approval_status").eq("organization_id", orgFilter).gte("created_at", startOfMonth),
+        (supabase.from("dispatch_financials") as any)
+          .select("vendor_cost, client_revenue, gross_profit, roi_pct, finance_status")
+          .eq("organization_id", orgFilter)
+          .eq("finance_status", "complete")
+          .gte("entered_at", startOfMonth),
       ]);
-      const totalRevenue = invoicesData.data?.reduce((sum, inv) => sum + (inv.total_amount || 0), 0) || 0;
-      const paidRevenue = invoicesData.data?.filter(i => i.status === "paid").reduce((sum, inv) => sum + (inv.total_amount || 0), 0) || 0;
-      const pendingRevenue = invoicesData.data?.filter(i => i.status === "pending").reduce((sum, inv) => sum + (inv.total_amount || 0), 0) || 0;
-      const totalExpenses = expensesData.data?.filter(e => e.approval_status === "approved").reduce((sum, exp) => sum + (exp.amount || 0), 0) || 0;
-      return { totalRevenue, paidRevenue, pendingRevenue, totalExpenses };
+      const totalRevenue = invoicesData.data?.reduce((sum: number, inv: any) => sum + (inv.total_amount || 0), 0) || 0;
+      const paidRevenue = invoicesData.data?.filter((i: any) => i.status === "paid").reduce((sum: number, inv: any) => sum + (inv.total_amount || 0), 0) || 0;
+      const pendingRevenue = invoicesData.data?.filter((i: any) => i.status === "pending").reduce((sum: number, inv: any) => sum + (inv.total_amount || 0), 0) || 0;
+      const totalExpenses = expensesData.data?.filter((e: any) => e.approval_status === "approved").reduce((sum: number, exp: any) => sum + (exp.amount || 0), 0) || 0;
+      const df = dispatchFinanceData.data ?? [];
+      const dispatchRevenue = df.reduce((s: number, r: any) => s + (r.client_revenue || 0), 0);
+      const dispatchCost    = df.reduce((s: number, r: any) => s + (r.vendor_cost || 0), 0);
+      const dispatchProfit  = dispatchRevenue - dispatchCost;
+      const avgRoi = df.length
+        ? df.reduce((s: number, r: any) => s + (r.roi_pct || 0), 0) / df.length
+        : null;
+      return { totalRevenue, paidRevenue, pendingRevenue, totalExpenses, dispatchRevenue, dispatchCost, dispatchProfit, avgRoi };
     }
   });
 
@@ -106,19 +119,28 @@ const FinanceManagerDashboardInner = () => {
   return (
     <DashboardLayout title="Finance Manager" subtitle="Financial Intelligence & Decision Engine">
       {/* Quick Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
         {[
-          { label: "MTD Revenue", value: `₦${((financialSummary?.totalRevenue || 0) / 1e6).toFixed(2)}M`, icon: TrendingUp, color: "text-green-500", bg: "bg-green-500/10" },
-          { label: "Collected", value: `₦${((financialSummary?.paidRevenue || 0) / 1e6).toFixed(2)}M`, icon: Wallet, color: "text-blue-500", bg: "bg-blue-500/10" },
-          { label: "Pending", value: `₦${((financialSummary?.pendingRevenue || 0) / 1e6).toFixed(2)}M`, icon: Clock, color: "text-amber-500", bg: "bg-amber-500/10" },
-          { label: "MTD Expenses", value: `₦${((financialSummary?.totalExpenses || 0) / 1e6).toFixed(2)}M`, icon: CreditCard, color: "text-destructive", bg: "bg-destructive/10" },
+          { label: "MTD Revenue", value: `₦${((financialSummary?.totalRevenue || 0) / 1e6).toFixed(2)}M`, icon: TrendingUp, color: "text-green-500", bg: "bg-green-500/10", sub: undefined },
+          { label: "Collected", value: `₦${((financialSummary?.paidRevenue || 0) / 1e6).toFixed(2)}M`, icon: Wallet, color: "text-blue-500", bg: "bg-blue-500/10", sub: undefined },
+          { label: "Pending", value: `₦${((financialSummary?.pendingRevenue || 0) / 1e6).toFixed(2)}M`, icon: Clock, color: "text-amber-500", bg: "bg-amber-500/10", sub: undefined },
+          { label: "MTD Expenses", value: `₦${((financialSummary?.totalExpenses || 0) / 1e6).toFixed(2)}M`, icon: CreditCard, color: "text-destructive", bg: "bg-destructive/10", sub: undefined },
+          {
+            label: "Dispatch Profit (MTD)",
+            value: `₦${((financialSummary?.dispatchProfit || 0) / 1e6).toFixed(2)}M`,
+            icon: Truck,
+            color: (financialSummary?.dispatchProfit ?? 0) >= 0 ? "text-emerald-500" : "text-destructive",
+            bg: (financialSummary?.dispatchProfit ?? 0) >= 0 ? "bg-emerald-500/10" : "bg-destructive/10",
+            sub: financialSummary?.avgRoi != null ? `Avg ROI ${financialSummary.avgRoi.toFixed(1)}%` : undefined,
+          },
         ].map(k => (
           <Card key={k.label}>
             <CardContent className="p-4 flex items-center gap-3">
-              <div className={`p-2 rounded-lg ${k.bg}`}><k.icon className={`w-5 h-5 ${k.color}`} /></div>
-              <div>
-                <p className="text-sm text-muted-foreground">{k.label}</p>
-                <p className="text-xl font-bold">{k.value}</p>
+              <div className={`p-2 rounded-lg ${k.bg} shrink-0`}><k.icon className={`w-5 h-5 ${k.color}`} /></div>
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground truncate">{k.label}</p>
+                <p className="text-lg font-bold truncate">{k.value}</p>
+                {k.sub && <p className="text-xs text-muted-foreground">{k.sub}</p>}
               </div>
             </CardContent>
           </Card>
@@ -134,6 +156,7 @@ const FinanceManagerDashboardInner = () => {
         <TabsList className="flex-wrap h-auto gap-1">
           <TabsTrigger value="intelligence" className="gap-1"><Brain className="w-3.5 h-3.5" />Intelligence Engine</TabsTrigger>
           <TabsTrigger value="kpi-intel" className="gap-1"><Activity className="w-3.5 h-3.5" />KPI Suite</TabsTrigger>
+          <TabsTrigger value="dispatch-finance" className="gap-1"><Truck className="w-3.5 h-3.5" />Dispatch Finance</TabsTrigger>
           <TabsTrigger value="invoices">Invoices</TabsTrigger>
           <TabsTrigger value="insights">Revenue Insights</TabsTrigger>
           <TabsTrigger value="assets">Asset Profitability</TabsTrigger>
@@ -141,6 +164,10 @@ const FinanceManagerDashboardInner = () => {
           <TabsTrigger value="clients">Client Profitability</TabsTrigger>
           <TabsTrigger value="paye" className="gap-1">PAYE Calculator</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="dispatch-finance">
+          <DispatchFinanceQueue />
+        </TabsContent>
 
         {/* Intelligence Engine Tab - PRIMARY */}
         <TabsContent value="intelligence">
