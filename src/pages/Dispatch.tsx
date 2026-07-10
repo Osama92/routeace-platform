@@ -197,7 +197,7 @@ const DispatchPage = () => {
   const { user, hasAnyRole, organizationId } = useAuth();
   const { logChange } = useAuditLog();
 
-  const isAdmin = hasAnyRole(["admin"]);
+  const isAdmin = hasAnyRole(["admin", "super_admin", "org_admin", "ops_manager"]);
   const { canApprove: canApproveDispatch } = useApprovalPolicy("dispatch");
 
   const [formData, setFormData] = useState({
@@ -263,8 +263,8 @@ const DispatchPage = () => {
   });
   const [editDropoffs, setEditDropoffs] = useState<Dropoff[]>([]);
 
-  const canManage = hasAnyRole(["super_admin", "org_admin", "admin", "operations", "dispatcher"]);
-  const canUpdateStatus = hasAnyRole(["super_admin", "org_admin", "admin", "operations", "dispatcher", "support"]);
+  const canManage = hasAnyRole(["super_admin", "org_admin", "admin", "ops_manager", "operations", "dispatcher"]);
+  const canUpdateStatus = hasAnyRole(["super_admin", "org_admin", "admin", "ops_manager", "operations", "dispatcher", "support"]);
   const canDelete = hasAnyRole(["super_admin", "org_admin", "admin"]);
 
   const fetchData = async () => {
