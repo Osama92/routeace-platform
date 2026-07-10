@@ -25,7 +25,9 @@ export function useApprovalPolicy(entityType: string) {
     (policy?.roles_allowed as string[] | undefined) ?? ["super_admin", "org_admin"];
 
   const canApprove =
-    isSuperAdmin || allowedRoles.includes(userRole ?? "");
+    isSuperAdmin ||
+    allowedRoles.includes(userRole ?? "") ||
+    ["admin", "org_admin", "ops_manager"].includes(userRole ?? "");
 
   const requiresTwoLevels =
     (policy?.approval_levels_required ?? 1) >= 2;

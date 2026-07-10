@@ -1549,7 +1549,7 @@ const DispatchPage = () => {
                     <Pencil className="w-4 h-4" />
                   </Button>
                 )}
-                {canUpdateStatus && dispatch.status !== "delivered" && dispatch.status !== "cancelled" && dispatch.approval_status === "approved" && (
+                {canUpdateStatus && dispatch.status !== "delivered" && dispatch.status !== "cancelled" && (dispatch.approval_status === "approved" || isAdmin) && (
                   <Button
                     size="sm"
                     className="flex-1"
@@ -1575,7 +1575,7 @@ const DispatchPage = () => {
                     Update Status
                   </Button>
                 )}
-                {canUpdateStatus && dispatch.approval_status === "approved" && ["assigned","picked_up","in_transit","delayed","delivered","cancelled"].includes(dispatch.status) && (
+                {canUpdateStatus && (dispatch.approval_status === "approved" || isAdmin) && ["assigned","picked_up","in_transit","delayed","delivered","cancelled"].includes(dispatch.status) && (
                   <ResendClientEmailButton dispatchId={dispatch.id} status={dispatch.status} />
                 )}
                 {canUpdateStatus && (
