@@ -138,6 +138,7 @@ interface Vehicle {
   id: string;
   registration_number: string;
   vehicle_type: string;
+  ownership_type: string | null;
   capacity_kg: number | null;
   status: string | null;
 }
@@ -299,7 +300,7 @@ const DispatchPage = () => {
 
       const vehiclesQ = supabase
         .from("vehicles")
-        .select("id, registration_number, vehicle_type, capacity_kg, status")
+        .select("id, registration_number, vehicle_type, ownership_type, capacity_kg, status")
         .eq("status", "available")
         .eq("organization_id", orgFilter);
 
@@ -611,6 +612,12 @@ const DispatchPage = () => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  // Human-readable vehicle ownership label
+  const vehicleOwnershipLabel = (v: Vehicle) => {
+    const ownership = v.ownership_type === "owned" ? "Internal Truck" : "Vendor Truck";
+    return `${v.registration_number} (${ownership})`;
+  };
+
   // Calculate suggested fuel based on vehicle and distance
   const calculateSuggestedFuel = (vehicleId: string, distanceKm: number) => {
     const vehicle = vehicles.find(v => v.id === vehicleId);
@@ -682,6 +689,30 @@ const DispatchPage = () => {
         }));
 
         await supabase.from("dispatch_dropoffs").insert(dropoffsToInsert);
+      }
+
+      // Auto-create a dispatch-linked fuel log estimate for owned/internal vehicles
+      // so the fleet fuel tracking and ROI savings page reflect the planned fuel usage.
+      if (data && suggestedFuel && suggestedFuel > 0 && formData.vehicle_id) {
+        const selectedVehicle = vehicles.find(v => v.id === formData.vehicle_id);
+        // Only auto-log for owned (internal) trucks — vendor fuel is their responsibility
+        if (selectedVehicle?.ownership_type === "owned") {
+          await supabase.from("fuel_logs").insert({
+            organization_id: organizationId,
+            vehicle_id: formData.vehicle_id,
+            driver_id: formData.driver_id || null,
+            logged_by: user?.id,
+            log_date: formData.scheduled_pickup
+              ? formData.scheduled_pickup.split("T")[0]
+              : new Date().toISOString().split("T")[0],
+            litres_dispensed: Math.round(suggestedFuel * 10) / 10,
+            odometer_reading: 0,
+            fuel_type: "diesel",
+            fuel_station: null,
+            dispatch_id: data.id,
+            is_dispatch_estimate: true,
+          } as any);
+        }
       }
 
       // Log the creation
@@ -1281,7 +1312,7 @@ const DispatchPage = () => {
                       <SelectContent>
                         {vehicles.map((vehicle) => (
                           <SelectItem key={vehicle.id} value={vehicle.id}>
-                            {vehicle.registration_number} ({vehicle.vehicle_type})
+                            {vehicleOwnershipLabel(vehicle)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -2095,7 +2126,7 @@ const DispatchPage = () => {
                     <SelectItem value="none">No Vehicle</SelectItem>
                     {vehicles.map((vehicle) => (
                       <SelectItem key={vehicle.id} value={vehicle.id}>
-                        {vehicle.registration_number} ({vehicle.vehicle_type})
+                        {vehicleOwnershipLabel(vehicle)}
                       </SelectItem>
                     ))}
                   </SelectContent>

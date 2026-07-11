@@ -377,7 +377,11 @@ function FuelLogs({ orgId }: { orgId: string }) {
   const { data: logs = [] } = useQuery({
     queryKey: ["fuel-logs", orgId, monthStart],
     queryFn: async () => {
-      const { data } = await sb.from("fuel_logs").select("*").eq("organization_id", orgId).gte("log_date", monthStart).order("log_date", { ascending: false });
+      const { data } = await sb.from("fuel_logs")
+        .select("*, dispatches(dispatch_number)")
+        .eq("organization_id", orgId)
+        .gte("log_date", monthStart)
+        .order("log_date", { ascending: false });
       return data ?? [];
     },
   });
@@ -455,13 +459,24 @@ function FuelLogs({ orgId }: { orgId: string }) {
 
       <Card><CardContent className="p-0 overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-muted/40"><tr><th className="text-left p-2">Date</th><th className="text-left p-2">Vehicle</th><th className="text-left p-2">Litres</th><th className="text-left p-2">₦/L</th><th className="text-left p-2">Total</th><th className="text-left p-2">km/L</th><th className="text-left p-2">Flag</th><th className="p-2"></th></tr></thead>
+          <thead className="bg-muted/40"><tr><th className="text-left p-2">Date</th><th className="text-left p-2">Vehicle</th><th className="text-left p-2">Dispatch</th><th className="text-left p-2">Litres</th><th className="text-left p-2">₦/L</th><th className="text-left p-2">Total</th><th className="text-left p-2">km/L</th><th className="text-left p-2">Flag</th><th className="p-2"></th></tr></thead>
           <tbody>
             {(logs as any[]).map(l => {
               const v = (vehicles as any[]).find(x => x.id === l.vehicle_id);
+              const dispatchNum = l.dispatches?.dispatch_number;
               return (<tr key={l.id} className="border-t">
                 <td className="p-2">{l.log_date}</td>
                 <td className="p-2">{v?.registration_number ?? "-"}</td>
+                <td className="p-2">
+                  {dispatchNum ? (
+                    <div className="flex items-center gap-1">
+                      <span className="font-mono text-xs">{dispatchNum}</span>
+                      {l.is_dispatch_estimate && <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 text-amber-600 border-amber-400">Est.</Badge>}
+                    </div>
+                  ) : (
+                    <span className="text-muted-foreground text-xs">Manual</span>
+                  )}
+                </td>
                 <td className="p-2">{l.litres_dispensed}</td>
                 <td className="p-2">{l.cost_per_litre ?? "-"}</td>
                 <td className="p-2">₦{Number(l.total_cost ?? 0).toLocaleString()}</td>
@@ -470,7 +485,7 @@ function FuelLogs({ orgId }: { orgId: string }) {
                 <td className="p-2"><Button size="sm" variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 w-7 p-0" onClick={() => deleteFuelLog(l.id)}><Trash2 className="w-3.5 h-3.5" /></Button></td>
               </tr>);
             })}
-            {logs.length === 0 && <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">No fuel logs this month.</td></tr>}
+            {logs.length === 0 && <tr><td colSpan={9} className="p-6 text-center text-muted-foreground">No fuel logs this month.</td></tr>}
           </tbody>
         </table>
       </CardContent></Card>
