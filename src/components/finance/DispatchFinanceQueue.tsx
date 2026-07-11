@@ -33,8 +33,8 @@ interface DispatchRow {
   actual_delivery: string | null;
   distance_km: number | null;
   customers: { company_name: string } | null;
-  drivers: { name: string } | null;
-  vehicles: { plate_number: string } | null;
+  drivers: { full_name: string } | null;
+  vehicles: { registration_number: string } | null;
   // joined dispatch_financials (null if not yet created)
   dispatch_financials: {
     id: string;
@@ -100,8 +100,8 @@ export default function DispatchFinanceQueue() {
           pickup_address, delivery_address,
           scheduled_pickup, actual_delivery, distance_km,
           customers ( company_name ),
-          drivers ( name ),
-          vehicles ( plate_number ),
+          drivers ( full_name ),
+          vehicles ( registration_number ),
           dispatch_financials (
             id, vendor_cost, client_revenue,
             gross_profit, roi_pct,
@@ -349,11 +349,11 @@ export default function DispatchFinanceQueue() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Driver</span>
-                  <span>{selected.drivers?.name ?? "—"}</span>
+                  <span>{selected.drivers?.full_name ?? "—"}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Vehicle</span>
-                  <span>{selected.vehicles?.plate_number ?? "—"}</span>
+                  <span>{selected.vehicles?.registration_number ?? "—"}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Route</span>
@@ -498,9 +498,9 @@ function QueueTable({ rows, isLoading, onEdit, showFinance }: QueueTableProps) {
                 <TableCell className="font-mono text-sm font-medium">{r.dispatch_number}</TableCell>
                 <TableCell>{r.customers?.company_name ?? "—"}</TableCell>
                 <TableCell className="text-sm">
-                  <span>{r.drivers?.name ?? "—"}</span>
-                  {r.vehicles?.plate_number && (
-                    <span className="text-muted-foreground ml-1">· {r.vehicles.plate_number}</span>
+                  <span>{r.drivers?.full_name ?? "—"}</span>
+                  {r.vehicles?.registration_number && (
+                    <span className="text-muted-foreground ml-1">· {r.vehicles.registration_number}</span>
                   )}
                 </TableCell>
                 <TableCell>{dispatchStatusBadge(r.status)}</TableCell>

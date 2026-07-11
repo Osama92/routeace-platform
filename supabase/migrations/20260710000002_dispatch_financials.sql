@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS public.dispatch_financials (
 
 ALTER TABLE public.dispatch_financials ENABLE ROW LEVEL SECURITY;
 
+DROP TRIGGER IF EXISTS update_dispatch_financials_updated_at ON public.dispatch_financials;
 CREATE TRIGGER update_dispatch_financials_updated_at
   BEFORE UPDATE ON public.dispatch_financials
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
@@ -69,6 +70,11 @@ CREATE INDEX IF NOT EXISTS idx_dispatch_financials_dispatch
 
 -- ── 3. RLS policies ───────────────────────────────────────────────────────────
 -- Finance managers + admins can do everything; ops roles can SELECT only.
+
+DROP POLICY IF EXISTS "Org members can view dispatch financials"  ON public.dispatch_financials;
+DROP POLICY IF EXISTS "Finance team can insert dispatch financials" ON public.dispatch_financials;
+DROP POLICY IF EXISTS "Finance team can update dispatch financials" ON public.dispatch_financials;
+DROP POLICY IF EXISTS "Admins can delete dispatch financials"      ON public.dispatch_financials;
 
 CREATE POLICY "Org members can view dispatch financials"
   ON public.dispatch_financials FOR SELECT TO authenticated
