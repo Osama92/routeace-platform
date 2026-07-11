@@ -25,6 +25,7 @@ function riskColor(level: string) {
 function riskBadge(level: string) {
   if (level === "high_risk" || level === "critical") return <Badge variant="destructive" className="text-xs">{level.replace("_", " ").toUpperCase()}</Badge>;
   if (level === "suspicious" || level === "inefficient" || level === "high" || level === "medium") return <Badge className="bg-yellow-500/20 text-yellow-700 text-xs">{level.replace("_", " ").toUpperCase()}</Badge>;
+  if (level === "no_data") return <Badge variant="outline" className="text-xs text-muted-foreground">NO DISTANCE DATA</Badge>;
   return <Badge className="bg-green-500/20 text-green-700 text-xs">{level.toUpperCase()}</Badge>;
 }
 
@@ -130,22 +131,25 @@ export default function FuelIntelligence() {
   }, [logs, vKmplMap]);
 
   const vehicleRows = useMemo(() => {
-    const map = new Map<string, { id: string; name: string; litres: number; km: number }>();
+    const map = new Map<string, { id: string; name: string; litres: number; km: number; hasDistance: boolean }>();
     for (const l of logs as any[]) {
       if (!l.vehicle_id) continue;
-      const cur = map.get(l.vehicle_id) ?? { id: l.vehicle_id, name: vMap[l.vehicle_id] ?? "-", litres: 0, km: 0 };
+      const cur = map.get(l.vehicle_id) ?? { id: l.vehicle_id, name: vMap[l.vehicle_id] ?? "-", litres: 0, km: 0, hasDistance: false };
       if (isActual(l)) cur.litres += Number(l.litres_dispensed || 0);
-      cur.km += effectiveKm(l);
+      const km = effectiveKm(l);
+      cur.km += km;
+      if (km > 0) cur.hasDistance = true;
       map.set(l.vehicle_id, cur);
     }
     return Array.from(map.values()).map(v => {
       const kmpl = vKmplMap[v.id] ?? DEFAULT_KMPL;
       const expected = v.km > 0 ? v.km / kmpl : 0;
-      const variance = expected > 0 ? ((v.litres - expected) / expected) * 100 : 0;
-      const score = Math.max(0, Math.min(100, Math.round(100 - variance)));
-      const status = variance > 25 ? "high_risk" : variance > 10 ? "inefficient" : "normal";
-      return { id: v.id, name: v.name, expected: Math.round(expected), actual: Math.round(v.litres), variance, score, status };
-    }).sort((a, b) => b.variance - a.variance);
+      // When no distance data, variance is null — don't pretend it's 0%
+      const variance = (expected > 0 && v.litres > 0) ? ((v.litres - expected) / expected) * 100 : null;
+      const score = variance !== null ? Math.max(0, Math.min(100, Math.round(100 - variance))) : null;
+      const status = !v.hasDistance ? "no_data" : variance === null ? "no_data" : variance > 25 ? "high_risk" : variance > 10 ? "inefficient" : "normal";
+      return { id: v.id, name: v.name, expected: Math.round(expected), actual: Math.round(v.litres), variance, score, status, hasDistance: v.hasDistance };
+    }).sort((a, b) => (b.variance ?? -Infinity) - (a.variance ?? -Infinity));
   }, [logs, vMap, vKmplMap]);
 
   const driverRows = useMemo(() => {
@@ -330,12 +334,16 @@ export default function FuelIntelligence() {
                   {vehicleRows.map(v => (
                     <TableRow key={v.id}>
                       <TableCell className="font-medium">{v.name}</TableCell>
-                      <TableCell className="text-right">{v.expected}</TableCell>
-                      <TableCell className="text-right">{v.actual}</TableCell>
-                      <TableCell className={`text-right font-semibold ${v.variance > 20 ? "text-red-500" : v.variance > 10 ? "text-yellow-500" : "text-green-500"}`}>
-                        {v.variance >= 0 ? "+" : ""}{v.variance.toFixed(1)}%
+                      <TableCell className="text-right">
+                        {v.hasDistance ? v.expected : <span className="text-muted-foreground text-xs">No distance</span>}
                       </TableCell>
-                      <TableCell className="text-right">{v.score}</TableCell>
+                      <TableCell className="text-right">{v.actual > 0 ? v.actual : <span className="text-muted-foreground text-xs">—</span>}</TableCell>
+                      <TableCell className={`text-right font-semibold ${v.variance === null ? "text-muted-foreground" : v.variance > 20 ? "text-red-500" : v.variance > 10 ? "text-yellow-500" : "text-green-500"}`}>
+                        {v.variance === null
+                          ? <span className="text-xs font-normal">Enter km_since_last_fill or link dispatch</span>
+                          : `${v.variance >= 0 ? "+" : ""}${v.variance.toFixed(1)}%`}
+                      </TableCell>
+                      <TableCell className="text-right">{v.score ?? "—"}</TableCell>
                       <TableCell>{riskBadge(v.status)}</TableCell>
                     </TableRow>
                   ))}
