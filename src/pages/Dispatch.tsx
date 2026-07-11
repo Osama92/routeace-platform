@@ -194,6 +194,8 @@ const DispatchPage = () => {
   const [rejectionReason, setRejectionReason] = useState("");
   const [isDelayReasonOpen, setIsDelayReasonOpen] = useState(false);
   const [delayReasonDispatch, setDelayReasonDispatch] = useState<Dispatch | null>(null);
+  const [fuelConfirmOpen, setFuelConfirmOpen] = useState(false);
+  const [fuelConfirmData, setFuelConfirmData] = useState<{ dispatchId: string; dispatchNumber: string; vehicleId: string; driverId: string | null; logDate: string; estimatedLitres: number; actualLitres: string } | null>(null);
   const { toast } = useToast();
   const { user, hasAnyRole, organizationId } = useAuth();
   const { logChange } = useAuditLog();
@@ -618,18 +620,19 @@ const DispatchPage = () => {
     return `${v.registration_number} (${ownership})`;
   };
 
-  // Calculate suggested fuel based on vehicle and distance
-  const calculateSuggestedFuel = (vehicleId: string, distanceKm: number) => {
+  // Calculate suggested fuel based on vehicle, distance, and whether it's a return trip
+  const calculateSuggestedFuel = (vehicleId: string, distanceKm: number, isReturnTrip: boolean) => {
     const vehicle = vehicles.find(v => v.id === vehicleId);
     if (!vehicle) return 0;
-    
+
     const tonnage = (vehicle.capacity_kg || 0) / 1000;
     let factor = 0.35;
     if (tonnage >= 45) factor = 0.55;
     else if (tonnage >= 25) factor = 0.47;
     else if (tonnage >= 15) factor = 0.35;
-    
-    return distanceKm * 2 * factor; // To and fro
+
+    const effectiveDistance = isReturnTrip ? distanceKm * 2 : distanceKm;
+    return effectiveDistance * factor;
   };
 
   const handleCreateDispatch = async () => {
@@ -645,8 +648,8 @@ const DispatchPage = () => {
     setSaving(true);
     try {
       const distanceKm = formData.distance_km ? parseFloat(formData.distance_km) : null;
-      const suggestedFuel = formData.vehicle_id && distanceKm 
-        ? calculateSuggestedFuel(formData.vehicle_id, distanceKm) 
+      const suggestedFuel = formData.vehicle_id && distanceKm
+        ? calculateSuggestedFuel(formData.vehicle_id, distanceKm, returnTrip)
         : null;
 
       const totalDistanceKm = distanceKm ? (returnTrip ? distanceKm * 2 : distanceKm) : null;
@@ -691,27 +694,23 @@ const DispatchPage = () => {
         await supabase.from("dispatch_dropoffs").insert(dropoffsToInsert);
       }
 
-      // Auto-create a dispatch-linked fuel log estimate for owned/internal vehicles
-      // so the fleet fuel tracking and ROI savings page reflect the planned fuel usage.
+      // For owned/internal vehicles, prompt user to confirm actual diesel issued.
+      // This captures estimate vs. actual for ROI accuracy.
       if (data && suggestedFuel && suggestedFuel > 0 && formData.vehicle_id) {
         const selectedVehicle = vehicles.find(v => v.id === formData.vehicle_id);
-        // Only auto-log for owned (internal) trucks — vendor fuel is their responsibility
         if (selectedVehicle?.ownership_type === "owned") {
-          await supabase.from("fuel_logs").insert({
-            organization_id: organizationId,
-            vehicle_id: formData.vehicle_id,
-            driver_id: formData.driver_id || null,
-            logged_by: user?.id,
-            log_date: formData.scheduled_pickup
+          setFuelConfirmData({
+            dispatchId: data.id,
+            dispatchNumber: data.dispatch_number,
+            vehicleId: formData.vehicle_id,
+            driverId: formData.driver_id || null,
+            logDate: formData.scheduled_pickup
               ? formData.scheduled_pickup.split("T")[0]
               : new Date().toISOString().split("T")[0],
-            litres_dispensed: Math.round(suggestedFuel * 10) / 10,
-            odometer_reading: 0,
-            fuel_type: "diesel",
-            fuel_station: null,
-            dispatch_id: data.id,
-            is_dispatch_estimate: true,
-          } as any);
+            estimatedLitres: Math.round(suggestedFuel * 10) / 10,
+            actualLitres: String(Math.round(suggestedFuel * 10) / 10),
+          });
+          setFuelConfirmOpen(true);
         }
       }
 
@@ -755,6 +754,30 @@ const DispatchPage = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  const saveFuelConfirm = async (isEstimate: boolean) => {
+    if (!fuelConfirmData) return;
+    const litres = parseFloat(fuelConfirmData.actualLitres);
+    if (!litres || litres <= 0) {
+      toast({ title: "Enter a valid litre amount", variant: "destructive" });
+      return;
+    }
+    await (supabase as any).from("fuel_logs").insert({
+      organization_id: organizationId,
+      vehicle_id: fuelConfirmData.vehicleId,
+      driver_id: fuelConfirmData.driverId,
+      logged_by: user?.id,
+      log_date: fuelConfirmData.logDate,
+      litres_dispensed: litres,
+      odometer_reading: 0,
+      fuel_type: "diesel",
+      dispatch_id: fuelConfirmData.dispatchId,
+      is_dispatch_estimate: isEstimate,
+    });
+    toast({ title: isEstimate ? "Fuel estimate logged" : "Actual fuel issued logged", description: `${litres}L recorded for ${fuelConfirmData.dispatchNumber}` });
+    setFuelConfirmOpen(false);
+    setFuelConfirmData(null);
   };
 
   const handleStatusUpdate = async () => {
@@ -934,8 +957,8 @@ const DispatchPage = () => {
     setSaving(true);
     try {
       const distanceKm = editFormData.distance_km ? parseFloat(editFormData.distance_km) : null;
-      const suggestedFuel = editFormData.vehicle_id && distanceKm 
-        ? calculateSuggestedFuel(editFormData.vehicle_id, distanceKm) 
+      const suggestedFuel = editFormData.vehicle_id && distanceKm
+        ? calculateSuggestedFuel(editFormData.vehicle_id, distanceKm, !!selectedDispatch.return_distance_km)
         : selectedDispatch.suggested_fuel_liters;
 
       const oldData = {
@@ -1918,6 +1941,53 @@ const DispatchPage = () => {
               {saving ? "Updating..." : "Update Status"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Fuel Confirmation Modal — appears after dispatch creation for internal trucks */}
+      <Dialog open={fuelConfirmOpen} onOpenChange={open => { if (!open) { setFuelConfirmOpen(false); setFuelConfirmData(null); } }}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Fuel className="w-5 h-5 text-amber-500" />
+              Diesel Issued for {fuelConfirmData?.dispatchNumber}
+            </DialogTitle>
+            <DialogDescription>
+              System estimated <strong>{fuelConfirmData?.estimatedLitres}L</strong> for this route. Enter the actual quantity of diesel issued to the driver so your fuel records and ROI calculations stay accurate.
+            </DialogDescription>
+          </DialogHeader>
+          {fuelConfirmData && (
+            <div className="space-y-4 pt-2">
+              <div className="space-y-1">
+                <Label>Actual Litres Issued</Label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  value={fuelConfirmData.actualLitres}
+                  onChange={e => setFuelConfirmData({ ...fuelConfirmData, actualLitres: e.target.value })}
+                  placeholder={`Suggested: ${fuelConfirmData.estimatedLitres}L`}
+                />
+                {fuelConfirmData.actualLitres && parseFloat(fuelConfirmData.actualLitres) !== fuelConfirmData.estimatedLitres && (
+                  <p className="text-xs text-muted-foreground">
+                    {parseFloat(fuelConfirmData.actualLitres) > fuelConfirmData.estimatedLitres
+                      ? `▲ ${(parseFloat(fuelConfirmData.actualLitres) - fuelConfirmData.estimatedLitres).toFixed(1)}L above estimate`
+                      : `▼ ${(fuelConfirmData.estimatedLitres - parseFloat(fuelConfirmData.actualLitres)).toFixed(1)}L below estimate`}
+                  </p>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Button className="flex-1" onClick={() => saveFuelConfirm(false)}>
+                  Log Actual Issued
+                </Button>
+                <Button variant="outline" onClick={() => saveFuelConfirm(true)}>
+                  Use Estimate
+                </Button>
+                <Button variant="ghost" onClick={() => { setFuelConfirmOpen(false); setFuelConfirmData(null); }}>
+                  Skip
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
