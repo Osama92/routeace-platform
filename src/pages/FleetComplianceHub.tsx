@@ -477,7 +477,8 @@ function FuelLogs({ orgId }: { orgId: string }) {
             {(logs as any[]).map(l => {
               const v = (vehicles as any[]).find(x => x.id === l.vehicle_id);
               const dispatchNum = l.dispatches?.dispatch_number;
-              const isEstimate = !!l.is_dispatch_estimate;
+              // Treat as estimate if flagged true, OR if dispatch-linked with null column (pre-migration rows)
+              const isEstimate = l.is_dispatch_estimate === true || (l.is_dispatch_estimate === null && !!l.dispatch_id);
 
               // System estimate always comes from the dispatch, regardless of whether this row is an estimate or actual
               const sysEstimate = l.dispatches?.suggested_fuel_liters != null

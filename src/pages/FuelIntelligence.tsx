@@ -53,7 +53,7 @@ export default function FuelIntelligence() {
     queryFn: async () => {
       const since = new Date(); since.setDate(since.getDate() - 30);
       const { data } = await supabase.from("fuel_logs")
-        .select("id, vehicle_id, driver_id, litres_dispensed, total_cost, km_since_last_fill, km_per_litre, is_flagged, flag_reason, log_date, fuel_station, is_dispatch_estimate, dispatches(total_distance_km, distance_km, suggested_fuel_liters)")
+        .select("id, vehicle_id, driver_id, litres_dispensed, total_cost, km_since_last_fill, km_per_litre, is_flagged, flag_reason, log_date, fuel_station, is_dispatch_estimate, dispatch_id, dispatches(total_distance_km, distance_km, suggested_fuel_liters)")
         .eq("organization_id", orgId).gte("log_date", since.toISOString().slice(0, 10))
         .order("log_date", { ascending: false });
       return data ?? [];
@@ -91,9 +91,14 @@ export default function FuelIntelligence() {
     Number((l.dispatches as any)?.total_distance_km || 0) ||
     Number((l.dispatches as any)?.distance_km || 0);
 
-  // Only count non-estimate rows as "actual" fuel issued.
-  // Estimate rows represent the system's planned figure, not physical dispensing.
-  const isActual = (l: any): boolean => !l.is_dispatch_estimate;
+  // Only count confirmed actual fuel issues.
+  // Excludes: is_dispatch_estimate = true, AND dispatch-linked rows where the column
+  // is null (migration not yet applied — those rows are system estimates, not real fills).
+  const isActual = (l: any): boolean => {
+    if (l.is_dispatch_estimate === true) return false;
+    if (l.is_dispatch_estimate === null && l.dispatch_id) return false;
+    return true;
+  };
 
   const summary = useMemo(() => {
     const actualLogs = (logs as any[]).filter(isActual);
