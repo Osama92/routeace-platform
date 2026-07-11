@@ -52,7 +52,7 @@ export default function FuelIntelligence() {
     queryFn: async () => {
       const since = new Date(); since.setDate(since.getDate() - 30);
       const { data } = await supabase.from("fuel_logs")
-        .select("id, vehicle_id, driver_id, litres_dispensed, total_cost, km_since_last_fill, km_per_litre, is_flagged, flag_reason, log_date, fuel_station")
+        .select("id, vehicle_id, driver_id, litres_dispensed, total_cost, km_since_last_fill, km_per_litre, is_flagged, flag_reason, log_date, fuel_station, is_dispatch_estimate, dispatches(total_distance_km, distance_km, suggested_fuel_liters)")
         .eq("organization_id", orgId).gte("log_date", since.toISOString().slice(0, 10))
         .order("log_date", { ascending: false });
       return data ?? [];
@@ -83,12 +83,23 @@ export default function FuelIntelligence() {
   ), [vehicles]);
   const dMap = useMemo(() => Object.fromEntries(drivers.map((d: any) => [d.id, d.full_name])), [drivers]);
 
+  // Resolve effective distance for a log: prefer km_since_last_fill (manually entered),
+  // fall back to dispatch total_distance_km, then one-way distance_km.
+  const effectiveKm = (l: any): number =>
+    Number(l.km_since_last_fill || 0) ||
+    Number((l.dispatches as any)?.total_distance_km || 0) ||
+    Number((l.dispatches as any)?.distance_km || 0);
+
+  // Only count non-estimate rows as "actual" fuel issued.
+  // Estimate rows represent the system's planned figure, not physical dispensing.
+  const isActual = (l: any): boolean => !l.is_dispatch_estimate;
+
   const summary = useMemo(() => {
-    const total_litres = logs.reduce((s: number, l: any) => s + Number(l.litres_dispensed || 0), 0);
-    const total_fuel_spend = logs.reduce((s: number, l: any) => s + Number(l.total_cost || 0), 0);
-    const total_km = logs.reduce((s: number, l: any) => s + Number(l.km_since_last_fill || 0), 0);
-    const expected_litres = (logs as any[]).reduce((sum: number, l: any) => {
-      const km = Number(l.km_since_last_fill || 0);
+    const actualLogs = (logs as any[]).filter(isActual);
+    const total_litres = actualLogs.reduce((s: number, l: any) => s + Number(l.litres_dispensed || 0), 0);
+    const total_fuel_spend = actualLogs.reduce((s: number, l: any) => s + Number(l.total_cost || 0), 0);
+    const expected_litres = actualLogs.reduce((sum: number, l: any) => {
+      const km = effectiveKm(l);
       if (km <= 0) return sum;
       const kmpl = vKmplMap[l.vehicle_id] ?? DEFAULT_KMPL;
       return sum + (km / kmpl);
@@ -96,7 +107,7 @@ export default function FuelIntelligence() {
     const estimated_loss_litres = Math.max(0, total_litres - expected_litres);
     const avg_cost_per_litre = total_litres > 0 ? total_fuel_spend / total_litres : 0;
     const estimated_loss_cost = estimated_loss_litres * avg_cost_per_litre;
-    const flagged = logs.filter((l: any) => l.is_flagged);
+    const flagged = (logs as any[]).filter((l: any) => l.is_flagged);
     const efficiency_score = total_litres > 0 && expected_litres > 0
       ? Math.max(0, Math.min(100, Math.round((expected_litres / total_litres) * 100)))
       : 0;
@@ -106,11 +117,15 @@ export default function FuelIntelligence() {
       estimated_loss_cost: Math.round(estimated_loss_cost),
       efficiency_score,
       active_fraud_flags: flagged.length,
-      high_risk_trips: (logs as any[]).filter(l => {
+      high_risk_trips: actualLogs.filter((l: any) => {
+        const km = effectiveKm(l);
+        if (km <= 0) return false;
+        const litres = Number(l.litres_dispensed || 0);
+        if (litres <= 0) return false;
         const kmpl = vKmplMap[l.vehicle_id] ?? DEFAULT_KMPL;
-        return Number(l.km_per_litre || kmpl) < kmpl * 0.7;
+        return (km / litres) < kmpl * 0.7;
       }).length,
-      total_trips_analyzed: logs.length,
+      total_trips_analyzed: actualLogs.length,
     };
   }, [logs, vKmplMap]);
 
@@ -119,8 +134,8 @@ export default function FuelIntelligence() {
     for (const l of logs as any[]) {
       if (!l.vehicle_id) continue;
       const cur = map.get(l.vehicle_id) ?? { id: l.vehicle_id, name: vMap[l.vehicle_id] ?? "-", litres: 0, km: 0 };
-      cur.litres += Number(l.litres_dispensed || 0);
-      cur.km += Number(l.km_since_last_fill || 0);
+      if (isActual(l)) cur.litres += Number(l.litres_dispensed || 0);
+      cur.km += effectiveKm(l);
       map.set(l.vehicle_id, cur);
     }
     return Array.from(map.values()).map(v => {
@@ -131,16 +146,18 @@ export default function FuelIntelligence() {
       const status = variance > 25 ? "high_risk" : variance > 10 ? "inefficient" : "normal";
       return { id: v.id, name: v.name, expected: Math.round(expected), actual: Math.round(v.litres), variance, score, status };
     }).sort((a, b) => b.variance - a.variance);
-  }, [logs, vMap]);
+  }, [logs, vMap, vKmplMap]);
 
   const driverRows = useMemo(() => {
     const map = new Map<string, { id: string; name: string; litres: number; km: number; trips: number; flags: number }>();
     for (const l of logs as any[]) {
       if (!l.driver_id) continue;
       const cur = map.get(l.driver_id) ?? { id: l.driver_id, name: dMap[l.driver_id] ?? "-", litres: 0, km: 0, trips: 0, flags: 0 };
-      cur.litres += Number(l.litres_dispensed || 0);
-      cur.km += Number(l.km_since_last_fill || 0);
-      cur.trips += 1;
+      if (isActual(l)) {
+        cur.litres += Number(l.litres_dispensed || 0);
+        cur.trips += 1;
+      }
+      cur.km += effectiveKm(l);
       if (l.is_flagged) cur.flags += 1;
       map.set(l.driver_id, cur);
     }
@@ -294,7 +311,7 @@ export default function FuelIntelligence() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2"><Truck className="h-5 w-5" />Vehicle Efficiency Monitor</CardTitle>
-              <CardDescription>Expected vs actual fuel per vehicle - baseline per vehicle type (trailer 2.22 km/L, truck 2.78 km/L, van 6.67 km/L, bike 50 km/L)</CardDescription>
+              <CardDescription>Actual issued fuel vs expected based on dispatch distance and vehicle type efficiency (trailer 2.22 km/L, truck 2.78 km/L, van 6.67 km/L). Estimate-only rows excluded.</CardDescription>
             </CardHeader>
             <CardContent>
               {vehicleRows.length === 0 ? <p className="text-sm text-muted-foreground py-6 text-center">No fuel logs yet.</p> : (
