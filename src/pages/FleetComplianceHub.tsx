@@ -378,7 +378,7 @@ function FuelLogs({ orgId }: { orgId: string }) {
     queryKey: ["fuel-logs", orgId, monthStart],
     queryFn: async () => {
       const { data } = await sb.from("fuel_logs")
-        .select("*, dispatches(dispatch_number)")
+        .select("*, dispatches(dispatch_number, suggested_fuel_liters, total_distance_km, distance_km)")
         .eq("organization_id", orgId)
         .gte("log_date", monthStart)
         .order("log_date", { ascending: false });
@@ -478,9 +478,25 @@ function FuelLogs({ orgId }: { orgId: string }) {
               const v = (vehicles as any[]).find(x => x.id === l.vehicle_id);
               const dispatchNum = l.dispatches?.dispatch_number;
               const isEstimate = !!l.is_dispatch_estimate;
+
+              // System estimate always comes from the dispatch, regardless of whether this row is an estimate or actual
+              const sysEstimate = l.dispatches?.suggested_fuel_liters != null
+                ? Number(l.dispatches.suggested_fuel_liters).toFixed(1)
+                : isEstimate ? Number(l.litres_dispensed).toFixed(1) : "—";
+
+              // Actual litres: only the non-estimate row carries the real issued quantity
+              const actualLitres = !isEstimate ? Number(l.litres_dispensed).toFixed(1) : "—";
+
+              // km/L = total route distance ÷ actual litres issued (not estimate)
+              const routeDistanceKm = l.dispatches?.total_distance_km ?? l.dispatches?.distance_km ?? null;
+              const actualLitresNum = !isEstimate ? Number(l.litres_dispensed) : null;
+              const kmPerLitre = routeDistanceKm && actualLitresNum && actualLitresNum > 0
+                ? (Number(routeDistanceKm) / actualLitresNum).toFixed(2)
+                : "-";
+
               const costPerLitre = l.cost_per_litre != null ? `₦${Number(l.cost_per_litre).toLocaleString()}` : "-";
               const totalCost = l.total_cost != null && Number(l.total_cost) > 0 ? `₦${Number(l.total_cost).toLocaleString()}` : "-";
-              const kmPerLitre = l.km_per_litre != null ? Number(l.km_per_litre).toFixed(2) : "-";
+
               return (<tr key={l.id} className={`border-t ${isEstimate ? "bg-amber-50/40 dark:bg-amber-950/10" : ""}`}>
                 <td className="p-2">{l.log_date}</td>
                 <td className="p-2">{v?.registration_number ?? "-"}</td>
@@ -488,24 +504,17 @@ function FuelLogs({ orgId }: { orgId: string }) {
                   {dispatchNum ? (
                     <div className="flex items-center gap-1">
                       <span className="font-mono text-xs">{dispatchNum}</span>
+                      {isEstimate && <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 text-amber-600 border-amber-400">Est.</Badge>}
                     </div>
                   ) : (
                     <span className="text-muted-foreground text-xs">Manual</span>
                   )}
                 </td>
                 <td className="p-2">
-                  {isEstimate ? (
-                    <span className="font-medium text-amber-600">{Number(l.litres_dispensed).toFixed(1)}</span>
-                  ) : (
-                    <span className="text-muted-foreground text-xs">—</span>
-                  )}
+                  <span className="text-amber-600 font-medium">{sysEstimate}</span>
                 </td>
                 <td className="p-2">
-                  {!isEstimate ? (
-                    <span className="font-medium">{Number(l.litres_dispensed).toFixed(1)}</span>
-                  ) : (
-                    <span className="text-muted-foreground text-xs">—</span>
-                  )}
+                  <span className={actualLitres !== "—" ? "font-medium" : "text-muted-foreground text-xs"}>{actualLitres}</span>
                 </td>
                 <td className="p-2">{costPerLitre}</td>
                 <td className="p-2">{totalCost}</td>
