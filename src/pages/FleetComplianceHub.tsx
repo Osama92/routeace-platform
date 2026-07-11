@@ -369,7 +369,7 @@ function WorkOrders({ orgId }: { orgId: string }) {
 
 /* ---------- Tab 4 Fuel ---------- */
 function FuelLogs({ orgId }: { orgId: string }) {
-  const { user } = useAuth();
+  const { user, isSuperAdmin } = useAuth() as any;
   const { toast } = useToast();
   const qc = useQueryClient();
   const { data: vehicles = [] } = useVehicles(orgId);
@@ -459,33 +459,70 @@ function FuelLogs({ orgId }: { orgId: string }) {
 
       <Card><CardContent className="p-0 overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-muted/40"><tr><th className="text-left p-2">Date</th><th className="text-left p-2">Vehicle</th><th className="text-left p-2">Dispatch</th><th className="text-left p-2">Litres</th><th className="text-left p-2">₦/L</th><th className="text-left p-2">Total</th><th className="text-left p-2">km/L</th><th className="text-left p-2">Flag</th><th className="p-2"></th></tr></thead>
+          <thead className="bg-muted/40">
+            <tr>
+              <th className="text-left p-2">Date</th>
+              <th className="text-left p-2">Vehicle</th>
+              <th className="text-left p-2">Dispatch</th>
+              <th className="text-left p-2">Sys. Est. (L)</th>
+              <th className="text-left p-2">Actual (L)</th>
+              <th className="text-left p-2">₦/L</th>
+              <th className="text-left p-2">Total Cost</th>
+              <th className="text-left p-2">km/L</th>
+              {isSuperAdmin && <th className="text-left p-2">Flag</th>}
+              {isSuperAdmin && <th className="p-2"></th>}
+            </tr>
+          </thead>
           <tbody>
             {(logs as any[]).map(l => {
               const v = (vehicles as any[]).find(x => x.id === l.vehicle_id);
               const dispatchNum = l.dispatches?.dispatch_number;
-              return (<tr key={l.id} className="border-t">
+              const isEstimate = !!l.is_dispatch_estimate;
+              const costPerLitre = l.cost_per_litre != null ? `₦${Number(l.cost_per_litre).toLocaleString()}` : "-";
+              const totalCost = l.total_cost != null && Number(l.total_cost) > 0 ? `₦${Number(l.total_cost).toLocaleString()}` : "-";
+              const kmPerLitre = l.km_per_litre != null ? Number(l.km_per_litre).toFixed(2) : "-";
+              return (<tr key={l.id} className={`border-t ${isEstimate ? "bg-amber-50/40 dark:bg-amber-950/10" : ""}`}>
                 <td className="p-2">{l.log_date}</td>
                 <td className="p-2">{v?.registration_number ?? "-"}</td>
                 <td className="p-2">
                   {dispatchNum ? (
                     <div className="flex items-center gap-1">
                       <span className="font-mono text-xs">{dispatchNum}</span>
-                      {l.is_dispatch_estimate && <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 text-amber-600 border-amber-400">Est.</Badge>}
                     </div>
                   ) : (
                     <span className="text-muted-foreground text-xs">Manual</span>
                   )}
                 </td>
-                <td className="p-2">{l.litres_dispensed}</td>
-                <td className="p-2">{l.cost_per_litre ?? "-"}</td>
-                <td className="p-2">₦{Number(l.total_cost ?? 0).toLocaleString()}</td>
-                <td className="p-2">{l.km_per_litre ?? "-"}</td>
-                <td className="p-2">{l.is_flagged ? <Badge variant="destructive">{l.flag_reason ?? "Flagged"}</Badge> : <Button size="sm" variant="ghost" onClick={async () => { const r = window.prompt("Flag reason"); if (r) { await sb.from("fuel_logs").update({ is_flagged: true, flag_reason: r }).eq("id", l.id); qc.invalidateQueries({ queryKey: ["fuel-logs", orgId] }); } }}>Flag</Button>}</td>
-                <td className="p-2"><Button size="sm" variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 w-7 p-0" onClick={() => deleteFuelLog(l.id)}><Trash2 className="w-3.5 h-3.5" /></Button></td>
+                <td className="p-2">
+                  {isEstimate ? (
+                    <span className="font-medium text-amber-600">{Number(l.litres_dispensed).toFixed(1)}</span>
+                  ) : (
+                    <span className="text-muted-foreground text-xs">—</span>
+                  )}
+                </td>
+                <td className="p-2">
+                  {!isEstimate ? (
+                    <span className="font-medium">{Number(l.litres_dispensed).toFixed(1)}</span>
+                  ) : (
+                    <span className="text-muted-foreground text-xs">—</span>
+                  )}
+                </td>
+                <td className="p-2">{costPerLitre}</td>
+                <td className="p-2">{totalCost}</td>
+                <td className="p-2">{kmPerLitre}</td>
+                {isSuperAdmin && (
+                  <td className="p-2">
+                    {l.is_flagged
+                      ? <Badge variant="destructive">{l.flag_reason ?? "Flagged"}</Badge>
+                      : <Button size="sm" variant="ghost" onClick={async () => { const r = window.prompt("Flag reason"); if (r) { await sb.from("fuel_logs").update({ is_flagged: true, flag_reason: r }).eq("id", l.id); qc.invalidateQueries({ queryKey: ["fuel-logs", orgId] }); } }}>Flag</Button>}
+                  </td>
+                )}
+                {isSuperAdmin && (
+                  <td className="p-2"><Button size="sm" variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 w-7 p-0" onClick={() => deleteFuelLog(l.id)}><Trash2 className="w-3.5 h-3.5" /></Button></td>
+                )}
               </tr>);
             })}
-            {logs.length === 0 && <tr><td colSpan={9} className="p-6 text-center text-muted-foreground">No fuel logs this month.</td></tr>}
+            {logs.length === 0 && <tr><td colSpan={isSuperAdmin ? 10 : 8} className="p-6 text-center text-muted-foreground">No fuel logs this month.</td></tr>}
           </tbody>
         </table>
       </CardContent></Card>

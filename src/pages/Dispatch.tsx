@@ -195,7 +195,7 @@ const DispatchPage = () => {
   const [isDelayReasonOpen, setIsDelayReasonOpen] = useState(false);
   const [delayReasonDispatch, setDelayReasonDispatch] = useState<Dispatch | null>(null);
   const [fuelConfirmOpen, setFuelConfirmOpen] = useState(false);
-  const [fuelConfirmData, setFuelConfirmData] = useState<{ dispatchId: string; dispatchNumber: string; vehicleId: string; driverId: string | null; logDate: string; estimatedLitres: number; actualLitres: string } | null>(null);
+  const [fuelConfirmData, setFuelConfirmData] = useState<{ dispatchId: string; dispatchNumber: string; vehicleId: string; driverId: string | null; logDate: string; estimatedLitres: number; actualLitres: string; costPerLitre: string } | null>(null);
   const { toast } = useToast();
   const { user, hasAnyRole, organizationId } = useAuth();
   const { logChange } = useAuditLog();
@@ -709,6 +709,7 @@ const DispatchPage = () => {
               : new Date().toISOString().split("T")[0],
             estimatedLitres: Math.round(suggestedFuel * 10) / 10,
             actualLitres: String(Math.round(suggestedFuel * 10) / 10),
+            costPerLitre: "",
           });
           setFuelConfirmOpen(true);
         }
@@ -763,6 +764,8 @@ const DispatchPage = () => {
       toast({ title: "Enter a valid litre amount", variant: "destructive" });
       return;
     }
+    const cpl = parseFloat(fuelConfirmData.costPerLitre) || null;
+    const totalCost = cpl ? litres * cpl : null;
     await (supabase as any).from("fuel_logs").insert({
       organization_id: organizationId,
       vehicle_id: fuelConfirmData.vehicleId,
@@ -772,6 +775,8 @@ const DispatchPage = () => {
       litres_dispensed: litres,
       odometer_reading: 0,
       fuel_type: "diesel",
+      cost_per_litre: cpl,
+      total_cost: totalCost,
       dispatch_id: fuelConfirmData.dispatchId,
       is_dispatch_estimate: isEstimate,
     });
@@ -1421,7 +1426,7 @@ const DispatchPage = () => {
                       <div>
                         <p className="text-muted-foreground">Suggested Diesel</p>
                         <p className="font-semibold text-success">
-                          {calculateSuggestedFuel(formData.vehicle_id, parseFloat(formData.distance_km)).toFixed(1)} L
+                          {calculateSuggestedFuel(formData.vehicle_id, parseFloat(formData.distance_km), returnTrip).toFixed(1)} L
                         </p>
                       </div>
                     </div>
@@ -1958,22 +1963,39 @@ const DispatchPage = () => {
           </DialogHeader>
           {fuelConfirmData && (
             <div className="space-y-4 pt-2">
-              <div className="space-y-1">
-                <Label>Actual Litres Issued</Label>
-                <Input
-                  type="number"
-                  step="0.1"
-                  value={fuelConfirmData.actualLitres}
-                  onChange={e => setFuelConfirmData({ ...fuelConfirmData, actualLitres: e.target.value })}
-                  placeholder={`Suggested: ${fuelConfirmData.estimatedLitres}L`}
-                />
-                {fuelConfirmData.actualLitres && parseFloat(fuelConfirmData.actualLitres) !== fuelConfirmData.estimatedLitres && (
-                  <p className="text-xs text-muted-foreground">
-                    {parseFloat(fuelConfirmData.actualLitres) > fuelConfirmData.estimatedLitres
-                      ? `▲ ${(parseFloat(fuelConfirmData.actualLitres) - fuelConfirmData.estimatedLitres).toFixed(1)}L above estimate`
-                      : `▼ ${(fuelConfirmData.estimatedLitres - parseFloat(fuelConfirmData.actualLitres)).toFixed(1)}L below estimate`}
-                  </p>
-                )}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label>Actual Litres Issued</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    value={fuelConfirmData.actualLitres}
+                    onChange={e => setFuelConfirmData({ ...fuelConfirmData, actualLitres: e.target.value })}
+                    placeholder={`Suggested: ${fuelConfirmData.estimatedLitres}L`}
+                  />
+                  {fuelConfirmData.actualLitres && parseFloat(fuelConfirmData.actualLitres) !== fuelConfirmData.estimatedLitres && (
+                    <p className="text-xs text-muted-foreground">
+                      {parseFloat(fuelConfirmData.actualLitres) > fuelConfirmData.estimatedLitres
+                        ? `▲ ${(parseFloat(fuelConfirmData.actualLitres) - fuelConfirmData.estimatedLitres).toFixed(1)}L above est.`
+                        : `▼ ${(fuelConfirmData.estimatedLitres - parseFloat(fuelConfirmData.actualLitres)).toFixed(1)}L below est.`}
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <Label>Cost per Litre (₦)</Label>
+                  <Input
+                    type="number"
+                    step="1"
+                    value={fuelConfirmData.costPerLitre}
+                    onChange={e => setFuelConfirmData({ ...fuelConfirmData, costPerLitre: e.target.value })}
+                    placeholder="e.g. 950"
+                  />
+                  {fuelConfirmData.costPerLitre && fuelConfirmData.actualLitres && (
+                    <p className="text-xs text-muted-foreground">
+                      Total: ₦{(parseFloat(fuelConfirmData.actualLitres) * parseFloat(fuelConfirmData.costPerLitre)).toLocaleString()}
+                    </p>
+                  )}
+                </div>
               </div>
               <div className="flex gap-2">
                 <Button className="flex-1" onClick={() => saveFuelConfirm(false)}>
