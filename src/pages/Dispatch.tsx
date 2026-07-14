@@ -187,6 +187,7 @@ const DispatchPage = () => {
   const [detailDropoffs, setDetailDropoffs] = useState<Dropoff[]>([]);
   const [dieselRates, setDieselRates] = useState<DieselRate[]>([]);
   const [matchedDieselRate, setMatchedDieselRate] = useState<DieselRate | null>(null);
+  const [defaultSlaPolicy, setDefaultSlaPolicy] = useState<{ id: string; sla_duration_days: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState("all");
@@ -313,7 +314,7 @@ const DispatchPage = () => {
 
       // Routes: two simple queries merged — avoids complex OR syntax issues
       // Q1: org-scoped routes | Q2: routes created by this user (creator access + migration gap)
-      const ROUTE_COLS = "id, name, origin, origin_lat, origin_lng, destination, destination_lat, destination_lng, distance_km";
+      const ROUTE_COLS = "id, name, origin, origin_lat, origin_lng, destination, destination_lat, destination_lng, distance_km, sla_hours";
       const routesOrgQ = organizationId
         ? supabase.from("routes").select(ROUTE_COLS).eq("is_active", true).eq("organization_id", organizationId)
         : Promise.resolve({ data: [] as any[], error: null });
@@ -321,8 +322,12 @@ const DispatchPage = () => {
         ? supabase.from("routes").select(ROUTE_COLS).eq("is_active", true).eq("created_by", user.id)
         : Promise.resolve({ data: [] as any[], error: null });
 
-      const [dispatchesRes, driversRes, customersRes, vehiclesRes, routesOrgRes, routesCreatorRes] = await Promise.all([
-        dispatchesQ, driversQ, customersQ, vehiclesQ, routesOrgQ, routesCreatorQ,
+      const slaPolicyQ = organizationId
+        ? supabase.from("sla_policies" as any).select("id, sla_duration_days").eq("organization_id", organizationId).eq("is_default", true).eq("is_active", true).limit(1).maybeSingle()
+        : Promise.resolve({ data: null, error: null });
+
+      const [dispatchesRes, driversRes, customersRes, vehiclesRes, routesOrgRes, routesCreatorRes, slaPolicyRes] = await Promise.all([
+        dispatchesQ, driversQ, customersQ, vehiclesQ, routesOrgQ, routesCreatorQ, slaPolicyQ,
       ]);
 
       if (dispatchesRes.error) throw dispatchesRes.error;
@@ -349,6 +354,7 @@ const DispatchPage = () => {
       setCustomers(customersRes.data || []);
       setVehicles(vehiclesRes.data || []);
       setSavedRoutes(mergedRoutes);
+      if ((slaPolicyRes as any).data) setDefaultSlaPolicy((slaPolicyRes as any).data);
     } catch (error: any) {
       toast({
         title: "Error",
@@ -620,6 +626,21 @@ const DispatchPage = () => {
     return `${v.registration_number} (${ownership})`;
   };
 
+  // Compute SLA deadline from a base datetime and duration in hours or days.
+  // Priority: route.sla_hours → defaultSlaPolicy.sla_duration_days → null (no deadline set).
+  const computeSlaDeadline = (baseIso: string | null, routeId?: string): string | null => {
+    const base = baseIso ? new Date(baseIso) : null;
+    if (!base || isNaN(base.getTime())) return null;
+    const route = routeId ? savedRoutes.find((r: any) => r.id === routeId) : null;
+    if (route?.sla_hours) {
+      return new Date(base.getTime() + Number(route.sla_hours) * 3_600_000).toISOString();
+    }
+    if (defaultSlaPolicy?.sla_duration_days) {
+      return new Date(base.getTime() + Number(defaultSlaPolicy.sla_duration_days) * 86_400_000).toISOString();
+    }
+    return null;
+  };
+
   // Calculate suggested fuel based on vehicle, distance, and whether it's a return trip
   const calculateSuggestedFuel = (vehicleId: string, distanceKm: number, isReturnTrip: boolean) => {
     const vehicle = vehicles.find(v => v.id === vehicleId);
@@ -654,6 +675,8 @@ const DispatchPage = () => {
 
       const totalDistanceKm = distanceKm ? (returnTrip ? distanceKm * 2 : distanceKm) : null;
 
+      const slaDeadline = computeSlaDeadline(formData.scheduled_pickup || null, formData.route_id || undefined);
+
       const insertData = {
         dispatch_number: `DSP-${Date.now()}`,
         organization_id: organizationId ?? null,
@@ -676,6 +699,9 @@ const DispatchPage = () => {
         approved_by: isAdmin ? user?.id : null,
         approved_at: isAdmin ? new Date().toISOString() : null,
         created_by: user?.id,
+        sla_deadline: slaDeadline,
+        sla_policy_id: defaultSlaPolicy?.id ?? null,
+        sla_status: slaDeadline ? "on_track" : null,
       };
 
       const { data, error } = await supabase.from("dispatches").insert([insertData]).select().single();
@@ -1446,6 +1472,26 @@ const DispatchPage = () => {
                     )}
                   </div>
                 )}
+
+                {/* SLA Deadline Preview */}
+                {(() => {
+                  const deadline = computeSlaDeadline(formData.scheduled_pickup || null, formData.route_id || undefined);
+                  const route = formData.route_id ? savedRoutes.find((r: any) => r.id === formData.route_id) : null;
+                  const source = route?.sla_hours ? `Route SLA (${route.sla_hours}h)` : defaultSlaPolicy ? `Default policy (${defaultSlaPolicy.sla_duration_days}d)` : null;
+                  if (!source) return null;
+                  return (
+                    <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-500/10 text-sm">
+                      <Clock className="w-4 h-4 text-blue-500 shrink-0" />
+                      <div>
+                        <span className="font-medium text-blue-700 dark:text-blue-400">SLA Deadline: </span>
+                        {deadline
+                          ? <span className="font-semibold">{new Date(deadline).toLocaleString()}</span>
+                          : <span className="text-muted-foreground">Set a pickup date/time to compute</span>}
+                        <span className="ml-2 text-xs text-muted-foreground">({source})</span>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Multiple Drop-off Points */}
                 <MultipleDropoffs dropoffs={dropoffs} onChange={setDropoffs} />

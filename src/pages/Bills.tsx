@@ -232,7 +232,6 @@ export default function BillsPage() {
         discount_percent: form.discount_percent,
         adjustment: form.adjustment,
         total_amount: grandTotal,
-        vat_type: taxTotal > 0 ? (vatInclusive ? "inclusive" : "exclusive") : "no_vat",
         category: "other",
         notes: form.notes || null,
         created_by: user?.id,
@@ -319,7 +318,7 @@ export default function BillsPage() {
 
   const openEditBill = async (bill: any) => {
     setEditBill(bill);
-    setEditVatInclusive(bill.vat_type === "inclusive");
+    setEditVatInclusive(false);
     setEditForm({
       vendor_name: bill.vendor_name || "",
       bill_number: bill.bill_number || "",
@@ -374,7 +373,6 @@ export default function BillsPage() {
         discount_percent: editForm.discount_percent,
         adjustment: editForm.adjustment,
         total_amount: editGrandTotal,
-        vat_type: editTaxTotal > 0 ? (editVatInclusive ? "inclusive" : "exclusive") : "no_vat",
         notes: editForm.notes || null,
       } as any).eq("id", editBill.id);
       if (error) throw error;
