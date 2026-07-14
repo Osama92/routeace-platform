@@ -42,7 +42,7 @@ export const CooCommandPanel = ({ organizationId }: { organizationId: string | n
           .eq("status", "pending")
           .eq("organization_id", organizationId ?? ""),
         supabase.from("vehicles").select("id", { count: "exact", head: true })
-          .eq("organization_id", organizationId).eq("status", "active"),
+          .eq("organization_id", organizationId).eq("status", "in_use"),
         supabase.from("coo_ai_alerts").select("id", { count: "exact", head: true })
           .eq("organization_id", organizationId).eq("is_read", false).gte("created_at", `${today}T00:00:00Z`),
       ]);
@@ -387,7 +387,7 @@ export const CooKpiBoard = ({ organizationId }: { organizationId: string | null 
         supabase.from("dispatches").select("on_time_flag")
           .eq("organization_id", organizationId).eq("status", "delivered").gte("created_at", monthStart),
         supabase.from("drivers").select("id", { count: "exact", head: true })
-          .eq("organization_id", organizationId).eq("status", "active"),
+          .eq("organization_id", organizationId).in("status", ["available", "on_trip"]),
         supabase.from("vehicles").select("id, status")
           .eq("organization_id", organizationId),
         supabase.from("payout_approvals").select("amount")
@@ -414,7 +414,7 @@ export const CooKpiBoard = ({ organizationId }: { organizationId: string | null 
       const onTimeRate = deliveredCount > 0 ? Math.round((onTimeCount / deliveredCount) * 100) : 0;
 
       const totalVehicles = vehicles.data?.length ?? 0;
-      const activeVehicles = vehicles.data?.filter((v: any) => v.status === "active").length ?? 0;
+      const activeVehicles = vehicles.data?.filter((v: any) => v.status === "in_use").length ?? 0;
       const groundedVehicles = vehicles.data?.filter((v: any) => v.status === "grounded" || v.status === "maintenance").length ?? 0;
       const fleetUtil = totalVehicles > 0 ? Math.round((activeVehicles / totalVehicles) * 100) : 0;
 
@@ -583,12 +583,12 @@ export const CooTransportKPISuite = ({ organizationId }: { organizationId: strin
         : 0;
 
       const totalVeh = vehicles.data?.length ?? 0;
-      const activeVeh = vehicles.data?.filter((v: any) => v.status === "active").length ?? 0;
+      const activeVeh = vehicles.data?.filter((v: any) => v.status === "in_use").length ?? 0;
       const groundedVeh = vehicles.data?.filter((v: any) => v.status === "grounded" || v.status === "maintenance").length ?? 0;
       const fleetUtil = totalVeh > 0 ? Math.round((activeVeh / totalVeh) * 100) : 0;
 
       const totalDriv = drivers.data?.length ?? 0;
-      const activeDriv = drivers.data?.filter((d: any) => d.status === "active").length ?? 0;
+      const activeDriv = drivers.data?.filter((d: any) => d.status === "available" || d.status === "on_trip").length ?? 0;
       const driverUtil = totalDriv > 0 ? Math.round((activeDriv / totalDriv) * 100) : 0;
 
       const maintCost = (maintThis.data ?? [])

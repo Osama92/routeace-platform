@@ -113,9 +113,11 @@ const OrgAdminDashboardInner = () => {
 
       return {
         totalDrivers: drivers.count || 0,
-        activeDrivers: drivers.data?.filter(d => d.status === "active").length || 0,
+        // Drivers: available = ready to work, on_trip = currently assigned
+        activeDrivers: drivers.data?.filter(d => d.status === "available" || d.status === "on_trip").length || 0,
         totalVehicles: vehicles.count || 0,
-        activeVehicles: vehicles.data?.filter(v => v.status === "active").length || 0,
+        // Vehicles: available = ready, in_use = currently on a dispatch
+        activeVehicles: vehicles.data?.filter(v => v.status === "available" || v.status === "in_use").length || 0,
         totalDispatches: dispatches.count || 0,
         pendingPayouts: payouts.data?.length || 0,
         pendingPayoutAmount: payouts.data?.reduce((sum, p) => sum + (p.amount || 0), 0) || 0
@@ -237,6 +239,7 @@ const OrgAdminDashboardInner = () => {
               <div>
                 <p className="text-sm text-muted-foreground">Drivers</p>
                 <p className="text-2xl font-bold">{stats?.activeDrivers || 0}/{stats?.totalDrivers || 0}</p>
+                <p className="text-xs text-muted-foreground">available / total</p>
               </div>
             </div>
           </CardContent>
@@ -250,6 +253,7 @@ const OrgAdminDashboardInner = () => {
               <div>
                 <p className="text-sm text-muted-foreground">Vehicles</p>
                 <p className="text-2xl font-bold">{stats?.activeVehicles || 0}/{stats?.totalVehicles || 0}</p>
+                <p className="text-xs text-muted-foreground">available / total</p>
               </div>
             </div>
           </CardContent>
