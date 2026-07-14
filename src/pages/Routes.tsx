@@ -86,6 +86,7 @@ interface RouteData {
   destination_lng: number | null;
   distance_km: number | null;
   estimated_duration_hours: number | null;
+  sla_hours: number | null;
   is_active: boolean;
   created_at: string;
   waypoints?: Waypoint[];
@@ -120,6 +121,7 @@ const RoutesPage = () => {
     destination_lng: null as number | null,
     distance_km: "",
     estimated_duration_hours: "",
+    sla_hours: "",
   });
 
   const [waypoints, setWaypoints] = useState<Waypoint[]>([]);
@@ -341,6 +343,7 @@ const RoutesPage = () => {
         estimated_duration_hours: formData.estimated_duration_hours
           ? parseFloat(formData.estimated_duration_hours)
           : null,
+        sla_hours: formData.sla_hours ? parseFloat(formData.sla_hours) : null,
         created_by: user?.id,
         organization_id: organizationId,
       };
@@ -427,6 +430,7 @@ const RoutesPage = () => {
       destination_lng: null,
       distance_km: "",
       estimated_duration_hours: "",
+      sla_hours: "",
     });
     setWaypoints([]);
   };
@@ -480,6 +484,7 @@ const RoutesPage = () => {
       destination_lng: route.destination_lng,
       distance_km: route.distance_km?.toString() ?? "",
       estimated_duration_hours: route.estimated_duration_hours?.toString() ?? "",
+      sla_hours: route.sla_hours?.toString() ?? "",
     });
     setWaypoints(route.waypoints ?? []);
     setIsEditDialogOpen(true);
@@ -504,6 +509,7 @@ const RoutesPage = () => {
           destination_lng: formData.destination_lng,
           distance_km: formData.distance_km ? parseFloat(formData.distance_km) : null,
           estimated_duration_hours: formData.estimated_duration_hours ? parseFloat(formData.estimated_duration_hours) : null,
+          sla_hours: formData.sla_hours ? parseFloat(formData.sla_hours) : null,
         })
         .eq("id", editingRoute.id);
       if (error) throw error;
@@ -855,6 +861,24 @@ const RoutesPage = () => {
                     />
                   </div>
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="sla_hours" className="flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-blue-500" />
+                    Route SLA (hours)
+                  </Label>
+                  <Input
+                    id="sla_hours"
+                    name="sla_hours"
+                    type="number"
+                    step="1"
+                    min="1"
+                    value={formData.sla_hours}
+                    onChange={handleInputChange}
+                    placeholder="e.g. 48 — max hours to complete delivery on this route"
+                    className="bg-secondary/50"
+                  />
+                  <p className="text-xs text-muted-foreground">This SLA will auto-apply as the delivery deadline when dispatches are created using this route.</p>
+                </div>
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
@@ -884,6 +908,7 @@ const RoutesPage = () => {
               <TableHead className="text-muted-foreground min-w-[120px]">Destination</TableHead>
               <TableHead className="text-muted-foreground whitespace-nowrap min-w-[100px]">Distance</TableHead>
               <TableHead className="text-muted-foreground whitespace-nowrap min-w-[100px]">Duration</TableHead>
+              <TableHead className="text-muted-foreground whitespace-nowrap min-w-[80px]">SLA</TableHead>
               <TableHead className="text-muted-foreground">Status</TableHead>
               <TableHead className="text-muted-foreground w-10"></TableHead>
             </TableRow>
@@ -952,6 +977,18 @@ const RoutesPage = () => {
                       </div>
                     ) : (
                       <span className="text-muted-foreground/50">-</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {route.sla_hours ? (
+                      <div className="flex items-center gap-1 text-blue-600 dark:text-blue-400 whitespace-nowrap text-sm">
+                        <Clock className="w-3.5 h-3.5 shrink-0" />
+                        {route.sla_hours >= 24
+                          ? `${(route.sla_hours / 24).toFixed(1)}d`
+                          : `${route.sla_hours}h`}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground/50 text-sm">—</span>
                     )}
                   </TableCell>
                   <TableCell>
@@ -1063,6 +1100,14 @@ const RoutesPage = () => {
                 <Label>Est. Duration (hours)</Label>
                 <Input name="estimated_duration_hours" type="number" step="0.5" value={formData.estimated_duration_hours} onChange={handleInputChange} placeholder="Auto-calculated" className="bg-secondary/50" readOnly />
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5 text-blue-500" />
+                Route SLA (hours)
+              </Label>
+              <Input name="sla_hours" type="number" step="1" min="1" value={formData.sla_hours} onChange={handleInputChange} placeholder="e.g. 48 — max hours to complete delivery on this route" className="bg-secondary/50" />
+              <p className="text-xs text-muted-foreground">Auto-applies as the delivery deadline when dispatches use this route.</p>
             </div>
           </div>
           <DialogFooter>
