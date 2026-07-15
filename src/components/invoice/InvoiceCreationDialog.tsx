@@ -368,6 +368,23 @@ export const InvoiceCreationDialog = ({
     if (!editInvoiceId) return;
     setSaving(true);
     try {
+      // Check if invoice is locked before attempting update
+      const { data: lockCheck } = await supabase
+        .from("invoices")
+        .select("is_locked, locked_reason, status")
+        .eq("id", editInvoiceId)
+        .single();
+
+      if (lockCheck?.is_locked) {
+        toast({
+          title: "Invoice Locked",
+          description: lockCheck.locked_reason || "This invoice is finalised and cannot be edited.",
+          variant: "destructive",
+        });
+        setSaving(false);
+        return;
+      }
+
       const { subtotal, totalVat, shippingVat, grandTotal } = calculateTotals();
 
       const updateData: Record<string, unknown> = {
@@ -396,7 +413,12 @@ export const InvoiceCreationDialog = ({
       if (updateError) throw updateError;
 
       // Replace all line items
-      await supabase.from("invoice_line_items").delete().eq("invoice_id", editInvoiceId);
+      const { error: deleteError } = await supabase
+        .from("invoice_line_items")
+        .delete()
+        .eq("invoice_id", editInvoiceId);
+      if (deleteError) throw deleteError;
+
       const lineItemsToInsert = lineItems.map((item, index) => ({
         invoice_id: editInvoiceId,
         description: item.description,
@@ -413,7 +435,10 @@ export const InvoiceCreationDialog = ({
         dispatch_id: item.dispatch_id || null,
         sequence_order: index + 1,
       }));
-      await supabase.from("invoice_line_items").insert(lineItemsToInsert);
+      const { error: insertLineError } = await supabase
+        .from("invoice_line_items")
+        .insert(lineItemsToInsert);
+      if (insertLineError) throw insertLineError;
 
       await logChange({
         table_name: "invoices",
@@ -427,8 +452,11 @@ export const InvoiceCreationDialog = ({
       resetForm();
       onSuccess();
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : "Failed to update invoice";
-      toast({ title: "Error", description: msg, variant: "destructive" });
+      const msg =
+        error instanceof Error
+          ? error.message
+          : (error as any)?.message || "Failed to update invoice";
+      toast({ title: "Failed to Update", description: msg, variant: "destructive" });
     } finally {
       setSaving(false);
     }
