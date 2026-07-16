@@ -376,13 +376,31 @@ export const InvoiceCreationDialog = ({
         .single();
 
       if (lockCheck?.is_locked) {
-        toast({
-          title: "Invoice Locked",
-          description: lockCheck.locked_reason || "This invoice is finalised and cannot be edited.",
-          variant: "destructive",
-        });
-        setSaving(false);
-        return;
+        // Stale lock: invoice was paid then reverted to a non-paid status — clear the lock automatically
+        if (lockCheck.status !== "paid") {
+          const { error: unlockError } = await supabase
+            .from("invoices")
+            .update({ is_locked: false, locked_at: null, locked_reason: null, lock_type: null })
+            .eq("id", editInvoiceId);
+          if (unlockError) {
+            toast({
+              title: "Failed to Update",
+              description: "Invoice has a stale payment lock that could not be cleared. Please contact your admin.",
+              variant: "destructive",
+            });
+            setSaving(false);
+            return;
+          }
+        } else {
+          // Genuinely paid and locked — block edit
+          toast({
+            title: "Invoice Locked",
+            description: lockCheck.locked_reason || "This invoice is finalised and cannot be edited.",
+            variant: "destructive",
+          });
+          setSaving(false);
+          return;
+        }
       }
 
       const { subtotal, totalVat, shippingVat, grandTotal } = calculateTotals();

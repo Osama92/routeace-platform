@@ -48,6 +48,7 @@ import {
   Navigation,
   MoreVertical,
   ArrowRight,
+  ArrowLeftRight,
   Zap,
   TrendingUp,
   Trash2,
@@ -57,6 +58,7 @@ import {
   Power,
   PowerOff,
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -122,7 +124,12 @@ const RoutesPage = () => {
     distance_km: "",
     estimated_duration_hours: "",
     sla_hours: "",
+    return_trip: false,
   });
+
+  // Tracks the raw one-way distance returned by calculation so the toggle can flip between 1x and 2x
+  const [oneWayDistanceKm, setOneWayDistanceKm] = useState<number | null>(null);
+  const [oneWayDurationHours, setOneWayDurationHours] = useState<number | null>(null);
 
   const [waypoints, setWaypoints] = useState<Waypoint[]>([]);
 
@@ -189,6 +196,18 @@ const RoutesPage = () => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handleReturnTripToggle = (checked: boolean) => {
+    setFormData((prev) => {
+      const dist = oneWayDistanceKm != null
+        ? (checked ? oneWayDistanceKm * 2 : oneWayDistanceKm).toString()
+        : prev.distance_km;
+      const dur = oneWayDurationHours != null
+        ? (checked ? oneWayDurationHours * 2 : oneWayDurationHours).toString()
+        : prev.estimated_duration_hours;
+      return { ...prev, return_trip: checked, distance_km: dist, estimated_duration_hours: dur };
+    });
+  };
+
   const addWaypoint = () => {
     setWaypoints((prev) => [
       ...prev,
@@ -251,11 +270,16 @@ const RoutesPage = () => {
 
       if (error) throw error;
 
-      // Update form with calculated values
+      // Store raw one-way values so the return-trip toggle can switch between 1x and 2x
+      const owDist = data.total_distance_km;
+      const owDur = data.total_duration_hours;
+      setOneWayDistanceKm(owDist);
+      setOneWayDurationHours(owDur);
+
       setFormData((prev) => ({
         ...prev,
-        distance_km: data.total_distance_km.toString(),
-        estimated_duration_hours: data.total_duration_hours.toString(),
+        distance_km: (prev.return_trip ? owDist * 2 : owDist).toString(),
+        estimated_duration_hours: (prev.return_trip ? owDur * 2 : owDur).toString(),
         origin_lat: data.waypoints[0]?.latitude || prev.origin_lat,
         origin_lng: data.waypoints[0]?.longitude || prev.origin_lng,
         destination_lat: data.waypoints[data.waypoints.length - 1]?.latitude || prev.destination_lat,
@@ -276,7 +300,7 @@ const RoutesPage = () => {
 
       toast({
         title: "Distance Calculated",
-        description: `Total: ${data.total_distance_km} km, ~${data.total_duration_hours.toFixed(1)} hours`,
+        description: `One-way: ${owDist} km (~${owDur.toFixed(1)} hrs)`,
       });
     } catch (error: any) {
       toast({
@@ -431,7 +455,10 @@ const RoutesPage = () => {
       distance_km: "",
       estimated_duration_hours: "",
       sla_hours: "",
+      return_trip: false,
     });
+    setOneWayDistanceKm(null);
+    setOneWayDurationHours(null);
     setWaypoints([]);
   };
 
@@ -474,6 +501,8 @@ const RoutesPage = () => {
 
   const openEditDialog = (route: RouteData) => {
     setEditingRoute(route);
+    setOneWayDistanceKm(null);
+    setOneWayDurationHours(null);
     setFormData({
       name: route.name,
       origin: route.origin,
@@ -485,6 +514,7 @@ const RoutesPage = () => {
       distance_km: route.distance_km?.toString() ?? "",
       estimated_duration_hours: route.estimated_duration_hours?.toString() ?? "",
       sla_hours: route.sla_hours?.toString() ?? "",
+      return_trip: false,
     });
     setWaypoints(route.waypoints ?? []);
     setIsEditDialogOpen(true);
@@ -831,10 +861,31 @@ const RoutesPage = () => {
                   )}
                 </Button>
 
+                {/* Return Trip Toggle */}
+                <div className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg border border-border/50">
+                  <div className="flex items-center gap-2">
+                    <ArrowLeftRight className="w-4 h-4 text-primary" />
+                    <div>
+                      <p className="text-sm font-medium">Return Trip (To &amp; Fro)</p>
+                      <p className="text-xs text-muted-foreground">
+                        {oneWayDistanceKm != null
+                          ? `One-way: ${oneWayDistanceKm} km · Round-trip: ${(oneWayDistanceKm * 2).toFixed(1)} km`
+                          : "Calculate distance first, then toggle to double it"}
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={formData.return_trip}
+                    onCheckedChange={handleReturnTripToggle}
+                  />
+                </div>
+
                 {/* Calculated Values */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="distance_km">Distance (km)</Label>
+                    <Label htmlFor="distance_km">
+                      Distance (km){formData.return_trip && <span className="ml-1 text-xs text-primary font-normal">round-trip</span>}
+                    </Label>
                     <Input
                       id="distance_km"
                       name="distance_km"
@@ -847,7 +898,9 @@ const RoutesPage = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="estimated_duration_hours">Est. Duration (hours)</Label>
+                    <Label htmlFor="estimated_duration_hours">
+                      Est. Duration (hours){formData.return_trip && <span className="ml-1 text-xs text-primary font-normal">round-trip</span>}
+                    </Label>
                     <Input
                       id="estimated_duration_hours"
                       name="estimated_duration_hours"
@@ -1091,13 +1144,28 @@ const RoutesPage = () => {
             <Button type="button" variant="secondary" onClick={calculateDistance} disabled={calculating} className="w-full">
               {calculating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Calculating...</> : <><Navigation className="w-4 h-4 mr-2" />Recalculate Distance & Duration</>}
             </Button>
+            {/* Return Trip Toggle — Edit dialog */}
+            <div className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg border border-border/50">
+              <div className="flex items-center gap-2">
+                <ArrowLeftRight className="w-4 h-4 text-primary" />
+                <div>
+                  <p className="text-sm font-medium">Return Trip (To &amp; Fro)</p>
+                  <p className="text-xs text-muted-foreground">
+                    {oneWayDistanceKm != null
+                      ? `One-way: ${oneWayDistanceKm} km · Round-trip: ${(oneWayDistanceKm * 2).toFixed(1)} km`
+                      : "Recalculate first, then toggle to double distance"}
+                  </p>
+                </div>
+              </div>
+              <Switch checked={formData.return_trip} onCheckedChange={handleReturnTripToggle} />
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Distance (km)</Label>
+                <Label>Distance (km){formData.return_trip && <span className="ml-1 text-xs text-primary font-normal">round-trip</span>}</Label>
                 <Input name="distance_km" type="number" value={formData.distance_km} onChange={handleInputChange} placeholder="Auto-calculated" className="bg-secondary/50" readOnly />
               </div>
               <div className="space-y-2">
-                <Label>Est. Duration (hours)</Label>
+                <Label>Est. Duration (hours){formData.return_trip && <span className="ml-1 text-xs text-primary font-normal">round-trip</span>}</Label>
                 <Input name="estimated_duration_hours" type="number" step="0.5" value={formData.estimated_duration_hours} onChange={handleInputChange} placeholder="Auto-calculated" className="bg-secondary/50" readOnly />
               </div>
             </div>
