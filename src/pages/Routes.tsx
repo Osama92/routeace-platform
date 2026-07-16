@@ -378,10 +378,18 @@ const RoutesPage = () => {
         .select()
         .single();
 
-      // If the DB migration hasn't applied yet (schema cache miss), retry without the new column
-      if (error?.message?.includes("organization_id") && error.message.includes("schema cache")) {
-        const { organization_id: _omit, ...legacyPayload } = routePayload;
-        const fallback = await supabase.from("routes").insert(legacyPayload).select().single();
+      // If the DB migration hasn't applied yet (schema cache miss), retry without the missing column
+      if (error?.message?.includes("schema cache")) {
+        let fallbackPayload = { ...routePayload };
+        if (error.message.includes("organization_id")) {
+          const { organization_id: _o, ...rest } = fallbackPayload;
+          fallbackPayload = rest;
+        }
+        if (error.message.includes("sla_hours")) {
+          const { sla_hours: _s, ...rest } = fallbackPayload;
+          fallbackPayload = rest;
+        }
+        const fallback = await supabase.from("routes").insert(fallbackPayload).select().single();
         routeData = fallback.data;
         error = fallback.error;
       }
