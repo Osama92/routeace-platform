@@ -736,7 +736,7 @@ export const InvoiceCreationDialog = ({
   // ── Step 1: Dispatch Selection ────────────────────────────────────────────
 
   const renderDispatchStep = () => (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 min-h-0 flex-1">
       <div className="text-sm text-muted-foreground">
         Select the delivered trip(s) to invoice. Line items, customer, and waybill will be pre-filled automatically.
       </div>
@@ -754,7 +754,7 @@ export const InvoiceCreationDialog = ({
           </Button>
         </div>
       ) : (
-        <ScrollArea className="h-[380px] pr-2">
+        <ScrollArea className="flex-1 min-h-0 max-h-[340px] pr-2">
           <div className="space-y-2">
             {availableDispatches.map(dispatch => {
               const isSelected = selectedDispatchIds.includes(dispatch.id);
@@ -812,19 +812,6 @@ export const InvoiceCreationDialog = ({
         </ScrollArea>
       )}
 
-      <div className="flex items-center justify-between pt-2 border-t border-border">
-        <Button variant="ghost" size="sm" onClick={() => setStep("build_invoice")}>
-          Skip — build manually
-        </Button>
-        <Button
-          onClick={buildInvoiceFromDispatches}
-          disabled={selectedDispatchIds.length === 0}
-          className="gap-2"
-        >
-          Continue with {selectedDispatchIds.length} trip{selectedDispatchIds.length !== 1 ? "s" : ""}
-          <ChevronRight className="w-4 h-4" />
-        </Button>
-      </div>
     </div>
   );
 
@@ -1201,9 +1188,26 @@ export const InvoiceCreationDialog = ({
           renderInvoiceBuilder()
         )}
 
-        {/* Footer — only shown on invoice builder step */}
+        {/* Footer — dispatch selector step */}
+        {step === "select_dispatch" && !isEditMode && !loadingEdit && (
+          <div className="flex items-center justify-between gap-2 pt-4 border-t border-border shrink-0">
+            <Button variant="ghost" size="sm" onClick={() => setStep("build_invoice")}>
+              Skip — build manually
+            </Button>
+            <Button
+              onClick={buildInvoiceFromDispatches}
+              disabled={selectedDispatchIds.length === 0}
+              className="gap-2"
+            >
+              Continue with {selectedDispatchIds.length} trip{selectedDispatchIds.length !== 1 ? "s" : ""}
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
+        )}
+
+        {/* Footer — invoice builder step */}
         {(step === "build_invoice" || isEditMode) && (
-          <div className="flex justify-between gap-2 pt-4 border-t border-border">
+          <div className="flex justify-between gap-2 pt-4 border-t border-border shrink-0">
             {!isEditMode && (
               <Button variant="ghost" size="sm" onClick={() => setStep("select_dispatch")}>
                 ← Back to trips
