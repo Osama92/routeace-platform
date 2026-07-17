@@ -736,17 +736,13 @@ export const InvoiceCreationDialog = ({
   // ── Step 1: Dispatch Selection ────────────────────────────────────────────
 
   const renderDispatchStep = () => (
-    <div className="flex flex-col gap-4 min-h-0 flex-1">
-      <div className="text-sm text-muted-foreground">
-        Select the delivered trip(s) to invoice. Line items, customer, and waybill will be pre-filled automatically.
-      </div>
-
+    <div style={{ display: "flex", flexDirection: "column", gap: "12px", overflow: "hidden", flex: 1, minHeight: 0 }}>
       {loadingDispatches ? (
-        <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">
+        <div className="flex items-center justify-center text-muted-foreground text-sm" style={{ height: 320 }}>
           Loading delivered trips…
         </div>
       ) : availableDispatches.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 gap-2">
+        <div className="flex flex-col items-center justify-center gap-2" style={{ height: 320 }}>
           <Package className="w-10 h-10 text-muted-foreground/40" />
           <p className="text-sm text-muted-foreground">No uninvoiced delivered trips found</p>
           <Button variant="link" className="text-xs" onClick={() => setStep("build_invoice")}>
@@ -754,7 +750,7 @@ export const InvoiceCreationDialog = ({
           </Button>
         </div>
       ) : (
-        <ScrollArea className="flex-1 min-h-0 max-h-[340px] pr-2">
+        <div style={{ overflowY: "auto", flex: 1, minHeight: 0, paddingRight: "4px" }}>
           <div className="space-y-2">
             {availableDispatches.map(dispatch => {
               const isSelected = selectedDispatchIds.includes(dispatch.id);
@@ -809,7 +805,7 @@ export const InvoiceCreationDialog = ({
               );
             })}
           </div>
-        </ScrollArea>
+        </div>
       )}
 
     </div>
@@ -1159,7 +1155,7 @@ export const InvoiceCreationDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={v => { onOpenChange(v); if (!v) resetForm(); }}>
-      <DialogContent className={`${dialogWidth} max-h-[92vh] overflow-hidden flex flex-col`}>
+      <DialogContent className={`${dialogWidth} overflow-hidden flex flex-col`} style={{ maxHeight: "92vh", height: step === "select_dispatch" && !isEditMode ? "560px" : undefined }}>
         <DialogHeader>
           <DialogTitle className="font-heading flex items-center gap-2">
             <FileText className="w-5 h-5" />

@@ -59,6 +59,13 @@ import {
   PowerOff,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -189,6 +196,21 @@ const RoutesPage = () => {
 
   useEffect(() => {
     fetchRoutes();
+  }, [organizationId]);
+
+  const [slaPolicies, setSlaPolicies] = useState<{ id: string; name: string; sla_duration_days: number; zone: string | null }[]>([]);
+
+  useEffect(() => {
+    if (!organizationId) return;
+    // Include org-specific policies AND legacy policies with no org (created before multi-tenancy)
+    Promise.all([
+      supabase.from("sla_policies").select("id, name, sla_duration_days, zone").eq("organization_id", organizationId).eq("is_active", true).order("sla_duration_days"),
+      supabase.from("sla_policies").select("id, name, sla_duration_days, zone").is("organization_id", null).eq("is_active", true).order("sla_duration_days"),
+    ]).then(([orgRes, globalRes]) => {
+      const combined = [...(orgRes.data || []), ...(globalRes.data || [])];
+      const deduped = Array.from(new Map(combined.map(p => [p.id, p])).values());
+      setSlaPolicies(deduped);
+    });
   }, [organizationId]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -923,22 +945,29 @@ const RoutesPage = () => {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="sla_hours" className="flex items-center gap-1">
+                  <Label className="flex items-center gap-1">
                     <Clock className="w-3.5 h-3.5 text-blue-500" />
-                    Route SLA (hours)
+                    Route SLA Policy
                   </Label>
-                  <Input
-                    id="sla_hours"
-                    name="sla_hours"
-                    type="number"
-                    step="1"
-                    min="1"
-                    value={formData.sla_hours}
-                    onChange={handleInputChange}
-                    placeholder="e.g. 48 — max hours to complete delivery on this route"
-                    className="bg-secondary/50"
-                  />
-                  <p className="text-xs text-muted-foreground">This SLA will auto-apply as the delivery deadline when dispatches are created using this route.</p>
+                  <Select
+                    value={formData.sla_hours || undefined}
+                    onValueChange={(v) => setFormData((prev) => ({ ...prev, sla_hours: v }))}
+                  >
+                    <SelectTrigger className="bg-secondary/50">
+                      <SelectValue placeholder="Select SLA policy…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {slaPolicies.length === 0 && (
+                        <SelectItem value="_none" disabled>No SLA policies found</SelectItem>
+                      )}
+                      {slaPolicies.map((p) => (
+                        <SelectItem key={p.id} value={String(p.sla_duration_days * 24)}>
+                          {p.name} — {p.sla_duration_days} day{p.sla_duration_days !== 1 ? "s" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">Auto-applies as the delivery deadline when dispatches use this route.</p>
                 </div>
               </div>
               <DialogFooter>
@@ -1180,9 +1209,26 @@ const RoutesPage = () => {
             <div className="space-y-2">
               <Label className="flex items-center gap-1">
                 <Clock className="w-3.5 h-3.5 text-blue-500" />
-                Route SLA (hours)
+                Route SLA Policy
               </Label>
-              <Input name="sla_hours" type="number" step="1" min="1" value={formData.sla_hours} onChange={handleInputChange} placeholder="e.g. 48 — max hours to complete delivery on this route" className="bg-secondary/50" />
+              <Select
+                value={formData.sla_hours}
+                onValueChange={(v) => setFormData((prev) => ({ ...prev, sla_hours: v }))}
+              >
+                <SelectTrigger className="bg-secondary/50">
+                  <SelectValue placeholder="Select SLA policy…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {slaPolicies.length === 0 && (
+                    <SelectItem value="_none" disabled>No SLA policies found</SelectItem>
+                  )}
+                  {slaPolicies.map((p) => (
+                    <SelectItem key={p.id} value={String(p.sla_duration_days * 24)}>
+                      {p.name}{p.zone ? ` (${p.zone})` : ""} — {p.sla_duration_days}d
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <p className="text-xs text-muted-foreground">Auto-applies as the delivery deadline when dispatches use this route.</p>
             </div>
           </div>
