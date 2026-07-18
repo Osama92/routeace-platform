@@ -146,6 +146,7 @@ const FleetPage = () => {
     fuel_type: "diesel",
     ownership_type: "owned",
     image_url: "",
+    initial_odometer: "",
   });
 
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
@@ -174,6 +175,7 @@ const FleetPage = () => {
       fuel_type: "diesel",
       ownership_type: "owned",
       image_url: "",
+      initial_odometer: "",
     });
     setEditingVehicle(null);
   };
@@ -191,6 +193,7 @@ const FleetPage = () => {
       fuel_type: (v as any).fuel_type || "diesel",
       ownership_type: (v as any).ownership_type || "owned",
       image_url: v.image_url || "",
+      initial_odometer: (v as any).initial_odometer ? String((v as any).initial_odometer) : "",
     });
     setIsDialogOpen(true);
   };
@@ -269,6 +272,7 @@ const FleetPage = () => {
 
     setSaving(true);
     try {
+      const initialOdo = formData.initial_odometer ? parseFloat(formData.initial_odometer) : 0;
       const insertData = {
         organization_id: organizationId ?? null,
         registration_number: formData.registration_number.replace(/\s+/g, "").toUpperCase(),
@@ -281,6 +285,9 @@ const FleetPage = () => {
         fuel_type: formData.fuel_type,
         ownership_type: formData.ownership_type,
         image_url: formData.image_url || null,
+        initial_odometer: initialOdo,
+        // On new vehicle: seed current_odometer with the initial reading
+        ...(!editingVehicle ? { current_odometer: initialOdo, lifetime_km: 0, health_score: 100 } : {}),
       };
 
       let data: any = null;
@@ -677,6 +684,26 @@ const FleetPage = () => {
                         className="bg-secondary/50"
                       />
                     </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="initial_odometer">
+                      {editingVehicle ? "Initial Odometer (km)" : "Current Odometer Reading (km)"}
+                    </Label>
+                    <Input
+                      id="initial_odometer"
+                      name="initial_odometer"
+                      type="number"
+                      min="0"
+                      value={formData.initial_odometer}
+                      onChange={handleInputChange}
+                      placeholder="e.g. 45000"
+                      className="bg-secondary/50"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {editingVehicle
+                        ? "The KM reading on this vehicle when it was first added. Dispatch KMs accumulate on top of this."
+                        : "Enter the vehicle's current odometer reading. All future dispatch KMs will be added to this baseline."}
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="fuel_type">Fuel Type</Label>

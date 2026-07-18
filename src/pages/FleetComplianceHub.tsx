@@ -62,7 +62,7 @@ export default function FleetComplianceHub() {
 const useVehicles = (orgId: string) => useQuery({
   queryKey: ["fch-vehicles", orgId],
   queryFn: async () => {
-    const { data } = await supabase.from("vehicles").select("id, registration_number, vehicle_type, status").eq("organization_id", orgId).neq("status", "retired");
+    const { data } = await supabase.from("vehicles").select("id, registration_number, vehicle_type, status, current_odometer, health_score").eq("organization_id", orgId).neq("status", "retired");
     return data ?? [];
   },
 });
@@ -388,6 +388,17 @@ function FuelLogs({ orgId }: { orgId: string }) {
   const [open, setOpen] = useState(false);
   const [f, setF] = useState<any>({ vehicle_id: "", log_date: new Date().toISOString().split("T")[0], odometer_reading: "", litres_dispensed: "", cost_per_litre: "", fuel_station: "", receipt_number: "", fuel_type: "diesel", km_since_last_fill: "" });
 
+  // When a vehicle is selected, auto-fill the odometer with its current reading
+  const handleVehicleSelect = (vehicleId: string) => {
+    const vehicle = (vehicles as any[]).find((v: any) => v.id === vehicleId);
+    const currentOdo = vehicle?.current_odometer ?? "";
+    setF((prev: any) => ({
+      ...prev,
+      vehicle_id: vehicleId,
+      odometer_reading: currentOdo ? String(currentOdo) : "",
+    }));
+  };
+
   const deleteFuelLog = async (id: string) => {
     if (!window.confirm("Delete this fuel log?")) return;
     const { error } = await sb.from("fuel_logs").delete().eq("id", id).eq("organization_id", orgId);
@@ -434,13 +445,32 @@ function FuelLogs({ orgId }: { orgId: string }) {
           <DialogContent>
             <DialogHeader><DialogTitle>Log Fuel Fill-up</DialogTitle></DialogHeader>
             <div className="space-y-3">
-              <Select value={f.vehicle_id} onValueChange={v => setF({ ...f, vehicle_id: v })}>
-                <SelectTrigger><SelectValue placeholder="Vehicle" /></SelectTrigger>
-                <SelectContent>{vehicles.map((v: any) => <SelectItem key={v.id} value={v.id}>{v.registration_number}</SelectItem>)}</SelectContent>
+              <Select value={f.vehicle_id} onValueChange={handleVehicleSelect}>
+                <SelectTrigger><SelectValue placeholder="Select vehicle" /></SelectTrigger>
+                <SelectContent>
+                  {(vehicles as any[]).map((v: any) => (
+                    <SelectItem key={v.id} value={v.id}>
+                      {v.registration_number}
+                      {v.current_odometer ? ` · ${Number(v.current_odometer).toLocaleString()} km` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
               <div className="grid grid-cols-2 gap-2">
                 <Input type="date" value={f.log_date} onChange={e => setF({ ...f, log_date: e.target.value })} />
-                <Input placeholder="Odometer" type="number" value={f.odometer_reading} onChange={e => setF({ ...f, odometer_reading: e.target.value })} />
+                <div className="space-y-1">
+                  <Input
+                    placeholder="Odometer (km)"
+                    type="number"
+                    value={f.odometer_reading}
+                    onChange={e => setF({ ...f, odometer_reading: e.target.value })}
+                  />
+                  {f.vehicle_id && (vehicles as any[]).find((v: any) => v.id === f.vehicle_id)?.current_odometer && (
+                    <p className="text-[10px] text-muted-foreground">
+                      Current: {Number((vehicles as any[]).find((v: any) => v.id === f.vehicle_id)?.current_odometer).toLocaleString()} km
+                    </p>
+                  )}
+                </div>
                 <Input placeholder="Litres" type="number" value={f.litres_dispensed} onChange={e => setF({ ...f, litres_dispensed: e.target.value })} />
                 <Input placeholder="Cost / litre" type="number" value={f.cost_per_litre} onChange={e => setF({ ...f, cost_per_litre: e.target.value })} />
                 <Input placeholder="Km since last fill" type="number" value={f.km_since_last_fill} onChange={e => setF({ ...f, km_since_last_fill: e.target.value })} />
