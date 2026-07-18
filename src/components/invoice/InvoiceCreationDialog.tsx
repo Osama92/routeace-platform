@@ -39,6 +39,8 @@ interface DispatchOption {
   pickup_address: string;
   delivery_address: string;
   cost: number | null;
+  client_revenue: number | null;   // from dispatch_financials (complete entries only)
+  finance_status: string | null;   // 'complete' | 'pending' | null
   customer_id: string;
   customer_name: string;
   waybill_number: string | null;
@@ -280,15 +282,23 @@ export const InvoiceCreationDialog = ({
         (existing || []).forEach((r: any) => { if (r.dispatch_id) invoicedIds.add(r.dispatch_id); });
       }
 
-      // Fetch dropoffs for all dispatches in one query
+      // Fetch dropoffs + finance data in parallel for all dispatches
       let dropoffMap: Record<string, DispatchOption["dropoffs"]> = {};
+      let financeMap: Record<string, { client_revenue: number | null; finance_status: string }> = {};
+
       if (dispatchIds.length > 0) {
-        const { data: allDropoffs } = await supabase
-          .from("dispatch_dropoffs")
-          .select("id, dispatch_id, address, sequence_order, drop_charge")
-          .in("dispatch_id", dispatchIds)
-          .order("sequence_order");
-        (allDropoffs || []).forEach((d: any) => {
+        const [dropoffsRes, financeRes] = await Promise.all([
+          supabase
+            .from("dispatch_dropoffs")
+            .select("id, dispatch_id, address, sequence_order, drop_charge")
+            .in("dispatch_id", dispatchIds)
+            .order("sequence_order"),
+          (supabase.from("dispatch_financials") as any)
+            .select("dispatch_id, client_revenue, finance_status")
+            .in("dispatch_id", dispatchIds),
+        ]);
+
+        (dropoffsRes.data || []).forEach((d: any) => {
           if (!dropoffMap[d.dispatch_id]) dropoffMap[d.dispatch_id] = [];
           dropoffMap[d.dispatch_id].push({
             id:             d.id,
@@ -297,21 +307,37 @@ export const InvoiceCreationDialog = ({
             drop_charge:    d.drop_charge ?? null,
           });
         });
+
+        // Prefer 'complete' finance entries; fall back to any entry if only pending exists
+        (financeRes.data || []).forEach((f: any) => {
+          const existing = financeMap[f.dispatch_id];
+          if (!existing || f.finance_status === "complete") {
+            financeMap[f.dispatch_id] = {
+              client_revenue: f.client_revenue != null ? Number(f.client_revenue) : null,
+              finance_status: f.finance_status,
+            };
+          }
+        });
       }
 
       const options: DispatchOption[] = (dispatches || [])
         .filter((d: any) => !invoicedIds.has(d.id))
-        .map((d: any) => ({
-          id:               d.id,
-          dispatch_number:  d.dispatch_number,
-          pickup_address:   d.pickup_address,
-          delivery_address: d.delivery_address,
-          cost:             d.cost,
-          customer_id:      d.customer_id,
-          customer_name:    d.customers?.company_name || "Unknown",
-          waybill_number:   d.waybills?.[0]?.waybill_number || null,
-          dropoffs:         dropoffMap[d.id] || [],
-        }));
+        .map((d: any) => {
+          const fin = financeMap[d.id] ?? null;
+          return {
+            id:               d.id,
+            dispatch_number:  d.dispatch_number,
+            pickup_address:   d.pickup_address,
+            delivery_address: d.delivery_address,
+            cost:             d.cost,
+            client_revenue:   fin?.finance_status === "complete" ? fin.client_revenue : null,
+            finance_status:   fin?.finance_status ?? null,
+            customer_id:      d.customer_id,
+            customer_name:    d.customers?.company_name || "Unknown",
+            waybill_number:   d.waybills?.[0]?.waybill_number || null,
+            dropoffs:         dropoffMap[d.id] || [],
+          };
+        });
 
       setAvailableDispatches(options);
     } catch (err: any) {
@@ -343,17 +369,18 @@ export const InvoiceCreationDialog = ({
     // Build line items: one service line per dispatch + extra drops
     const newLineItems: LineItem[] = [];
     selected.forEach(dispatch => {
-      // Main delivery line
+      // Main delivery line — prefer client_revenue from finance entry, fall back to dispatch.cost
+      const lineRate = dispatch.client_revenue ?? dispatch.cost ?? 0;
       newLineItems.push({
         id:          crypto.randomUUID(),
         description: `Delivery: ${dispatch.pickup_address.split(",")[0]} → ${dispatch.delivery_address.split(",")[0]} (${dispatch.dispatch_number})`,
         item_type:   "service",
         tonnage:     "",
         quantity:    1,
-        rate:        dispatch.cost || 0,
+        rate:        lineRate,
         vat_rate:    0,
         vat_amount:  0,
-        line_total:  dispatch.cost || 0,
+        line_total:  lineRate,
         dispatch_id: dispatch.id,
       });
 
@@ -774,7 +801,21 @@ export const InvoiceCreationDialog = ({
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-medium text-sm">{dispatch.dispatch_number}</span>
                         <span className="font-semibold text-sm tabular-nums whitespace-nowrap">
-                          {dispatch.cost ? formatCurrency(dispatch.cost) : <span className="text-muted-foreground">No cost</span>}
+                          {dispatch.client_revenue != null ? (
+                            <span className="flex flex-col items-end gap-0.5">
+                              <span className="font-semibold">{formatCurrency(dispatch.client_revenue)}</span>
+                              <span className="text-[10px] text-emerald-500 font-normal">From Finance</span>
+                            </span>
+                          ) : dispatch.finance_status === "pending" ? (
+                            <span className="flex flex-col items-end gap-0.5">
+                              <span>{dispatch.cost ? formatCurrency(dispatch.cost) : <span className="text-muted-foreground text-sm">No cost</span>}</span>
+                              <span className="text-[10px] text-amber-500 font-normal">Finance pending</span>
+                            </span>
+                          ) : dispatch.cost ? (
+                            formatCurrency(dispatch.cost)
+                          ) : (
+                            <span className="text-muted-foreground">No cost</span>
+                          )}
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5 truncate">
