@@ -103,7 +103,7 @@ const EmailNotificationsPage = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const { toast } = useToast();
-  const { user, hasAnyRole } = useAuth();
+  const { user, hasAnyRole, organizationId } = useAuth();
 
   const isAdmin = hasAnyRole(["admin"]);
   const isSupport = hasAnyRole(["support"]);
@@ -118,6 +118,7 @@ const EmailNotificationsPage = () => {
   });
 
   const fetchData = async () => {
+    if (!organizationId) return;
     setLoading(true);
     try {
       const [dispatchesRes, notificationsRes] = await Promise.all([
@@ -136,6 +137,7 @@ const EmailNotificationsPage = () => {
               email
             )
           `)
+          .eq("organization_id", organizationId)
           .order("created_at", { ascending: false })
           .limit(100),
         supabase
@@ -147,6 +149,7 @@ const EmailNotificationsPage = () => {
               status
             )
           `)
+          .eq("organization_id", organizationId)
           .order("created_at", { ascending: false })
           .limit(200),
       ]);
@@ -169,8 +172,8 @@ const EmailNotificationsPage = () => {
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (organizationId) fetchData();
+  }, [organizationId]);
 
   const handleSelectDispatch = (dispatchId: string) => {
     const dispatch = dispatches.find(d => d.id === dispatchId);
@@ -241,9 +244,7 @@ const EmailNotificationsPage = () => {
           .from("integrations")
           .select("config, organization_id")
           .eq("type", "notifications")
-          .not("organization_id", "is", null)
-          .order("updated_at", { ascending: false })
-          .limit(1)
+          .eq("organization_id", organizationId)
           .maybeSingle();
 
         const config = integrationData?.config as Record<string, any> | null;
