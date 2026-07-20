@@ -22,6 +22,7 @@ import { supabase } from "@/integrations/supabase/client";
 import useTenantMode from "@/hooks/useTenantMode";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRoutePlannerIntelligence } from "@/hooks/useRoutePlannerIntelligence";
+import { friendlyError } from "@/lib/friendlyError";
 import {
   MapPin, Navigation, Plus, Trash2, Calculator, Fuel, Clock,
   AlertTriangle, Wrench, DollarSign, Route, Loader2, Star,
@@ -602,7 +603,9 @@ export default function AdvancedRoutePlanner() {
         description: `${data?.dispatch_number ?? "New dispatch"} created from this route plan. Open the Dispatch board to assign driver and complete details.`,
       });
     } catch (err: any) {
-      toast({ title: "Failed to create dispatch", description: err.message, variant: "destructive" });
+      const { friendly, technical } = friendlyError(err);
+      console.error("[route apply-to-dispatch]", technical);
+      toast({ title: "Couldn't create dispatch", description: friendly, variant: "destructive" });
     } finally {
       setApplyingToDispatch(false);
     }
@@ -726,7 +729,9 @@ export default function AdvancedRoutePlanner() {
         description: `Route details sent to ${vehicle.registration_number}. The driver will see it in the Driver App.`,
       });
     } catch (err: any) {
-      toast({ title: "Failed to send", description: err.message, variant: "destructive" });
+      const { friendly, technical } = friendlyError(err);
+      console.error("[route send-to-driver]", technical);
+      toast({ title: "Couldn't send route to driver", description: friendly, variant: "destructive" });
     } finally {
       setSendingToDriver(false);
     }

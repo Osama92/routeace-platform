@@ -29,6 +29,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAuditLog } from "@/hooks/useAuditLog";
+import { friendlyError } from "@/lib/friendlyError";
 import { useCompanySettings } from "@/hooks/useCompanySettings";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -602,10 +603,9 @@ export const InvoiceCreationDialog = ({
       resetForm();
       onSuccess();
     } catch (error: unknown) {
-      const msg = error instanceof Error
-        ? error.message
-        : (error as any)?.message || "Failed to update invoice";
-      toast({ title: "Failed to Update", description: msg, variant: "destructive" });
+      const { friendly, technical } = friendlyError(error);
+      console.error("[invoice update]", technical);
+      toast({ title: "Couldn't update invoice", description: friendly, variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -746,10 +746,9 @@ export const InvoiceCreationDialog = ({
       resetForm();
       onSuccess();
     } catch (error: unknown) {
-      const msg = error instanceof Error
-        ? error.message
-        : (error as any)?.message || "Failed to create invoice";
-      toast({ title: "Error", description: msg, variant: "destructive" });
+      const { friendly, technical } = friendlyError(error);
+      console.error("[invoice create]", technical);
+      toast({ title: "Couldn't create invoice", description: friendly, variant: "destructive" });
     } finally {
       setSaving(false);
     }

@@ -67,6 +67,7 @@ import DelayReasonDialog from "@/components/dispatch/DelayReasonDialog";
 import PricingRecommendation from "@/components/dispatch/PricingRecommendation";
 import { ResendClientEmailButton } from "@/components/notifications/ResendClientEmailButton";
 import { AddressAutocomplete } from "@/components/shared/AddressAutocomplete";
+import { friendlyError } from "@/lib/friendlyError";
 
 interface Dropoff {
   id: string;
@@ -483,7 +484,9 @@ const DispatchPage = () => {
       toast({ title: "Dispatch deleted", description: `${dispatch.dispatch_number} has been deleted.` });
       fetchData();
     } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      const { friendly, technical } = friendlyError(err);
+      console.error("[dispatch delete]", technical);
+      toast({ title: "Couldn't delete dispatch", description: friendly, variant: "destructive" });
     }
   };
 
@@ -554,11 +557,9 @@ const DispatchPage = () => {
       });
       fetchData();
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
+      const { friendly, technical } = friendlyError(error);
+      console.error("[dispatch approve]", technical);
+      toast({ title: "Couldn't approve dispatch", description: friendly, variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -605,11 +606,9 @@ const DispatchPage = () => {
       setSelectedDispatch(null);
       fetchData();
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
+      const { friendly, technical } = friendlyError(error);
+      console.error("[dispatch reject]", technical);
+      toast({ title: "Couldn't reject dispatch", description: friendly, variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -773,11 +772,9 @@ const DispatchPage = () => {
       setDropoffs([]);
       fetchData();
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to create dispatch",
-        variant: "destructive",
-      });
+      const { friendly, technical } = friendlyError(error);
+      console.error("[dispatch create]", technical);
+      toast({ title: "Couldn't create dispatch", description: friendly, variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -906,11 +903,9 @@ const DispatchPage = () => {
         setIsStatusDialogOpen(false);
         fetchData();
       } catch (fallbackError: any) {
-        toast({
-          title: "Error",
-          description: fallbackError.message || "Failed to update status",
-          variant: "destructive",
-        });
+        const { friendly, technical } = friendlyError(fallbackError);
+        console.error("[dispatch status update]", technical);
+        toast({ title: "Couldn't update status", description: friendly, variant: "destructive" });
       }
     } finally {
       setSaving(false);
@@ -1063,11 +1058,9 @@ const DispatchPage = () => {
       setEditDropoffs([]);
       fetchData();
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update dispatch",
-        variant: "destructive",
-      });
+      const { friendly, technical } = friendlyError(error);
+      console.error("[dispatch update]", technical);
+      toast({ title: "Couldn't update dispatch", description: friendly, variant: "destructive" });
     } finally {
       setSaving(false);
     }
