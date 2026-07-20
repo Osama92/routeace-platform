@@ -12,6 +12,10 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AddressAutocomplete } from "@/components/shared/AddressAutocomplete";
@@ -453,6 +457,35 @@ export default function AdvancedRoutePlanner() {
       return data || [];
     },
   });
+  const { data: customerList = [] } = useQuery({
+    queryKey: ["planner-customers", organizationId],
+    enabled: !!organizationId,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("customers")
+        .select("id, company_name, contact_name")
+        .eq("organization_id", organizationId!)
+        .order("company_name")
+        .limit(100);
+      return data || [];
+    },
+  });
+
+  const { data: driverList = [] } = useQuery({
+    queryKey: ["planner-drivers", organizationId],
+    enabled: !!organizationId,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("drivers")
+        .select("id, first_name, last_name, phone")
+        .eq("organization_id", organizationId!)
+        .eq("status", "active")
+        .order("first_name")
+        .limit(100);
+      return data || [];
+    },
+  });
+
   // Pull region from context - drives NG vs GLOBAL feature visibility
   const { isNGMode, isGlobalMode, region } = useRegion();
 
@@ -556,32 +589,55 @@ export default function AdvancedRoutePlanner() {
     });
   };
 
-  // ── Apply Route to Dispatch ─────────────────────────────────────────────────
-  // Creates a new dispatch pre-filled with the planned route data, then navigates
-  // to the Dispatch page so the ops team can complete the remaining fields.
+  // ── Apply Route to Dispatch — modal + actual insert ────────────────────────
+  const [applyModalOpen,    setApplyModalOpen]    = useState(false);
   const [applyingToDispatch, setApplyingToDispatch] = useState(false);
+  const [applyForm, setApplyForm] = useState({
+    customer_id: "",
+    driver_id:   "",
+    notes:       "",
+  });
 
-  const handleApplyToDispatch = async () => {
+  // Opens the modal (validates route is calculated first)
+  const handleApplyToDispatch = () => {
     if (!organizationId || routeOptions.length === 0) return;
     const opt = routeOptions[selectedRoute];
+    setApplyForm({
+      customer_id: "",
+      driver_id:   "",
+      notes: `Route: ${opt.name} · ${opt.distanceKm} km · Est. ${opt.durationHours}h · ${opt.algorithm}`,
+    });
+    setApplyModalOpen(true);
+  };
+
+  // Called when user confirms inside the modal
+  const confirmApplyToDispatch = async () => {
+    if (!applyForm.customer_id) {
+      toast({ title: "Customer required", description: "Please select a customer before creating the dispatch.", variant: "destructive" });
+      return;
+    }
+    if (!organizationId) return;
+
+    const opt     = routeOptions[selectedRoute];
+    const vehicle = selectedFleetVehicle
+      ? fleetVehicles.find((v: any) => v.id === selectedFleetVehicle)
+      : null;
+
     setApplyingToDispatch(true);
     try {
-      const vehicle = selectedFleetVehicle
-        ? fleetVehicles.find((v: any) => v.id === selectedFleetVehicle)
-        : null;
-
       const { data, error } = await supabase.from("dispatches").insert({
-        organization_id:    organizationId,
-        created_by:         user?.id,
-        pickup_address:     origin.address,
-        delivery_address:   destination.address,
-        vehicle_id:         vehicle?.id ?? null,
-        status:             "pending",
-        approval_status:    "pending",
-        distance_km:        opt.distanceKm,
-        total_distance_km:  opt.distanceKm,
-        // Store the planned route metadata in notes so ops can see it
-        notes: `Route: ${opt.name} · ${opt.distanceKm} km · Est. ${opt.durationHours}h · ${opt.algorithm}`,
+        organization_id:   organizationId,
+        created_by:        user?.id,
+        customer_id:       applyForm.customer_id,
+        driver_id:         applyForm.driver_id || null,
+        pickup_address:    origin.address,
+        delivery_address:  destination.address,
+        vehicle_id:        vehicle?.id ?? null,
+        status:            "pending",
+        approval_status:   "pending",
+        distance_km:       opt.distanceKm,
+        total_distance_km: opt.distanceKm,
+        notes:             applyForm.notes || null,
       }).select("id, dispatch_number").single();
 
       if (error) throw error;
@@ -590,17 +646,18 @@ export default function AdvancedRoutePlanner() {
       if (stops.length > 0 && data?.id) {
         await supabase.from("dispatch_dropoffs").insert(
           stops.map((s, i) => ({
-            dispatch_id:    data.id,
+            dispatch_id:     data.id,
             organization_id: organizationId,
-            address:        s.address,
-            sequence_order: i + 1,
+            address:         s.address,
+            sequence_order:  i + 1,
           }))
         );
       }
 
+      setApplyModalOpen(false);
       toast({
         title: "Dispatch created",
-        description: `${data?.dispatch_number ?? "New dispatch"} created from this route plan. Open the Dispatch board to assign driver and complete details.`,
+        description: `${data?.dispatch_number ?? "New dispatch"} is ready on the Dispatch board.`,
       });
     } catch (err: any) {
       const { friendly, technical } = friendlyError(err);
@@ -1942,6 +1999,99 @@ export default function AdvancedRoutePlanner() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* ── Apply Route to Dispatch — confirmation modal ───────────────────── */}
+      <Dialog open={applyModalOpen} onOpenChange={setApplyModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create Dispatch from Route</DialogTitle>
+            <DialogDescription>
+              Select the customer this route is for. The route details, vehicle, and stops will be pre-filled automatically.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Customer — required */}
+            <div className="space-y-1.5">
+              <Label htmlFor="apply-customer">
+                Customer <span className="text-destructive">*</span>
+              </Label>
+              <Select
+                value={applyForm.customer_id}
+                onValueChange={(v) => setApplyForm(p => ({ ...p, customer_id: v }))}
+              >
+                <SelectTrigger id="apply-customer">
+                  <SelectValue placeholder="Select customer…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {customerList.map((c: any) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.company_name}
+                      {c.contact_name ? ` · ${c.contact_name}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Driver — optional */}
+            <div className="space-y-1.5">
+              <Label htmlFor="apply-driver">Driver <span className="text-muted-foreground text-xs">(optional)</span></Label>
+              <Select
+                value={applyForm.driver_id || undefined}
+                onValueChange={(v) => setApplyForm(p => ({ ...p, driver_id: v }))}
+              >
+                <SelectTrigger id="apply-driver">
+                  <SelectValue placeholder="Assign driver later…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {driverList.map((d: any) => (
+                    <SelectItem key={d.id} value={d.id}>
+                      {d.first_name} {d.last_name}
+                      {d.phone ? ` · ${d.phone}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Notes — pre-filled with route summary, editable */}
+            <div className="space-y-1.5">
+              <Label htmlFor="apply-notes">Notes</Label>
+              <Textarea
+                id="apply-notes"
+                rows={3}
+                value={applyForm.notes}
+                onChange={(e) => setApplyForm(p => ({ ...p, notes: e.target.value }))}
+                className="text-xs resize-none"
+              />
+            </div>
+
+            {/* Route summary pill */}
+            {routeOptions[selectedRoute] && (
+              <div className="rounded-lg bg-muted/40 border px-3 py-2 text-xs text-muted-foreground space-y-0.5">
+                <p className="font-medium text-foreground">{routeOptions[selectedRoute].name}</p>
+                <p>{origin.address.split(",")[0]} → {destination.address.split(",")[0]}</p>
+                <p>{routeOptions[selectedRoute].distanceKm} km · Est. {routeOptions[selectedRoute].durationHours}h · ₦{routeOptions[selectedRoute].totalCost.toLocaleString()} cost</p>
+                {stops.length > 0 && <p>{stops.length} intermediate stop{stops.length !== 1 ? "s" : ""}</p>}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setApplyModalOpen(false)} disabled={applyingToDispatch}>
+              Cancel
+            </Button>
+            <Button onClick={confirmApplyToDispatch} disabled={applyingToDispatch || !applyForm.customer_id}>
+              {applyingToDispatch
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating…</>
+                : <><CheckCircle2 className="w-4 h-4 mr-2" />Create Dispatch</>
+              }
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </DashboardLayout>
   );
 }
