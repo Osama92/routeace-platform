@@ -51,6 +51,7 @@ import {
   ExternalLink,
   Pencil,
   Trash2,
+  RefreshCw,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -390,22 +391,38 @@ const InvoicesPage = () => {
                           </TableCell>
                         )}
                         <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setSelectedInvoice(invoice); setIsPreviewOpen(true); }}>
-                              <Eye className="w-4 h-4" />
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 px-2.5 gap-1.5 text-xs font-medium"
+                              onClick={() => { setSelectedInvoice(invoice); setIsPreviewOpen(true); }}
+                              title="View Invoice"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              View
                             </Button>
+                            {canManage && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 px-2.5 gap-1.5 text-xs font-medium"
+                                onClick={() => setEditInvoiceId(invoice.id)}
+                                title="Edit Invoice"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                                Edit
+                              </Button>
+                            )}
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8">
+                                <Button variant="ghost" size="icon" className="h-8 w-8" title="More options">
                                   <MoreVertical className="w-4 h-4" />
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
                                 {canManage && (
                                   <>
-                                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setEditInvoiceId(invoice.id); }}>
-                                      <Pencil className="w-4 h-4 mr-2" />Edit Invoice
-                                    </DropdownMenuItem>
                                     <DropdownMenuItem onClick={() => toast({ title: "Invoice Sent", description: `Sent to ${invoice.customers?.company_name}` })}>
                                       <Send className="w-4 h-4 mr-2" />Send Invoice
                                     </DropdownMenuItem>

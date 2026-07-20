@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { format, differenceInMinutes } from "date-fns";
 import { Loader2, MapPin, LogIn, LogOut, AlertCircle, Clock, Timer } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import DashboardLayout from "@/components/layout/DashboardLayout";
+import { reverseGeocode } from "@/lib/geocodeCache";
 
 interface Signin {
   id: string;
@@ -41,7 +42,7 @@ function hoursWorked(signin: string | null, signout: string | null): string | nu
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-// Format coords as "4.845, 6.968" — short enough for UI, still precise
+// Fallback: format coords as "4.845, 6.968" when geocoding is unavailable
 function fmtCoords(lat: number | null, lng: number | null): string | null {
   if (lat == null || lng == null) return null;
   return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
@@ -77,6 +78,10 @@ export default function StaffSignIn() {
   const [geoState,  setGeoState]  = useState<"pending" | "ready" | "denied" | "unsupported">("pending");
   const [orgId,     setOrgId]     = useState<string | null>(null);
 
+  // Address strings for each coord pair — keyed by "lat,lng" → human address
+  const [addressMap, setAddressMap] = useState<Map<string, string>>(new Map());
+  const geocodingRef = useRef<Set<string>>(new Set());
+
   const todayStr = format(new Date(), "yyyy-MM-dd");
 
   // Request location on mount — required for compliance
@@ -91,6 +96,37 @@ export default function StaffSignIn() {
       { enableHighAccuracy: true, timeout: 10_000, maximumAge: 30_000 },
     );
   }, []);
+
+  // Geocode all unique coord pairs in the loaded records — updates addressMap
+  const geocodeAll = useCallback(async (records: Signin[]) => {
+    const pairs: Array<{ lat: number; lng: number }> = [];
+    for (const r of records) {
+      if (r.signin_lat != null && r.signin_lng != null) pairs.push({ lat: r.signin_lat, lng: r.signin_lng });
+      if (r.signout_lat != null && r.signout_lng != null) pairs.push({ lat: r.signout_lat, lng: r.signout_lng });
+    }
+    // Only geocode new pairs not already in flight
+    const toFetch = pairs.filter((p) => {
+      const k = `${p.lat.toFixed(4)},${p.lng.toFixed(4)}`;
+      return !geocodingRef.current.has(k);
+    });
+    toFetch.forEach((p) => geocodingRef.current.add(`${p.lat.toFixed(4)},${p.lng.toFixed(4)}`));
+
+    await Promise.all(
+      toFetch.map(async ({ lat, lng }) => {
+        const addr = await reverseGeocode(lat, lng);
+        setAddressMap((prev) => {
+          const next = new Map(prev);
+          next.set(`${lat.toFixed(4)},${lng.toFixed(4)}`, addr);
+          return next;
+        });
+      }),
+    );
+  }, []);
+
+  function addrFor(lat: number | null, lng: number | null): string | null {
+    if (lat == null || lng == null) return null;
+    return addressMap.get(`${lat.toFixed(4)},${lng.toFixed(4)}`) ?? fmtCoords(lat, lng);
+  }
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -113,7 +149,8 @@ export default function StaffSignIn() {
     setToday(list.find((r) => r.signin_date === todayStr) ?? null);
     setHistory(list.filter((r) => r.signin_date !== todayStr));
     setLoading(false);
-  }, [user, todayStr]);
+    void geocodeAll(list);
+  }, [user, todayStr, geocodeAll]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -147,6 +184,7 @@ export default function StaffSignIn() {
       if (error) throw error;
       toast({ title: "Signed in", description: `Recorded at ${format(new Date(), "HH:mm")}` });
       setNotes("");
+      if (fix) void geocodeAll([{ signin_lat: fix.latitude, signin_lng: fix.longitude, signout_lat: null, signout_lng: null } as any]);
       void load();
     } catch (err: any) {
       toast({ title: "Sign-in failed", description: err.message, variant: "destructive" });
@@ -199,10 +237,11 @@ export default function StaffSignIn() {
   // ── Geo status banner
   const GeoBanner = () => {
     if (geoState === "ready" && coords) {
+      const addr = addrFor(coords.latitude, coords.longitude);
       return (
         <span className="inline-flex items-center gap-1.5 text-emerald-600 text-sm">
           <MapPin className="h-3.5 w-3.5" />
-          Location ready · {coords.latitude.toFixed(4)}, {coords.longitude.toFixed(4)}
+          Location ready · {addr ?? `${coords.latitude.toFixed(4)}, ${coords.longitude.toFixed(4)}`}
         </span>
       );
     }
@@ -271,10 +310,10 @@ export default function StaffSignIn() {
                     <p className="text-xl font-bold tabular-nums">
                       {today.signin_at ? format(new Date(today.signin_at), "HH:mm") : "—"}
                     </p>
-                    {fmtCoords(today.signin_lat, today.signin_lng) && (
+                    {addrFor(today.signin_lat, today.signin_lng) && (
                       <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
                         <MapPin className="w-2.5 h-2.5" />
-                        {fmtCoords(today.signin_lat, today.signin_lng)}
+                        {addrFor(today.signin_lat, today.signin_lng)}
                       </p>
                     )}
                   </div>
@@ -286,10 +325,10 @@ export default function StaffSignIn() {
                     <p className="text-xl font-bold tabular-nums">
                       {today.signout_at ? format(new Date(today.signout_at), "HH:mm") : "—"}
                     </p>
-                    {fmtCoords(today.signout_lat, today.signout_lng) && (
+                    {addrFor(today.signout_lat, today.signout_lng) && (
                       <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
                         <MapPin className="w-2.5 h-2.5" />
-                        {fmtCoords(today.signout_lat, today.signout_lng)}
+                        {addrFor(today.signout_lat, today.signout_lng)}
                       </p>
                     )}
                   </div>
@@ -376,8 +415,8 @@ export default function StaffSignIn() {
               <div className="divide-y">
                 {history.map((h) => {
                   const worked = hoursWorked(h.signin_at, h.signout_at);
-                  const inCoords  = fmtCoords(h.signin_lat, h.signin_lng);
-                  const outCoords = fmtCoords(h.signout_lat, h.signout_lng);
+                  const inAddr  = addrFor(h.signin_lat, h.signin_lng);
+                  const outAddr = addrFor(h.signout_lat, h.signout_lng);
 
                   return (
                     <div key={h.id} className="py-3 space-y-1.5">
@@ -411,18 +450,18 @@ export default function StaffSignIn() {
                       </div>
 
                       {/* Location row — only if we have coords */}
-                      {(inCoords || outCoords) && (
-                        <div className="flex items-start gap-4 text-[10px] text-muted-foreground/70 pl-14">
-                          {inCoords && (
+                      {(inAddr || outAddr) && (
+                        <div className="flex flex-col gap-0.5 text-[10px] text-muted-foreground/70 pl-14">
+                          {inAddr && (
                             <span className="flex items-center gap-1">
                               <MapPin className="w-2.5 h-2.5 text-emerald-500 shrink-0" />
-                              In: {inCoords}
+                              In: {inAddr}
                             </span>
                           )}
-                          {outCoords && (
+                          {outAddr && (
                             <span className="flex items-center gap-1">
                               <MapPin className="w-2.5 h-2.5 text-rose-400 shrink-0" />
-                              Out: {outCoords}
+                              Out: {outAddr}
                             </span>
                           )}
                         </div>

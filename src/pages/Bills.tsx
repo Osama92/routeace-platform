@@ -17,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   Plus, Search, FileText, Clock, CheckCircle, AlertTriangle,
-  RefreshCw, Trash2, X, MoreVertical, Pencil, XCircle,
+  RefreshCw, Trash2, X, MoreVertical, Pencil, XCircle, Eye,
 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
@@ -350,7 +350,10 @@ export default function BillsPage() {
           amount: it.amount || 0,
         })));
       } else {
-        setEditLines([emptyLine()]);
+        // No line items — synthesise a single line from the bill's stored total
+        // so the edit dialog shows the correct amount rather than ₦0
+        const fallbackRate = bill.subtotal || bill.amount || bill.total_amount || 0;
+        setEditLines([{ ...emptyLine(), item_details: "Service", rate: fallbackRate, quantity: 1 }]);
       }
     } finally {
       setLoadingEditLines(false);
@@ -540,43 +543,61 @@ export default function BillsPage() {
                         </TableCell>
                         {activeErp.connected && <TableCell className="text-sm text-muted-foreground">-</TableCell>}
                         <TableCell onClick={(e) => e.stopPropagation()}>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <MoreVertical className="w-4 h-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              {canEditBills && (
-                                <>
-                                  <DropdownMenuItem onClick={() => openEditBill(bill)}>
-                                    <Pencil className="w-4 h-4 mr-2" />Edit Bill
-                                  </DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                </>
-                              )}
-                              <DropdownMenuItem onClick={() => markPaid.mutate(bill.id)}>
-                                <CheckCircle className="w-4 h-4 mr-2 text-emerald-500" />Mark as Paid
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => updateStatus.mutate({ billId: bill.id, status: "pending" })}>
-                                <Clock className="w-4 h-4 mr-2 text-amber-500" />Mark as Pending
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => updateStatus.mutate({ billId: bill.id, status: "cancelled" })}>
-                                <XCircle className="w-4 h-4 mr-2 text-muted-foreground" />Mark as Cancelled
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                className="text-destructive focus:text-destructive"
-                                onClick={() => {
-                                  if (confirm(`Delete bill ${bill.bill_number}? This cannot be undone.`)) {
-                                    deleteBill.mutate(bill.id);
-                                  }
-                                }}
+                          <div className="flex items-center gap-1">
+                            {canEditBills && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 px-2.5 gap-1.5 text-xs font-medium"
+                                onClick={() => openEditBill(bill)}
+                                title="Edit Bill"
                               >
-                                <Trash2 className="w-4 h-4 mr-2" />Delete Bill
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                                <Pencil className="w-3.5 h-3.5" />
+                                Edit
+                              </Button>
+                            )}
+                            {bill.payment_status !== "paid" && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 px-2.5 gap-1.5 text-xs font-medium text-emerald-600 border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+                                onClick={() => markPaid.mutate(bill.id)}
+                                title="Mark as Paid"
+                              >
+                                <CheckCircle className="w-3.5 h-3.5" />
+                                Pay
+                              </Button>
+                            )}
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" title="More options">
+                                  <MoreVertical className="w-4 h-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => markPaid.mutate(bill.id)}>
+                                  <CheckCircle className="w-4 h-4 mr-2 text-emerald-500" />Mark as Paid
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => updateStatus.mutate({ billId: bill.id, status: "pending" })}>
+                                  <Clock className="w-4 h-4 mr-2 text-amber-500" />Mark as Pending
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => updateStatus.mutate({ billId: bill.id, status: "cancelled" })}>
+                                  <XCircle className="w-4 h-4 mr-2 text-muted-foreground" />Mark as Cancelled
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  className="text-destructive focus:text-destructive"
+                                  onClick={() => {
+                                    if (confirm(`Delete bill ${bill.bill_number}? This cannot be undone.`)) {
+                                      deleteBill.mutate(bill.id);
+                                    }
+                                  }}
+                                >
+                                  <Trash2 className="w-4 h-4 mr-2" />Delete Bill
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
