@@ -247,11 +247,14 @@ export default function BillsPage() {
           tonnage: l.tonnage || null,
           quantity: l.quantity,
           rate: l.rate,
+          vat_rate: l.vat_rate,
           vat_type: l.vat_rate === 0 ? "no_vat" : `vat_${l.vat_rate}`.replace(".", "_"),
           customer_id: l.customer_id || null,
           amount: lineAmounts[idx] ?? calcLineAmount(l),
         }));
-        const { error: itemErr } = await supabase.from("bill_items").insert(items as any);
+        console.log("[Bills] CREATE — inserting line items:", JSON.stringify(items, null, 2));
+        const { data: insertedItems, error: itemErr } = await supabase.from("bill_items").insert(items as any).select();
+        console.log("[Bills] CREATE — insert result:", { insertedItems, itemErr });
         if (itemErr) throw itemErr;
       }
     },
@@ -331,11 +334,12 @@ export default function BillsPage() {
     });
     setLoadingEditLines(true);
     try {
-      const { data: items } = await supabase
+      const { data: items, error: readErr } = await supabase
         .from("bill_items")
         .select("*")
         .eq("bill_id", bill.id)
         .order("id");
+      console.log("[Bills] OPEN EDIT — bill_items query for bill", bill.id, "→ rows:", items?.length, "error:", readErr, "data:", items);
       if (items && items.length > 0) {
         setEditLines(items.map((it: any) => {
           const qty = it.quantity || 1;
@@ -402,8 +406,10 @@ export default function BillsPage() {
       if (error) throw error;
 
       // Replace line items
-      await supabase.from("bill_items").delete().eq("bill_id", editBill.id);
+      const { error: deleteErr } = await supabase.from("bill_items").delete().eq("bill_id", editBill.id);
+      console.log("[Bills] EDIT — deleted old line items for bill", editBill.id, "deleteErr:", deleteErr);
       const validLines = editLines.filter(l => l.item_details || l.rate > 0);
+      console.log("[Bills] EDIT — valid lines to insert:", validLines.length, validLines);
       if (validLines.length > 0) {
         const items = validLines.map((l, idx) => ({
           bill_id: editBill.id,
@@ -412,11 +418,14 @@ export default function BillsPage() {
           tonnage: l.tonnage || null,
           quantity: l.quantity,
           rate: l.rate,
+          vat_rate: l.vat_rate,
           vat_type: l.vat_rate === 0 ? "no_vat" : `vat_${l.vat_rate}`.replace(".", "_"),
           customer_id: l.customer_id || null,
           amount: editLineAmounts[idx] ?? calcLineAmount(l),
         }));
-        const { error: itemErr } = await supabase.from("bill_items").insert(items as any);
+        console.log("[Bills] EDIT — inserting line items:", JSON.stringify(items, null, 2));
+        const { data: insertedItems, error: itemErr } = await supabase.from("bill_items").insert(items as any).select();
+        console.log("[Bills] EDIT — insert result:", { insertedItems, itemErr });
         if (itemErr) throw itemErr;
       }
     },
