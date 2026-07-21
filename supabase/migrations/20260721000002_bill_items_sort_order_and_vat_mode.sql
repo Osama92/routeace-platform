@@ -16,3 +16,5 @@ WHERE bi.id = sub.id;
 DO $$ BEGIN
   ALTER TABLE public.bills ADD COLUMN vat_inclusive boolean NOT NULL DEFAULT false;
 EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
+-- Fix 2: persist VAT inclusive/exclusive mode per bill
