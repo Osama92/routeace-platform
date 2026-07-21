@@ -232,6 +232,7 @@ export default function BillsPage() {
         discount_percent: form.discount_percent,
         adjustment: form.adjustment,
         total_amount: grandTotal,
+        vat_inclusive: vatInclusive,
         category: "other",
         notes: form.notes || null,
         created_by: user?.id,
@@ -242,6 +243,7 @@ export default function BillsPage() {
       if (bill && lines.some(l => l.item_details || l.rate > 0)) {
         const items = lines.filter(l => l.item_details || l.rate > 0).map((l, idx) => ({
           bill_id: bill.id,
+          sort_order: idx,
           item_details: l.item_details,
           account: l.account || null,
           tonnage: l.tonnage || null,
@@ -320,7 +322,7 @@ export default function BillsPage() {
 
   const openEditBill = async (bill: any) => {
     setEditBill(bill);
-    setEditVatInclusive(false);
+    setEditVatInclusive(bill.vat_inclusive ?? false);
     setEditForm({
       vendor_name: bill.vendor_name || "",
       bill_number: bill.bill_number || "",
@@ -338,7 +340,8 @@ export default function BillsPage() {
         .from("bill_items")
         .select("*")
         .eq("bill_id", bill.id)
-        .order("id");
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true });
       console.log("[Bills] OPEN EDIT — bill_items query for bill", bill.id, "→ rows:", items?.length, "error:", readErr, "data:", items);
       if (items && items.length > 0) {
         setEditLines(items.map((it: any) => {
@@ -401,6 +404,7 @@ export default function BillsPage() {
         discount_percent: editForm.discount_percent,
         adjustment: editForm.adjustment,
         total_amount: editGrandTotal,
+        vat_inclusive: editVatInclusive,
         notes: editForm.notes || null,
       } as any).eq("id", editBill.id);
       if (error) throw error;
@@ -413,6 +417,7 @@ export default function BillsPage() {
       if (validLines.length > 0) {
         const items = validLines.map((l, idx) => ({
           bill_id: editBill.id,
+          sort_order: idx,
           item_details: l.item_details,
           account: l.account || null,
           tonnage: l.tonnage || null,
