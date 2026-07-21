@@ -247,13 +247,12 @@ export default function BillsPage() {
           tonnage: l.tonnage || null,
           quantity: l.quantity,
           rate: l.rate,
-          vat_rate: l.vat_rate,
           vat_type: l.vat_rate === 0 ? "no_vat" : `vat_${l.vat_rate}`.replace(".", "_"),
           customer_id: l.customer_id || null,
           amount: lineAmounts[idx] ?? calcLineAmount(l),
         }));
         const { error: itemErr } = await supabase.from("bill_items").insert(items as any);
-        if (itemErr) console.error("Line items error:", itemErr);
+        if (itemErr) throw itemErr;
       }
     },
     onSuccess: () => {
@@ -338,20 +337,42 @@ export default function BillsPage() {
         .eq("bill_id", bill.id)
         .order("id");
       if (items && items.length > 0) {
-        setEditLines(items.map((it: any) => ({
-          id: crypto.randomUUID(),
-          item_details: it.item_details || "",
-          account: it.account || "",
-          tonnage: it.tonnage || "",
-          quantity: it.quantity || 1,
-          rate: it.rate || 0,
-          vat_rate: it.vat_rate || 0,
-          customer_id: it.customer_id || "",
-          amount: it.amount || 0,
-        })));
+        setEditLines(items.map((it: any) => {
+          const qty = it.quantity || 1;
+          // vat_rate is stored as numeric elsewhere but bill_items uses vat_type text.
+          // Parse it back to a number so the VAT toggle works correctly.
+          let vatRate = 0;
+          if (it.vat_rate != null && it.vat_rate !== 0) {
+            vatRate = Number(it.vat_rate);
+          } else if (it.vat_type && it.vat_type !== "no_vat") {
+            // e.g. "vat_7_5" → 7.5, "vat_5" → 5, "vat_20" → 20
+            const match = it.vat_type.replace("vat_", "").replace("_", ".");
+            vatRate = parseFloat(match) || 0;
+          }
+          // If rate is 0 but amount is stored, back-calculate rate from the line amount.
+          // This handles bills created before line-item detail was mandatory.
+          let rate = it.rate || 0;
+          if (rate === 0 && it.amount && it.amount > 0) {
+            // amount = qty * rate * (1 + vat/100), solve for rate
+            const divisor = qty * (vatRate > 0 ? (1 + vatRate / 100) : 1);
+            rate = it.amount / divisor;
+          }
+          return {
+            id: crypto.randomUUID(),
+            item_details: it.item_details || "",
+            account: it.account || "",
+            tonnage: it.tonnage || "",
+            quantity: qty,
+            rate,
+            vat_rate: vatRate,
+            customer_id: it.customer_id || "",
+            amount: it.amount || 0,
+          };
+        }));
       } else {
-        // No line items — synthesise a single line from the bill's stored total
-        // so the edit dialog shows the correct amount rather than ₦0
+        // No line items at all — synthesise a single line from the bill's stored totals
+        // so the edit dialog shows the correct amount rather than ₦0.
+        // Prefer subtotal (pre-tax) so VAT isn't double-counted if adjustment/discount exist.
         const fallbackRate = bill.subtotal || bill.amount || bill.total_amount || 0;
         setEditLines([{ ...emptyLine(), item_details: "Service", rate: fallbackRate, quantity: 1 }]);
       }
@@ -391,13 +412,12 @@ export default function BillsPage() {
           tonnage: l.tonnage || null,
           quantity: l.quantity,
           rate: l.rate,
-          vat_rate: l.vat_rate,
           vat_type: l.vat_rate === 0 ? "no_vat" : `vat_${l.vat_rate}`.replace(".", "_"),
           customer_id: l.customer_id || null,
           amount: editLineAmounts[idx] ?? calcLineAmount(l),
         }));
         const { error: itemErr } = await supabase.from("bill_items").insert(items as any);
-        if (itemErr) console.error("Edit line items error:", itemErr);
+        if (itemErr) throw itemErr;
       }
     },
     onSuccess: () => {
