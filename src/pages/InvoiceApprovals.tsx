@@ -122,7 +122,7 @@ const InvoiceApprovalsPage = () => {
   const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
   const [processing, setProcessing] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<string>("pending");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   const { toast } = useToast();
   const { user, hasAnyRole } = useAuth();
   const { logChange } = useAuditLog();
@@ -138,11 +138,12 @@ const InvoiceApprovalsPage = () => {
           *,
           customers(company_name, address, head_office_address, city, state, country)
         `)
-        .in("approval_status", ["pending_first_approval", "pending_second_approval", "approved", "rejected"])
+        .not("approval_status", "is", null)
+        .neq("approval_status", "draft")
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      console.log("[InvoiceApprovals] fetched", data?.length, "invoices:", data?.map(i => ({ id: i.id, num: i.invoice_number, approval_status: i.approval_status })));
+      console.log("[InvoiceApprovals] fetched", data?.length, "invoices. Distinct approval_status values:", [...new Set(data?.map(i => i.approval_status))], "full:", data?.map(i => ({ num: i.invoice_number, approval_status: i.approval_status })));
       setInvoices(data || []);
     } catch (error: any) {
       console.error("[InvoiceApprovals] fetch error:", error);
@@ -480,7 +481,11 @@ const InvoiceApprovalsPage = () => {
             </TableHeader>
             <TableBody>
               {filteredInvoices.map((invoice) => {
-                const statusInfo = approvalStatusConfig[invoice.approval_status || ""] || approvalStatusConfig.pending_first_approval;
+                const statusInfo = approvalStatusConfig[invoice.approval_status || ""] || {
+                  label: invoice.approval_status || "Unknown",
+                  className: "bg-muted text-muted-foreground",
+                  icon: Clock,
+                };
                 const StatusIcon = statusInfo.icon;
 
                 return (
@@ -686,6 +691,14 @@ const InvoiceApprovalsPage = () => {
               <Button variant="outline" onClick={() => setIsDetailDialogOpen(false)}>
                 Close
               </Button>
+            )}
+
+            {/* ── Unknown status — always show close + debug label ── */}
+            {selectedInvoice && !["pending_first_approval","pending_second_approval","approved","rejected"].includes(selectedInvoice.approval_status || "") && (
+              <div className="flex items-center gap-3 w-full">
+                <p className="text-xs text-muted-foreground flex-1">DB status: <code>{selectedInvoice.approval_status}</code></p>
+                <Button variant="outline" onClick={() => setIsDetailDialogOpen(false)}>Close</Button>
+              </div>
             )}
 
             {/* ── No role — read-only ── */}
