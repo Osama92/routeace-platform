@@ -124,8 +124,11 @@ const InvoiceApprovalsPage = () => {
   const [processing, setProcessing] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("pending");
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, hasAnyRole } = useAuth();
   const { logChange } = useAuditLog();
+
+  const isOrgAdmin   = hasAnyRole(["org_admin", "admin"]);
+  const isSuperAdmin = hasAnyRole(["super_admin"]);
 
   const fetchInvoices = async () => {
     try {
@@ -241,6 +244,51 @@ const InvoiceApprovalsPage = () => {
       toast({
         title: "Invoice Approved",
         description: "Invoice has been fully approved and is now active. Submitter notified via email.",
+      });
+      fetchInvoices();
+      setIsDetailDialogOpen(false);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to approve invoice",
+        variant: "destructive",
+      });
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleExpressApproval = async (invoice: Invoice) => {
+    setProcessing(true);
+    try {
+      const now = new Date().toISOString();
+      const { error } = await supabase
+        .from("invoices")
+        .update({
+          approval_status: "approved",
+          first_approver_id: user?.id,
+          first_approved_at: now,
+          second_approver_id: user?.id,
+          second_approved_at: now,
+          status: "pending",
+        })
+        .eq("id", invoice.id);
+
+      if (error) throw error;
+
+      await logChange({
+        table_name: "invoices",
+        record_id: invoice.id,
+        action: "update",
+        old_data: { approval_status: invoice.approval_status },
+        new_data: { approval_status: "approved", second_approver_id: user?.id },
+      });
+
+      await sendApprovalNotification(invoice.id, "second_approval");
+
+      toast({
+        title: "Invoice Express Approved",
+        description: "Invoice has been fully approved and is now active.",
       });
       fetchInvoices();
       setIsDetailDialogOpen(false);
@@ -567,45 +615,67 @@ const InvoiceApprovalsPage = () => {
           )}
 
           <DialogFooter className="gap-2">
+            {/* ── Pending 1st Approval ── */}
             {selectedInvoice?.approval_status === "pending_first_approval" && (
               <>
-                <Button
-                  variant="destructive"
-                  onClick={() => setIsRejectDialogOpen(true)}
-                  disabled={processing}
-                >
-                  <XCircle className="w-4 h-4 mr-2" />
-                  Reject
-                </Button>
-                <Button
-                  onClick={() => handleFirstApproval(selectedInvoice)}
-                  disabled={processing}
-                >
-                  <CheckCircle className="w-4 h-4 mr-2" />
-                  {processing ? "Processing..." : "Approve (1st Level)"}
-                </Button>
+                {/* Any approver can reject */}
+                {(isOrgAdmin || isSuperAdmin) && (
+                  <Button variant="destructive" onClick={() => setIsRejectDialogOpen(true)} disabled={processing}>
+                    <XCircle className="w-4 h-4 mr-2" />
+                    Reject
+                  </Button>
+                )}
+                {/* Org admin does 1st-level approval */}
+                {isOrgAdmin && !isSuperAdmin && (
+                  <Button onClick={() => handleFirstApproval(selectedInvoice!)} disabled={processing}>
+                    <CheckCircle className="w-4 h-4 mr-2" />
+                    {processing ? "Processing..." : "Approve (1st Level)"}
+                  </Button>
+                )}
+                {/* Super admin can express-approve (skip straight to fully approved) */}
+                {isSuperAdmin && (
+                  <Button onClick={() => handleExpressApproval(selectedInvoice!)} disabled={processing}>
+                    <CheckCheck className="w-4 h-4 mr-2" />
+                    {processing ? "Processing..." : "Express Approve"}
+                  </Button>
+                )}
               </>
             )}
+
+            {/* ── Pending 2nd Approval ── */}
             {selectedInvoice?.approval_status === "pending_second_approval" && (
               <>
-                <Button
-                  variant="destructive"
-                  onClick={() => setIsRejectDialogOpen(true)}
-                  disabled={processing}
-                >
-                  <XCircle className="w-4 h-4 mr-2" />
-                  Reject
-                </Button>
-                <Button
-                  onClick={() => handleSecondApproval(selectedInvoice)}
-                  disabled={processing}
-                >
-                  <CheckCheck className="w-4 h-4 mr-2" />
-                  {processing ? "Processing..." : "Final Approval"}
-                </Button>
+                {(isOrgAdmin || isSuperAdmin) && (
+                  <Button variant="destructive" onClick={() => setIsRejectDialogOpen(true)} disabled={processing}>
+                    <XCircle className="w-4 h-4 mr-2" />
+                    Reject
+                  </Button>
+                )}
+                {/* Only super_admin can do final approval */}
+                {isSuperAdmin && (
+                  <Button onClick={() => handleSecondApproval(selectedInvoice!)} disabled={processing}>
+                    <CheckCheck className="w-4 h-4 mr-2" />
+                    {processing ? "Processing..." : "Final Approval"}
+                  </Button>
+                )}
+                {/* Org admin sees a waiting message */}
+                {isOrgAdmin && !isSuperAdmin && (
+                  <p className="text-sm text-muted-foreground self-center">
+                    Awaiting Super Admin final approval
+                  </p>
+                )}
               </>
             )}
+
+            {/* ── Approved / Rejected ── */}
             {(selectedInvoice?.approval_status === "approved" || selectedInvoice?.approval_status === "rejected") && (
+              <Button variant="outline" onClick={() => setIsDetailDialogOpen(false)}>
+                Close
+              </Button>
+            )}
+
+            {/* ── No role — read-only ── */}
+            {!isOrgAdmin && !isSuperAdmin && (
               <Button variant="outline" onClick={() => setIsDetailDialogOpen(false)}>
                 Close
               </Button>
