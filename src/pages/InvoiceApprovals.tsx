@@ -142,8 +142,10 @@ const InvoiceApprovalsPage = () => {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
+      console.log("[InvoiceApprovals] fetched", data?.length, "invoices:", data?.map(i => ({ id: i.id, num: i.invoice_number, approval_status: i.approval_status })));
       setInvoices(data || []);
     } catch (error: any) {
+      console.error("[InvoiceApprovals] fetch error:", error);
       toast({
         title: "Error",
         description: "Failed to fetch invoices",
