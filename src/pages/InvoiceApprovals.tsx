@@ -138,7 +138,7 @@ const InvoiceApprovalsPage = () => {
           *,
           customers(company_name, address, head_office_address, city, state, country)
         `)
-        .not("approval_status", "is", null)
+        .in("approval_status", ["pending_first_approval", "pending_second_approval", "approved", "rejected"])
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -364,14 +364,25 @@ const InvoiceApprovalsPage = () => {
   const filteredInvoices = invoices.filter((invoice) => {
     const matchesSearch =
       invoice.invoice_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      invoice.customers?.company_name?.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    if (statusFilter === "pending") {
-      return matchesSearch && (invoice.approval_status === "pending_first_approval" || invoice.approval_status === "pending_second_approval");
-    } else if (statusFilter === "all") {
-      return matchesSearch;
+      (invoice.customers?.company_name?.toLowerCase() ?? "").includes(searchQuery.toLowerCase());
+
+    switch (statusFilter) {
+      case "pending":
+        return matchesSearch && (
+          invoice.approval_status === "pending_first_approval" ||
+          invoice.approval_status === "pending_second_approval"
+        );
+      case "pending_first_approval":
+        return matchesSearch && invoice.approval_status === "pending_first_approval";
+      case "pending_second_approval":
+        return matchesSearch && invoice.approval_status === "pending_second_approval";
+      case "approved":
+        return matchesSearch && invoice.approval_status === "approved";
+      case "rejected":
+        return matchesSearch && invoice.approval_status === "rejected";
+      default: // "all"
+        return matchesSearch;
     }
-    return matchesSearch && invoice.approval_status === statusFilter;
   });
 
   return (
@@ -384,9 +395,10 @@ const InvoiceApprovalsPage = () => {
         {[
           { label: "Pending 1st Approval", value: pendingFirst.length, icon: Clock, color: "bg-warning/10 text-warning" },
           { label: "Pending 2nd Approval", value: pendingSecond.length, icon: AlertCircle, color: "bg-info/10 text-info" },
-          { label: "Approved Today", value: approved.filter(inv => 
-            new Date(inv.second_approved_at || "").toDateString() === new Date().toDateString()
-          ).length, icon: CheckCircle, color: "bg-success/10 text-success" },
+          { label: "Approved Today", value: approved.filter(inv => {
+            const approvedAt = inv.second_approved_at || inv.first_approved_at;
+            return approvedAt && new Date(approvedAt).toDateString() === new Date().toDateString();
+          }).length, icon: CheckCircle, color: "bg-success/10 text-success" },
           { label: "Rejected", value: rejected.length, icon: XCircle, color: "bg-destructive/10 text-destructive" },
         ].map((stat, index) => (
           <motion.div
