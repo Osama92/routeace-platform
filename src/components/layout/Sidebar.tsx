@@ -207,7 +207,7 @@ const adminSection: NavSection = {
     { name: "Admin Governance", href: "/admin-governance", icon: Shield, roles: ["admin", "super_admin", "org_admin"] },
     { name: "Operations Governance", href: "/governance-control", icon: Shield, roles: ["admin", "super_admin"] },
     { name: "Decision Center", href: "/decision-center", icon: Brain, roles: ["admin", "super_admin", "ops_manager"] },
-    { name: "Approval Center", href: "/approval-center", icon: CheckCircle, roles: ["admin", "super_admin", "org_admin", "finance_manager", "ops_manager"] },
+    { name: "Dispatch Approval Center", href: "/approval-center", icon: CheckCircle, roles: ["admin", "super_admin", "org_admin", "finance_manager", "ops_manager"] },
     { name: "Security Center", href: "/security-center", icon: ShieldCheck, roles: ["admin", "super_admin"] },
     { name: "Invoice Approvals", href: "/invoice-approvals", icon: FileText, roles: ["admin", "super_admin", "org_admin"] },
     { name: "Trip Rate Config", href: "/trip-rate-config", icon: Settings, roles: ["admin", "super_admin", "org_admin"] },

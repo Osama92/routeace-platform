@@ -43,6 +43,7 @@ import {
   ArrowRight,
   Trash2,
   History,
+  SendHorizonal,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
@@ -475,6 +476,21 @@ const DispatchPage = () => {
   });
 
   const pendingApprovalCount = dispatches.filter(d => d.approval_status === "pending").length;
+
+  const handleSubmitForApproval = async (dispatch: Dispatch) => {
+    try {
+      const { error } = await supabase
+        .from("dispatches")
+        .update({ approval_status: "pending", submitted_by: user?.id })
+        .eq("id", dispatch.id);
+      if (error) throw error;
+      toast({ title: "Submitted for Approval", description: `${dispatch.dispatch_number} is now awaiting approval.` });
+      fetchData();
+    } catch (err: any) {
+      const { friendly } = friendlyError(err);
+      toast({ title: "Couldn't submit for approval", description: friendly, variant: "destructive" });
+    }
+  };
 
   const handleDeleteDispatch = async (dispatch: Dispatch) => {
     if (!confirm(`Delete dispatch ${dispatch.dispatch_number}? This cannot be undone.`)) return;
@@ -1647,6 +1663,17 @@ const DispatchPage = () => {
                     onClick={() => handleOpenEditDialog(dispatch)}
                   >
                     <Pencil className="w-4 h-4" />
+                  </Button>
+                )}
+                {canManage && (!dispatch.approval_status || dispatch.approval_status === "rejected") && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 text-blue-600 border-blue-400/40 hover:bg-blue-50 dark:hover:bg-blue-950/30"
+                    onClick={() => handleSubmitForApproval(dispatch)}
+                  >
+                    <SendHorizonal className="w-3.5 h-3.5" />
+                    Submit
                   </Button>
                 )}
                 {canUpdateStatus && dispatch.status !== "delivered" && dispatch.status !== "cancelled" && (dispatch.approval_status === "approved" || isAdmin) && (

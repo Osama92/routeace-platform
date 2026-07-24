@@ -1,10 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -18,606 +16,480 @@ import {
 } from "@/components/ui/select";
 import {
   CheckCircle, XCircle, Clock, Search, RefreshCw, AlertTriangle,
-  Shield, FileText, CreditCard, Package, Wallet, CheckCheck, Eye,
+  MapPin, Truck, Package, Eye, CheckCheck,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { useApprovalEngine, type ApprovalRecord, type EditRequest } from "@/hooks/useApprovalEngine";
+import { useAuditLog } from "@/hooks/useAuditLog";
 import { format } from "date-fns";
 import { motion } from "framer-motion";
 
-const entityTypeConfig: Record<string, { label: string; icon: typeof FileText; color: string }> = {
-  invoice: { label: "Invoice", icon: FileText, color: "text-blue-500" },
-  expense: { label: "Expense", icon: CreditCard, color: "text-green-500" },
-  payment: { label: "Payment", icon: Wallet, color: "text-purple-500" },
-  dispatch: { label: "Dispatch", icon: Package, color: "text-orange-500" },
-  journal_entry: { label: "Journal Entry", icon: FileText, color: "text-cyan-500" },
-  wallet_transfer: { label: "Wallet Transfer", icon: Wallet, color: "text-red-500" },
-  vendor_onboarding: { label: "Vendor", icon: Package, color: "text-amber-500" },
-  credit_note: { label: "Credit Note", icon: FileText, color: "text-pink-500" },
-  rate_approval: { label: "Rate", icon: CreditCard, color: "text-indigo-500" },
-  tax_filing: { label: "Tax Filing", icon: Shield, color: "text-teal-500" },
-};
+interface DispatchApproval {
+  id: string;
+  dispatch_number: string;
+  pickup_address: string;
+  delivery_address: string;
+  status: string;
+  priority: string;
+  approval_status: string | null;
+  cargo_description: string | null;
+  cargo_weight_kg: number | null;
+  distance_km: number | null;
+  scheduled_pickup: string | null;
+  submitted_by: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  rejection_reason: string | null;
+  created_at: string;
+  cost: number | null;
+  drivers?: { full_name: string } | null;
+  vehicles?: { registration_number: string; vehicle_type: string } | null;
+  customers?: { company_name: string } | null;
+}
 
-const formatCurrency = (amount: number) =>
-  new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", minimumFractionDigits: 0 }).format(amount);
+const priorityConfig: Record<string, { label: string; className: string }> = {
+  urgent: { label: "Urgent", className: "bg-destructive/15 text-destructive" },
+  high:   { label: "High",   className: "bg-warning/15 text-warning" },
+  normal: { label: "Normal", className: "bg-info/15 text-info" },
+  low:    { label: "Low",    className: "bg-muted text-muted-foreground" },
+};
 
 const ApprovalCenter = () => {
   const { toast } = useToast();
-  const { isSuperAdmin } = useAuth();
-  const {
-    loading, bulkApprove, approveEditRequest, rejectEditRequest,
-    fetchPendingApprovals, fetchPendingEditRequests,
-  } = useApprovalEngine();
+  const { user, hasAnyRole } = useAuth();
+  const { logChange } = useAuditLog();
 
-  const [activeTab, setActiveTab] = useState("pending");
-  const [approvals, setApprovals] = useState<ApprovalRecord[]>([]);
-  const [allApprovals, setAllApprovals] = useState<ApprovalRecord[]>([]);
-  const [editRequests, setEditRequests] = useState<EditRequest[]>([]);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [entityFilter, setEntityFilter] = useState("all");
+  const canApprove = hasAnyRole(["super_admin", "org_admin", "admin", "ops_manager"]);
+
+  const [dispatches, setDispatches] = useState<DispatchApproval[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
-  const [rejectReason, setRejectReason] = useState("");
-  const [editDetailDialog, setEditDetailDialog] = useState<EditRequest | null>(null);
-  const [editRejectReason, setEditRejectReason] = useState("");
-  const [fetchLoading, setFetchLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState("pending");
+  const [selectedDispatch, setSelectedDispatch] = useState<DispatchApproval | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [isRejectOpen, setIsRejectOpen] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState("");
 
-  const loadData = useCallback(async () => {
-    setFetchLoading(true);
+  const fetchDispatches = useCallback(async () => {
+    setLoading(true);
     try {
-      const [pending, edits, all] = await Promise.all([
-        fetchPendingApprovals(),
-        fetchPendingEditRequests(),
-        supabase
-          .from("approvals")
-          .select("*")
-          .order("created_at", { ascending: false })
-          .limit(200)
-          .then(r => r.data || []),
-      ]);
-      setApprovals(pending);
-      setEditRequests(edits);
-      setAllApprovals(all as ApprovalRecord[]);
+      const { data, error } = await supabase
+        .from("dispatches")
+        .select(`
+          id, dispatch_number, pickup_address, delivery_address,
+          status, priority, approval_status, cargo_description,
+          cargo_weight_kg, distance_km, scheduled_pickup, created_at,
+          submitted_by, approved_by, approved_at, rejection_reason, cost,
+          drivers(full_name),
+          vehicles(registration_number, vehicle_type),
+          customers(company_name)
+        `)
+        .not("approval_status", "is", null)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setDispatches(data || []);
     } catch {
-      toast({ title: "Error", description: "Failed to load approvals", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to load dispatches", variant: "destructive" });
     } finally {
-      setFetchLoading(false);
+      setLoading(false);
     }
-  }, [fetchPendingApprovals, fetchPendingEditRequests, toast]);
+  }, [toast]);
 
   useEffect(() => {
-    loadData();
+    fetchDispatches();
 
-    // Realtime subscription
     const channel = supabase
-      .channel("approval-changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "approvals" }, () => loadData())
-      .on("postgres_changes", { event: "*", schema: "public", table: "edit_requests" }, () => loadData())
+      .channel("dispatch-approval-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "dispatches" }, fetchDispatches)
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [loadData]);
+  }, [fetchDispatches]);
 
-  const filteredApprovals = approvals.filter((a) => {
-    if (entityFilter !== "all" && a.entity_type !== entityFilter) return false;
-    if (searchQuery && !a.entity_id.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-    return true;
+  const pending  = dispatches.filter(d => d.approval_status === "pending");
+  const approved = dispatches.filter(d => d.approval_status === "approved");
+  const rejected = dispatches.filter(d => d.approval_status === "rejected");
+
+  const filteredDispatches = dispatches.filter((d) => {
+    const matchesSearch =
+      d.dispatch_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      d.pickup_address.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      d.delivery_address.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (d.customers?.company_name ?? "").toLowerCase().includes(searchQuery.toLowerCase());
+
+    switch (statusFilter) {
+      case "pending":  return matchesSearch && d.approval_status === "pending";
+      case "approved": return matchesSearch && d.approval_status === "approved";
+      case "rejected": return matchesSearch && d.approval_status === "rejected";
+      default:         return matchesSearch;
+    }
   });
 
-  const toggleSelect = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
+  const handleApprove = async (dispatch: DispatchApproval) => {
+    setProcessing(true);
+    try {
+      const { error } = await supabase
+        .from("dispatches")
+        .update({
+          approval_status: "approved",
+          approved_by: user?.id,
+          approved_at: new Date().toISOString(),
+        })
+        .eq("id", dispatch.id);
+      if (error) throw error;
 
-  const toggleSelectAll = () => {
-    if (selectedIds.size === filteredApprovals.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(filteredApprovals.map((a) => a.entity_id)));
+      await logChange({
+        table_name: "dispatches",
+        record_id: dispatch.id,
+        action: "update",
+        old_data: { approval_status: "pending" },
+        new_data: { approval_status: "approved", approved_by: user?.id },
+      });
+
+      toast({ title: "Dispatch Approved", description: `${dispatch.dispatch_number} has been approved.` });
+      setIsDetailOpen(false);
+      fetchDispatches();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to approve", variant: "destructive" });
+    } finally {
+      setProcessing(false);
     }
   };
 
-  const selectedEntityType = (): string | null => {
-    const types = new Set(
-      filteredApprovals.filter((a) => selectedIds.has(a.entity_id)).map((a) => a.entity_type)
-    );
-    return types.size === 1 ? [...types][0] : null;
-  };
-
-  const handleBulkApprove = async () => {
-    const type = selectedEntityType();
-    if (!type) {
-      toast({ title: "Error", description: "Cannot bulk approve mixed entity types", variant: "destructive" });
+  const handleReject = async () => {
+    if (!selectedDispatch || !rejectionReason.trim()) {
+      toast({ title: "Validation Error", description: "Please provide a rejection reason", variant: "destructive" });
       return;
     }
-    await bulkApprove(type, [...selectedIds], "approve");
-    setSelectedIds(new Set());
-    loadData();
-  };
+    setProcessing(true);
+    try {
+      const { error } = await supabase
+        .from("dispatches")
+        .update({ approval_status: "rejected", rejection_reason: rejectionReason })
+        .eq("id", selectedDispatch.id);
+      if (error) throw error;
 
-  const handleBulkReject = async () => {
-    const type = selectedEntityType();
-    if (!type) {
-      toast({ title: "Error", description: "Cannot bulk reject mixed entity types", variant: "destructive" });
-      return;
+      await logChange({
+        table_name: "dispatches",
+        record_id: selectedDispatch.id,
+        action: "update",
+        old_data: { approval_status: "pending" },
+        new_data: { approval_status: "rejected", rejection_reason: rejectionReason },
+      });
+
+      toast({ title: "Dispatch Rejected", description: `${selectedDispatch.dispatch_number} has been rejected.` });
+      setIsRejectOpen(false);
+      setIsDetailOpen(false);
+      setRejectionReason("");
+      fetchDispatches();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to reject", variant: "destructive" });
+    } finally {
+      setProcessing(false);
     }
-    await bulkApprove(type, [...selectedIds], "reject", rejectReason);
-    setSelectedIds(new Set());
-    setRejectDialogOpen(false);
-    setRejectReason("");
-    loadData();
   };
-
-  const handleApproveEdit = async (editReq: EditRequest) => {
-    await approveEditRequest(editReq.id);
-    setEditDetailDialog(null);
-    loadData();
-  };
-
-  const handleRejectEdit = async (editReq: EditRequest) => {
-    await rejectEditRequest(editReq.id, editRejectReason);
-    setEditDetailDialog(null);
-    setEditRejectReason("");
-    loadData();
-  };
-
-  const selectedTotal = filteredApprovals
-    .filter((a) => selectedIds.has(a.entity_id))
-    .length;
-
-  const pendingCount = approvals.length;
-  const editCount = editRequests.length;
-  const approvedToday = allApprovals.filter(
-    (a) => a.status === "approved" && new Date(a.updated_at).toDateString() === new Date().toDateString()
-  ).length;
-  const rejectedToday = allApprovals.filter(
-    (a) => a.status === "rejected" && new Date(a.updated_at).toDateString() === new Date().toDateString()
-  ).length;
 
   return (
-    <DashboardLayout title="Approval Center" subtitle="Centralized approval engine for all enterprise workflows">
+    <DashboardLayout
+      title="Dispatch Approval Center"
+      subtitle="Review and approve dispatches submitted by operations team"
+    >
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         {[
-          { label: "Pending Approvals", value: pendingCount, icon: Clock, color: "bg-warning/10 text-warning" },
-          { label: "Edit Requests", value: editCount, icon: AlertTriangle, color: "bg-orange-500/10 text-orange-500" },
-          { label: "Approved Today", value: approvedToday, icon: CheckCircle, color: "bg-success/10 text-success" },
-          { label: "Rejected Today", value: rejectedToday, icon: XCircle, color: "bg-destructive/10 text-destructive" },
+          { label: "Pending Approval", value: pending.length, icon: Clock, color: "bg-warning/10 text-warning" },
+          { label: "Approved", value: approved.length, icon: CheckCircle, color: "bg-success/10 text-success" },
+          { label: "Rejected", value: rejected.length, icon: XCircle, color: "bg-destructive/10 text-destructive" },
         ].map((stat, i) => (
           <motion.div
             key={stat.label}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.05 }}
+            className="glass-card p-4 flex items-center gap-4"
           >
-            <Card>
-              <CardContent className="p-4 flex items-center gap-4">
-                <div className={`w-10 h-10 rounded-lg ${stat.color} flex items-center justify-center`}>
-                  <stat.icon className="w-5 h-5" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{stat.value}</p>
-                  <p className="text-sm text-muted-foreground">{stat.label}</p>
-                </div>
-              </CardContent>
-            </Card>
+            <div className={`w-10 h-10 rounded-lg ${stat.color} flex items-center justify-center`}>
+              <stat.icon className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-2xl font-heading font-bold">{stat.value}</p>
+              <p className="text-sm text-muted-foreground">{stat.label}</p>
+            </div>
           </motion.div>
         ))}
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="pending">
-            Pending ({pendingCount})
-          </TabsTrigger>
-          <TabsTrigger value="edit_requests">
-            Edit Requests ({editCount})
-          </TabsTrigger>
-          <TabsTrigger value="history">History</TabsTrigger>
-        </TabsList>
+      {/* Filters */}
+      <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between mb-6">
+        <div className="flex gap-4 flex-1">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by dispatch number, route, or customer..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 bg-secondary/50 border-border/50"
+            />
+          </div>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-44 bg-secondary/50 border-border/50">
+              <SelectValue placeholder="Filter by status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All</SelectItem>
+              <SelectItem value="pending">Pending Approval</SelectItem>
+              <SelectItem value="approved">Approved</SelectItem>
+              <SelectItem value="rejected">Rejected</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <Button variant="outline" onClick={fetchDispatches}>
+          <RefreshCw className="w-4 h-4 mr-2" />
+          Refresh
+        </Button>
+      </div>
 
-        {/* PENDING APPROVALS TAB */}
-        <TabsContent value="pending">
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                <div>
-                  <CardTitle>Pending Approvals</CardTitle>
-                  <CardDescription>Select items to approve or reject in bulk</CardDescription>
-                </div>
-                <div className="flex gap-2 flex-wrap">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-10 w-48"
-                    />
-                  </div>
-                  <Select value={entityFilter} onValueChange={setEntityFilter}>
-                    <SelectTrigger className="w-40">
-                      <SelectValue placeholder="All types" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Types</SelectItem>
-                      {Object.entries(entityTypeConfig).map(([key, cfg]) => (
-                        <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button variant="outline" size="icon" onClick={loadData}>
-                    <RefreshCw className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
+      {/* Table */}
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+        </div>
+      ) : filteredDispatches.length === 0 ? (
+        <div className="text-center py-16">
+          <Package className="w-12 h-12 text-muted-foreground/50 mx-auto mb-3" />
+          <p className="text-muted-foreground">No dispatches to review</p>
+          <p className="text-sm text-muted-foreground/60 mt-1">
+            Dispatches appear here after being submitted for approval from the Dispatch page
+          </p>
+        </div>
+      ) : (
+        <div className="glass-card overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Dispatch #</TableHead>
+                <TableHead>Customer</TableHead>
+                <TableHead>Route</TableHead>
+                <TableHead>Priority</TableHead>
+                <TableHead>Vehicle / Driver</TableHead>
+                <TableHead>Submitted</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredDispatches.map((dispatch) => {
+                const priority = priorityConfig[dispatch.priority] || priorityConfig.normal;
+                const isApproved = dispatch.approval_status === "approved";
+                const isRejected = dispatch.approval_status === "rejected";
 
-              {/* Bulk action bar */}
-              {selectedIds.size > 0 && (
-                <div className="mt-4 p-3 rounded-lg bg-primary/5 border border-primary/20 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <CheckCheck className="w-5 h-5 text-primary" />
-                    <span className="font-medium">{selectedTotal} items selected</span>
-                    {selectedEntityType() && (
-                      <Badge variant="outline">{entityTypeConfig[selectedEntityType()!]?.label}</Badge>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" onClick={handleBulkApprove} disabled={loading || !selectedEntityType()}>
-                      <CheckCircle className="w-4 h-4 mr-1" />
-                      Approve All
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => setRejectDialogOpen(true)}
-                      disabled={loading || !selectedEntityType()}
-                    >
-                      <XCircle className="w-4 h-4 mr-1" />
-                      Reject All
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {!selectedEntityType() && selectedIds.size > 0 && (
-                <div className="mt-2 p-2 rounded bg-destructive/10 text-destructive text-sm flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4" />
-                  Cannot bulk approve mixed entity types. Filter by type first.
-                </div>
-              )}
-            </CardHeader>
-            <CardContent>
-              {fetchLoading ? (
-                <div className="flex justify-center py-12">
-                  <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-                </div>
-              ) : filteredApprovals.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <CheckCircle className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                  <p>No pending approvals</p>
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-12">
-                        <Checkbox
-                          checked={selectedIds.size === filteredApprovals.length && filteredApprovals.length > 0}
-                          onCheckedChange={toggleSelectAll}
-                        />
-                      </TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Entity ID</TableHead>
-                      <TableHead>Level</TableHead>
-                      <TableHead>Requested</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredApprovals.map((approval) => {
-                      const cfg = entityTypeConfig[approval.entity_type] || { label: approval.entity_type, icon: FileText, color: "text-muted-foreground" };
-                      const Icon = cfg.icon;
-                      return (
-                        <TableRow key={approval.id}>
-                          <TableCell>
-                            <Checkbox
-                              checked={selectedIds.has(approval.entity_id)}
-                              onCheckedChange={() => toggleSelect(approval.entity_id)}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Icon className={`w-4 h-4 ${cfg.color}`} />
-                              <span>{cfg.label}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="font-mono text-xs">{approval.entity_id.slice(0, 8)}...</TableCell>
-                          <TableCell>
-                            <Badge variant="outline">Level {approval.approval_level}</Badge>
-                          </TableCell>
-                          <TableCell className="text-muted-foreground text-sm">
-                            {format(new Date(approval.created_at), "dd MMM yyyy HH:mm")}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex gap-1 justify-end">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={async () => {
-                                  await bulkApprove(approval.entity_type, [approval.entity_id], "approve");
-                                  loadData();
-                                }}
-                                disabled={loading}
-                              >
-                                <CheckCircle className="w-4 h-4 text-success" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={async () => {
-                                  await bulkApprove(approval.entity_type, [approval.entity_id], "reject", "Rejected individually");
-                                  loadData();
-                                }}
-                                disabled={loading}
-                              >
-                                <XCircle className="w-4 h-4 text-destructive" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* EDIT REQUESTS TAB */}
-        <TabsContent value="edit_requests">
-          <Card>
-            <CardHeader>
-              <CardTitle>Post-Approval Edit Requests</CardTitle>
-              <CardDescription>
-                {isSuperAdmin
-                  ? "Review and approve post-approval modifications"
-                  : "Only Super Admin can approve post-approval edits"}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {editRequests.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <Shield className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                  <p>No pending edit requests</p>
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Entity ID</TableHead>
-                      <TableHead>Changed Fields</TableHead>
-                      <TableHead>Reason</TableHead>
-                      <TableHead>Requested</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {editRequests.map((er) => {
-                      const cfg = entityTypeConfig[er.entity_type] || { label: er.entity_type, icon: FileText, color: "text-muted-foreground" };
-                      return (
-                        <TableRow key={er.id}>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <cfg.icon className={`w-4 h-4 ${cfg.color}`} />
-                              {cfg.label}
-                            </div>
-                          </TableCell>
-                          <TableCell className="font-mono text-xs">{er.entity_id.slice(0, 8)}...</TableCell>
-                          <TableCell>
-                            <div className="flex gap-1 flex-wrap">
-                              {(er.changed_fields || []).map((f) => (
-                                <Badge key={f} variant="secondary" className="text-xs">{f}</Badge>
-                              ))}
-                            </div>
-                          </TableCell>
-                          <TableCell className="max-w-[200px] truncate">{er.reason}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
-                            {format(new Date(er.created_at), "dd MMM HH:mm")}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => setEditDetailDialog(er)}
-                            >
-                              <Eye className="w-4 h-4 mr-1" />
-                              Review
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* HISTORY TAB */}
-        <TabsContent value="history">
-          <Card>
-            <CardHeader>
-              <CardTitle>Approval History</CardTitle>
-              <CardDescription>Complete audit trail of all approval actions</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Entity ID</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Override</TableHead>
-                    <TableHead>Date</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {allApprovals.map((a) => {
-                    const cfg = entityTypeConfig[a.entity_type] || { label: a.entity_type, icon: FileText, color: "text-muted-foreground" };
-                    return (
-                      <TableRow key={a.id}>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <cfg.icon className={`w-4 h-4 ${cfg.color}`} />
-                            {cfg.label}
+                return (
+                  <TableRow key={dispatch.id}>
+                    <TableCell className="font-medium">{dispatch.dispatch_number}</TableCell>
+                    <TableCell>{dispatch.customers?.company_name || "-"}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1 text-sm text-muted-foreground max-w-[200px]">
+                        <MapPin className="w-3 h-3 shrink-0" />
+                        <span className="truncate">
+                          {dispatch.pickup_address.split(",")[0]} → {dispatch.delivery_address.split(",")[0]}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={priority.className}>{priority.label}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm">
+                        {dispatch.vehicles?.registration_number && (
+                          <div className="flex items-center gap-1 text-muted-foreground">
+                            <Truck className="w-3 h-3" />
+                            {dispatch.vehicles.registration_number}
                           </div>
-                        </TableCell>
-                        <TableCell className="font-mono text-xs">{a.entity_id.slice(0, 8)}...</TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={a.status === "approved" ? "default" : a.status === "rejected" ? "destructive" : "secondary"}
-                          >
-                            {a.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {a.super_admin_override && (
-                            <Badge variant="outline" className="text-xs">
-                              <Shield className="w-3 h-3 mr-1" />
-                              Override
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {format(new Date(a.created_at), "dd MMM yyyy HH:mm")}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                  {allApprovals.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                        No approval history yet
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+                        )}
+                        {dispatch.drivers?.full_name && (
+                          <div className="text-xs text-muted-foreground/70">{dispatch.drivers.full_name}</div>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {format(new Date(dispatch.created_at), "dd MMM yyyy")}
+                    </TableCell>
+                    <TableCell>
+                      {isApproved && (
+                        <Badge className="bg-success/15 text-success">
+                          <CheckCircle className="w-3 h-3 mr-1" />Approved
+                        </Badge>
+                      )}
+                      {isRejected && (
+                        <Badge className="bg-destructive/15 text-destructive">
+                          <XCircle className="w-3 h-3 mr-1" />Rejected
+                        </Badge>
+                      )}
+                      {!isApproved && !isRejected && (
+                        <Badge className="bg-warning/15 text-warning">
+                          <Clock className="w-3 h-3 mr-1" />Pending
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => { setSelectedDispatch(dispatch); setIsDetailOpen(true); }}
+                      >
+                        <Eye className="w-4 h-4 mr-1" />
+                        Review
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
-      {/* Bulk Reject Dialog */}
-      <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
-        <DialogContent>
+      {/* Detail Dialog */}
+      <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
+        <DialogContent className="sm:max-w-[580px]">
           <DialogHeader>
-            <DialogTitle>Bulk Reject</DialogTitle>
-            <DialogDescription>Provide a reason for rejecting {selectedIds.size} items</DialogDescription>
-          </DialogHeader>
-          <Textarea
-            placeholder="Reason for rejection..."
-            value={rejectReason}
-            onChange={(e) => setRejectReason(e.target.value)}
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRejectDialogOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleBulkReject} disabled={loading || !rejectReason.trim()}>
-              Reject {selectedIds.size} Items
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Request Detail Dialog */}
-      <Dialog open={!!editDetailDialog} onOpenChange={() => setEditDetailDialog(null)}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
-            <DialogTitle>Edit Request Review</DialogTitle>
+            <DialogTitle className="font-heading">
+              Dispatch Review — {selectedDispatch?.dispatch_number}
+            </DialogTitle>
             <DialogDescription>
-              Compare original vs modified data. Only Super Admin can approve.
+              Review dispatch details before approving or rejecting
             </DialogDescription>
           </DialogHeader>
-          {editDetailDialog && (
-            <div className="space-y-4">
-              <div className="p-3 rounded-lg bg-destructive/5 border border-destructive/20">
-                <div className="flex items-center gap-2 text-destructive mb-2">
-                  <AlertTriangle className="w-4 h-4" />
-                  <span className="font-medium text-sm">Post-Approval Edit - Requires Super Admin</span>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Approving will reverse original journal entries and repost corrected entries.
-                </p>
-              </div>
 
+          {selectedDispatch && (
+            <div className="space-y-5 py-3">
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground mb-2">Original Data</p>
-                  <pre className="text-xs bg-muted p-3 rounded overflow-auto max-h-48">
-                    {JSON.stringify(editDetailDialog.original_data, null, 2)}
-                  </pre>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Customer</p>
+                  <p className="font-medium">{selectedDispatch.customers?.company_name || "-"}</p>
                 </div>
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground mb-2">Modified Data</p>
-                  <pre className="text-xs bg-muted p-3 rounded overflow-auto max-h-48">
-                    {JSON.stringify(editDetailDialog.modified_data, null, 2)}
-                  </pre>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">Priority</p>
+                  <Badge className={priorityConfig[selectedDispatch.priority]?.className}>
+                    {priorityConfig[selectedDispatch.priority]?.label || selectedDispatch.priority}
+                  </Badge>
                 </div>
+                <div className="col-span-2 space-y-1">
+                  <p className="text-xs text-muted-foreground">Route</p>
+                  <div className="flex items-center gap-2 text-sm">
+                    <MapPin className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    <span>{selectedDispatch.pickup_address}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
+                    <span>{selectedDispatch.delivery_address}</span>
+                  </div>
+                </div>
+                {selectedDispatch.cargo_description && (
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">Cargo</p>
+                    <p className="text-sm">{selectedDispatch.cargo_description}</p>
+                  </div>
+                )}
+                {selectedDispatch.cargo_weight_kg && (
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">Weight</p>
+                    <p className="text-sm">{selectedDispatch.cargo_weight_kg.toLocaleString()} kg</p>
+                  </div>
+                )}
+                {selectedDispatch.distance_km && (
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">Distance</p>
+                    <p className="text-sm">{selectedDispatch.distance_km} km</p>
+                  </div>
+                )}
+                {selectedDispatch.scheduled_pickup && (
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">Scheduled Pickup</p>
+                    <p className="text-sm">{format(new Date(selectedDispatch.scheduled_pickup), "dd MMM yyyy HH:mm")}</p>
+                  </div>
+                )}
+                {selectedDispatch.vehicles && (
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">Vehicle</p>
+                    <p className="text-sm">{selectedDispatch.vehicles.registration_number} · {selectedDispatch.vehicles.vehicle_type}</p>
+                  </div>
+                )}
+                {selectedDispatch.drivers && (
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">Driver</p>
+                    <p className="text-sm">{selectedDispatch.drivers.full_name}</p>
+                  </div>
+                )}
               </div>
 
-              <div>
-                <p className="text-xs text-muted-foreground">Changed Fields</p>
-                <div className="flex gap-1 mt-1 flex-wrap">
-                  {(editDetailDialog.changed_fields || []).map((f) => (
-                    <Badge key={f} variant="secondary">{f}</Badge>
-                  ))}
-                </div>
-              </div>
-
-              {editDetailDialog.reason && (
-                <div>
-                  <p className="text-xs text-muted-foreground">Reason</p>
-                  <p className="text-sm mt-1">{editDetailDialog.reason}</p>
+              {selectedDispatch.approval_status === "rejected" && selectedDispatch.rejection_reason && (
+                <div className="p-3 bg-destructive/10 rounded-lg border border-destructive/20">
+                  <p className="text-xs text-destructive mb-1">Rejection Reason</p>
+                  <p className="text-sm">{selectedDispatch.rejection_reason}</p>
                 </div>
               )}
 
-              {isSuperAdmin && (
-                <div className="space-y-2">
-                  <Textarea
-                    placeholder="Rejection reason (required to reject)..."
-                    value={editRejectReason}
-                    onChange={(e) => setEditRejectReason(e.target.value)}
-                  />
+              {selectedDispatch.approved_at && (
+                <div className="p-3 bg-success/10 rounded-lg border border-success/20">
+                  <p className="text-xs text-success mb-1">Approved</p>
+                  <p className="text-sm">{format(new Date(selectedDispatch.approved_at), "dd MMM yyyy HH:mm")}</p>
                 </div>
               )}
             </div>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditDetailDialog(null)}>Close</Button>
-            {isSuperAdmin && editDetailDialog && (
+
+          <DialogFooter className="gap-2">
+            {selectedDispatch?.approval_status === "pending" && canApprove && (
               <>
-                <Button
-                  variant="destructive"
-                  onClick={() => handleRejectEdit(editDetailDialog)}
-                  disabled={loading || !editRejectReason.trim()}
-                >
-                  Reject Edit
+                <Button variant="destructive" onClick={() => setIsRejectOpen(true)} disabled={processing}>
+                  <XCircle className="w-4 h-4 mr-2" />Reject
                 </Button>
-                <Button onClick={() => handleApproveEdit(editDetailDialog)} disabled={loading}>
-                  <CheckCircle className="w-4 h-4 mr-1" />
-                  Approve & Apply
+                <Button
+                  className="bg-success hover:bg-success/90"
+                  onClick={() => handleApprove(selectedDispatch!)}
+                  disabled={processing}
+                >
+                  <CheckCheck className="w-4 h-4 mr-2" />
+                  {processing ? "Processing..." : "Approve Dispatch"}
                 </Button>
               </>
             )}
+            {(selectedDispatch?.approval_status === "approved" || selectedDispatch?.approval_status === "rejected") && (
+              <Button variant="outline" onClick={() => setIsDetailOpen(false)}>Close</Button>
+            )}
+            {selectedDispatch?.approval_status === "pending" && !canApprove && (
+              <>
+                <p className="text-sm text-muted-foreground self-center flex-1">You don't have permission to approve dispatches</p>
+                <Button variant="outline" onClick={() => setIsDetailOpen(false)}>Close</Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reject Dialog */}
+      <Dialog open={isRejectOpen} onOpenChange={setIsRejectOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject Dispatch</DialogTitle>
+            <DialogDescription>Provide a reason for rejecting this dispatch</DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={rejectionReason}
+            onChange={(e) => setRejectionReason(e.target.value)}
+            placeholder="Enter rejection reason..."
+            rows={4}
+            className="bg-secondary/50"
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsRejectOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleReject} disabled={processing || !rejectionReason.trim()}>
+              {processing ? "Rejecting..." : "Confirm Rejection"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

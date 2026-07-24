@@ -34,7 +34,7 @@ const LD_NAV: ZazaNavItem[] = [
   { name: "Exception Management", path: "/dept/exceptions", description: "Delivery exceptions queue.", roles: ["super_admin", "org_admin", "ops_manager", "support"] },
   { name: "Tracking", path: "/tracking", description: "Live shipment tracking.", roles: ["super_admin", "org_admin", "ops_manager", "support", "dispatcher"] },
   { name: "Fleet Command", path: "/fleet-command", description: "Real-time fleet command.", roles: ["super_admin", "org_admin", "ops_manager"] },
-  { name: "Approval Center", path: "/approval-center", description: "Cross-domain approvals.", roles: ["super_admin", "org_admin", "finance_manager", "ops_manager"] },
+  { name: "Dispatch Approval Center", path: "/approval-center", description: "Review and approve submitted dispatches.", roles: ["super_admin", "org_admin", "finance_manager", "ops_manager"] },
 
   // Fleet & Drivers
   { name: "Fleet", path: "/fleet", description: "Vehicle roster.", roles: ["super_admin", "org_admin", "ops_manager"] },

@@ -19,7 +19,7 @@ const routeLabels: Record<string, string> = {
   "payroll": "Payroll",
   "driver-payroll": "Driver Payroll",
   "driver-bonuses": "Driver Bonuses",
-  "approval-center": "Approval Center",
+  "approval-center": "Dispatch Approval Center",
   "invoice-approvals": "Invoice Approvals",
   "trip-rate-config": "Trip Rate Config",
   "staff": "Staff",

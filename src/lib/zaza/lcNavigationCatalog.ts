@@ -114,7 +114,7 @@ const LC_NAV: ZazaNavItem[] = [
   { name: "Admin Governance", path: "/admin-governance", description: "Admin governance.", roles: ["admin", "super_admin", "org_admin"] },
   { name: "Operations Governance", path: "/governance-control", description: "Operations governance.", roles: ["admin", "super_admin"] },
   { name: "Decision Center", path: "/decision-center", description: "Decision center.", roles: ["admin", "super_admin", "ops_manager"] },
-  { name: "Approval Center", path: "/approval-center", description: "Approval center.", roles: ["admin", "super_admin", "org_admin", "finance_manager", "ops_manager"] },
+  { name: "Dispatch Approval Center", path: "/approval-center", description: "Review and approve submitted dispatches.", roles: ["admin", "super_admin", "org_admin", "finance_manager", "ops_manager"] },
   { name: "Security Center", path: "/security-center", description: "Security center.", roles: ["admin", "super_admin"] },
   { name: "Invoice Approvals", path: "/invoice-approvals", description: "Invoice approvals queue.", roles: ["admin", "super_admin", "org_admin"] },
   { name: "Trip Rate Config", path: "/trip-rate-config", description: "Trip rate configuration.", roles: ["admin", "super_admin", "org_admin"] },
