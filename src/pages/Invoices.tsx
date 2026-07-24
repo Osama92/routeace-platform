@@ -52,6 +52,7 @@ import {
   Pencil,
   Trash2,
   RefreshCw,
+  SendHorizonal,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -69,6 +70,7 @@ interface Invoice {
   tax_amount: number;
   total_amount: number;
   status: string;
+  approval_status: string | null;
   due_date: string | null;
   paid_date: string | null;
   notes: string | null;
@@ -160,6 +162,20 @@ const InvoicesPage = () => {
       fetchInvoices();
     } catch (error: any) {
       toast({ title: "Error", description: error.message || "Failed to delete invoice", variant: "destructive" });
+    }
+  };
+
+  const submitForApproval = async (invoice: Invoice) => {
+    try {
+      const { error } = await supabase
+        .from("invoices")
+        .update({ approval_status: "pending_first_approval" })
+        .eq("id", invoice.id);
+      if (error) throw error;
+      toast({ title: "Submitted for Approval", description: `${invoice.invoice_number} is now awaiting first approval.` });
+      fetchInvoices();
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to submit for approval", variant: "destructive" });
     }
   };
 
@@ -412,6 +428,18 @@ const InvoicesPage = () => {
                               >
                                 <Pencil className="w-3.5 h-3.5" />
                                 Edit
+                              </Button>
+                            )}
+                            {canManage && (!invoice.approval_status || invoice.approval_status === "draft" || invoice.approval_status === "rejected") && invoice.status !== "paid" && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 px-2.5 gap-1.5 text-xs font-medium text-blue-600 border-blue-400/40 hover:bg-blue-50 dark:hover:bg-blue-950/30"
+                                onClick={() => submitForApproval(invoice)}
+                                title="Submit for Approval"
+                              >
+                                <SendHorizonal className="w-3.5 h-3.5" />
+                                Submit
                               </Button>
                             )}
                             <DropdownMenu>
