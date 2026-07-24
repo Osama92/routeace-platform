@@ -17,7 +17,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  DollarSign, TrendingUp, TrendingDown, BookOpen, Plus, Search, RefreshCw, CreditCard,
+  DollarSign, TrendingUp, TrendingDown, BookOpen, Search, RefreshCw, CreditCard, FileText, Receipt,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -39,13 +39,13 @@ const statusBadge = (status: string) => {
 };
 
 const AccountsLedger = () => {
-  const [arEntries, setArEntries] = useState<any[]>([]);
-  const [apEntries, setApEntries] = useState<any[]>([]);
+  const [invoices, setInvoices] = useState<any[]>([]);
+  const [bills, setBills] = useState<any[]>([]);
   const [ledgerEntries, setLedgerEntries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [paymentDialog, setPaymentDialog] = useState(false);
-  const [selectedAr, setSelectedAr] = useState<any>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("bank_transfer");
   const [paymentRef, setPaymentRef] = useState("");
@@ -56,12 +56,13 @@ const AccountsLedger = () => {
   const fetchData = async () => {
     if (!organizationId) { setLoading(false); return; }
     setLoading(true);
-    const [arRes, apRes, ledgerRes] = await Promise.all([
-      supabase.from("accounts_receivable")
-        .select("*, invoices(invoice_number, customers(company_name))")
+    const [invRes, billsRes, ledgerRes] = await Promise.all([
+      supabase.from("invoices")
+        .select("*, customers(company_name)")
         .eq("organization_id", organizationId)
+        .neq("status", "draft")
         .order("created_at", { ascending: false }),
-      supabase.from("accounts_payable")
+      supabase.from("bills")
         .select("*")
         .eq("organization_id", organizationId)
         .order("created_at", { ascending: false }),
@@ -70,79 +71,66 @@ const AccountsLedger = () => {
         .eq("organization_id", organizationId)
         .order("entry_date", { ascending: false }).limit(100),
     ]);
-    setArEntries(arRes.data || []);
-    setApEntries(apRes.data || []);
+    setInvoices(invRes.data || []);
+    setBills(billsRes.data || []);
     setLedgerEntries(ledgerRes.data || []);
     setLoading(false);
   };
 
   useEffect(() => { if (organizationId) fetchData(); }, [organizationId]);
 
+  // AR = Invoices — money owed TO us by customers
   const arTotals = {
-    total: arEntries.reduce((s, e) => s + e.amount_due, 0),
-    paid: arEntries.filter((e) => e.status === "paid").reduce((s, e) => s + e.amount_paid, 0),
-    outstanding: arEntries.filter((e) => e.status !== "paid" && e.status !== "cancelled").reduce((s, e) => s + e.balance, 0),
+    total: invoices.reduce((s, i) => s + (i.total_amount || 0), 0),
+    collected: invoices.filter(i => i.status === "paid").reduce((s, i) => s + (i.total_amount || 0), 0),
+    outstanding: invoices.filter(i => !["paid", "cancelled"].includes(i.status)).reduce((s, i) => s + (i.total_amount || 0), 0),
   };
 
+  // AP = Bills — money we owe TO vendors
   const apTotals = {
-    total: apEntries.reduce((s, e) => s + e.amount_due, 0),
-    paid: apEntries.filter((e) => e.status === "paid").reduce((s, e) => s + e.amount_paid, 0),
-    outstanding: apEntries.filter((e) => e.status !== "paid" && e.status !== "cancelled").reduce((s, e) => s + e.balance, 0),
+    total: bills.reduce((s, b) => s + (b.total_amount || b.amount || 0), 0),
+    paid: bills.filter(b => b.payment_status === "paid").reduce((s, b) => s + (b.total_amount || b.amount || 0), 0),
+    outstanding: bills.filter(b => b.payment_status !== "paid").reduce((s, b) => s + (b.total_amount || b.amount || 0), 0),
   };
+
+  const arFiltered = invoices.filter(i =>
+    !searchQuery ||
+    i.invoice_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    i.customers?.company_name?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const apFiltered = bills.filter(b =>
+    !searchQuery ||
+    b.bill_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    b.vendor_name?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   const handleRecordPayment = async () => {
-    if (!selectedAr || !paymentAmount) return;
+    if (!selectedInvoice || !paymentAmount) return;
     setProcessing(true);
     try {
       const amount = parseFloat(paymentAmount);
-      if (amount <= 0 || amount > selectedAr.balance) {
-        toast({ title: "Invalid Amount", description: "Amount must be > 0 and ≤ balance due", variant: "destructive" });
+      if (amount <= 0) {
+        toast({ title: "Invalid Amount", description: "Amount must be greater than 0", variant: "destructive" });
         setProcessing(false);
         return;
       }
-
-      // Insert payment record
-      await supabase.from("ar_payments").insert({
-        ar_id: selectedAr.id,
-        invoice_id: selectedAr.invoice_id,
-        amount,
-        payment_method: paymentMethod,
-        payment_reference: paymentRef || null,
-        recorded_by: user?.id,
-      });
-
-      const newPaid = selectedAr.amount_paid + amount;
-      const newBalance = selectedAr.amount_due - newPaid;
-      const newStatus = newBalance <= 0 ? "paid" : "partial";
-
-      // Update AR
-      await supabase.from("accounts_receivable").update({
-        amount_paid: newPaid,
-        balance: Math.max(0, newBalance),
-        status: newStatus,
-      }).eq("id", selectedAr.id);
-
-      // Update invoice
-      if (selectedAr.invoice_id) {
-        const invStatus = newBalance <= 0 ? "paid" : "partially_paid";
-        const updateData: Record<string, unknown> = {
-          amount_paid: newPaid,
-          balance_due: Math.max(0, newBalance),
-          status: invStatus,
-          status_updated_at: new Date().toISOString(),
-        };
-        if (invStatus === "paid") updateData.paid_date = new Date().toISOString();
-        await supabase.from("invoices").update(updateData).eq("id", selectedAr.invoice_id);
-      }
+      const updateData: Record<string, unknown> = {
+        status: "paid",
+        paid_date: new Date().toISOString(),
+        status_updated_at: new Date().toISOString(),
+      };
+      const { error } = await supabase.from("invoices").update(updateData).eq("id", selectedInvoice.id);
+      if (error) throw error;
 
       // Double-entry: Dr Cash, Cr AR
       const entryDate = new Date().toISOString().split("T")[0];
       await supabase.from("accounting_ledger").insert([
-        { entry_date: entryDate, reference_type: "payment", reference_id: selectedAr.invoice_id, account_name: "cash", account_type: "asset", debit: amount, description: `Payment received - ${paymentRef || "cash"}`, posted_by: user?.id },
-        { entry_date: entryDate, reference_type: "payment", reference_id: selectedAr.invoice_id, account_name: "accounts_receivable", account_type: "asset", credit: amount, description: `Payment received - ${paymentRef || "cash"}`, posted_by: user?.id },
+        { organization_id: organizationId, entry_date: entryDate, reference_type: "payment", reference_id: selectedInvoice.id, account_name: "cash", account_type: "asset", debit: amount, description: `Payment received - ${selectedInvoice.invoice_number} - ${paymentRef || paymentMethod}`, posted_by: user?.id },
+        { organization_id: organizationId, entry_date: entryDate, reference_type: "payment", reference_id: selectedInvoice.id, account_name: "accounts_receivable", account_type: "asset", credit: amount, description: `Payment received - ${selectedInvoice.invoice_number} - ${paymentRef || paymentMethod}`, posted_by: user?.id },
       ]);
 
-      toast({ title: "Payment Recorded", description: `${formatCurrency(amount)} recorded against ${selectedAr.invoices?.invoice_number || "invoice"}` });
+      toast({ title: "Payment Recorded", description: `${formatCurrency(amount)} recorded for ${selectedInvoice.invoice_number}` });
       setPaymentDialog(false);
       setPaymentAmount("");
       setPaymentRef("");
@@ -154,13 +142,24 @@ const AccountsLedger = () => {
     }
   };
 
+  const invoiceStatusLabel = (status: string) => {
+    const map: Record<string, string> = {
+      paid: "bg-success/15 text-success",
+      pending: "bg-warning/15 text-warning",
+      overdue: "bg-destructive/15 text-destructive",
+      partially_paid: "bg-info/15 text-info",
+      cancelled: "bg-muted text-muted-foreground",
+    };
+    return <Badge className={map[status] || map.pending}>{status.replace(/_/g, " ").toUpperCase()}</Badge>;
+  };
+
   return (
     <DashboardLayout title="Accounts & Ledger" subtitle="AR/AP tracking with double-entry accounting">
       {/* Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         {[
           { label: "Total Receivable", value: formatCurrency(arTotals.total), icon: TrendingUp, color: "bg-primary/20 text-primary" },
-          { label: "AR Collected", value: formatCurrency(arTotals.paid), icon: DollarSign, color: "bg-success/20 text-success" },
+          { label: "AR Collected", value: formatCurrency(arTotals.collected), icon: DollarSign, color: "bg-success/20 text-success" },
           { label: "AR Outstanding", value: formatCurrency(arTotals.outstanding), icon: TrendingDown, color: "bg-warning/20 text-warning" },
           { label: "AP Outstanding", value: formatCurrency(apTotals.outstanding), icon: BookOpen, color: "bg-destructive/20 text-destructive" },
         ].map((stat, i) => (
@@ -179,8 +178,14 @@ const AccountsLedger = () => {
       <Tabs defaultValue="ar" className="space-y-6">
         <div className="flex items-center justify-between">
           <TabsList className="bg-secondary/50">
-            <TabsTrigger value="ar">Accounts Receivable</TabsTrigger>
-            <TabsTrigger value="ap">Accounts Payable</TabsTrigger>
+            <TabsTrigger value="ar">
+              <FileText className="w-3.5 h-3.5 mr-1.5" />
+              Accounts Receivable
+            </TabsTrigger>
+            <TabsTrigger value="ap">
+              <Receipt className="w-3.5 h-3.5 mr-1.5" />
+              Accounts Payable
+            </TabsTrigger>
             <TabsTrigger value="ledger">General Ledger</TabsTrigger>
           </TabsList>
           <div className="flex gap-2">
@@ -192,10 +197,16 @@ const AccountsLedger = () => {
           </div>
         </div>
 
-        {/* AR Tab */}
+        {/* AR Tab — Invoices (money owed TO us) */}
         <TabsContent value="ar">
           <Card className="glass-card border-border/50">
-            <CardHeader><CardTitle className="text-sm font-heading">Accounts Receivable</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle className="text-sm font-heading flex items-center gap-2">
+                <FileText className="w-4 h-4 text-primary" />
+                Accounts Receivable — Invoices
+                <span className="text-xs font-normal text-muted-foreground ml-1">Money owed to you by customers</span>
+              </CardTitle>
+            </CardHeader>
             <CardContent>
               {loading ? (
                 <div className="flex items-center justify-center py-12"><div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" /></div>
@@ -203,32 +214,30 @@ const AccountsLedger = () => {
                 <Table>
                   <TableHeader>
                     <TableRow className="border-border/50">
-                      <TableHead>Invoice</TableHead>
+                      <TableHead>Invoice #</TableHead>
                       <TableHead>Customer</TableHead>
-                      <TableHead className="text-right whitespace-nowrap min-w-[110px]">Amount Due</TableHead>
-                      <TableHead className="text-right whitespace-nowrap min-w-[100px]">Paid</TableHead>
-                      <TableHead className="text-right whitespace-nowrap min-w-[100px]">Balance</TableHead>
+                      <TableHead className="text-right whitespace-nowrap">Total Amount</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead className="whitespace-nowrap min-w-[100px]">Posted</TableHead>
+                      <TableHead className="whitespace-nowrap">Invoice Date</TableHead>
+                      <TableHead className="whitespace-nowrap">Due Date</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {arEntries.length === 0 ? (
-                      <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No AR entries. Post an invoice to create one.</TableCell></TableRow>
-                    ) : arEntries.map((entry) => (
-                      <TableRow key={entry.id} className="border-border/50">
-                        <TableCell className="font-medium">{entry.invoices?.invoice_number || "-"}</TableCell>
-                        <TableCell>{entry.invoices?.customers?.company_name || "-"}</TableCell>
-                        <TableCell className="text-right whitespace-nowrap tabular-nums">{formatCurrency(entry.amount_due)}</TableCell>
-                        <TableCell className="text-right text-success whitespace-nowrap tabular-nums">{formatCurrency(entry.amount_paid)}</TableCell>
-                        <TableCell className="text-right font-semibold whitespace-nowrap tabular-nums">{formatCurrency(entry.balance)}</TableCell>
-                        <TableCell>{statusBadge(entry.status)}</TableCell>
-                        <TableCell className="text-muted-foreground text-xs whitespace-nowrap">{format(new Date(entry.posting_date), "dd MMM yyyy")}</TableCell>
+                    {arFiltered.length === 0 ? (
+                      <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No invoices found</TableCell></TableRow>
+                    ) : arFiltered.map((inv) => (
+                      <TableRow key={inv.id} className="border-border/50">
+                        <TableCell className="font-medium">{inv.invoice_number}</TableCell>
+                        <TableCell>{inv.customers?.company_name || "-"}</TableCell>
+                        <TableCell className="text-right whitespace-nowrap tabular-nums font-semibold">{formatCurrency(inv.total_amount || 0)}</TableCell>
+                        <TableCell>{invoiceStatusLabel(inv.status)}</TableCell>
+                        <TableCell className="text-muted-foreground text-xs whitespace-nowrap">{format(new Date(inv.created_at), "dd MMM yyyy")}</TableCell>
+                        <TableCell className="text-muted-foreground text-xs whitespace-nowrap">{inv.due_date ? format(new Date(inv.due_date), "dd MMM yyyy") : "-"}</TableCell>
                         <TableCell className="text-right">
-                          {entry.status !== "paid" && entry.status !== "cancelled" && (
-                            <Button size="sm" variant="outline" onClick={() => { setSelectedAr(entry); setPaymentDialog(true); }}>
-                              <CreditCard className="w-3 h-3 mr-1" />Record Payment
+                          {!["paid", "cancelled"].includes(inv.status) && (
+                            <Button size="sm" variant="outline" onClick={() => { setSelectedInvoice(inv); setPaymentDialog(true); }}>
+                              <CreditCard className="w-3 h-3 mr-1" />Mark Paid
                             </Button>
                           )}
                         </TableCell>
@@ -241,41 +250,47 @@ const AccountsLedger = () => {
           </Card>
         </TabsContent>
 
-        {/* AP Tab */}
+        {/* AP Tab — Bills (money we owe) */}
         <TabsContent value="ap">
           <Card className="glass-card border-border/50">
-            <CardHeader><CardTitle className="text-sm font-heading">Accounts Payable</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle className="text-sm font-heading flex items-center gap-2">
+                <Receipt className="w-4 h-4 text-warning" />
+                Accounts Payable — Bills
+                <span className="text-xs font-normal text-muted-foreground ml-1">Money you owe to vendors/suppliers</span>
+              </CardTitle>
+            </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-border/50">
-                    <TableHead>Vendor</TableHead>
-                    <TableHead>Reference</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead className="text-right whitespace-nowrap min-w-[110px]">Amount Due</TableHead>
-                    <TableHead className="text-right whitespace-nowrap min-w-[100px]">Paid</TableHead>
-                    <TableHead className="text-right whitespace-nowrap min-w-[100px]">Balance</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="whitespace-nowrap min-w-[100px]">Due Date</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {apEntries.length === 0 ? (
-                    <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No AP entries yet</TableCell></TableRow>
-                  ) : apEntries.map((entry) => (
-                    <TableRow key={entry.id} className="border-border/50">
-                      <TableCell className="font-medium">{entry.vendor_name}</TableCell>
-                      <TableCell>{entry.reference_number || "-"}</TableCell>
-                      <TableCell>{entry.category || "-"}</TableCell>
-                      <TableCell className="text-right whitespace-nowrap tabular-nums">{formatCurrency(entry.amount_due)}</TableCell>
-                      <TableCell className="text-right text-success whitespace-nowrap tabular-nums">{formatCurrency(entry.amount_paid)}</TableCell>
-                      <TableCell className="text-right font-semibold whitespace-nowrap tabular-nums">{formatCurrency(entry.balance)}</TableCell>
-                      <TableCell>{statusBadge(entry.status)}</TableCell>
-                      <TableCell className="text-muted-foreground text-xs whitespace-nowrap">{entry.due_date ? format(new Date(entry.due_date), "dd MMM yyyy") : "-"}</TableCell>
+              {loading ? (
+                <div className="flex items-center justify-center py-12"><div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" /></div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-border/50">
+                      <TableHead>Bill #</TableHead>
+                      <TableHead>Vendor</TableHead>
+                      <TableHead className="text-right whitespace-nowrap">Total Amount</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="whitespace-nowrap">Bill Date</TableHead>
+                      <TableHead className="whitespace-nowrap">Due Date</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {apFiltered.length === 0 ? (
+                      <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No bills found</TableCell></TableRow>
+                    ) : apFiltered.map((bill) => (
+                      <TableRow key={bill.id} className="border-border/50">
+                        <TableCell className="font-medium">{bill.bill_number || "-"}</TableCell>
+                        <TableCell>{bill.vendor_name || "-"}</TableCell>
+                        <TableCell className="text-right whitespace-nowrap tabular-nums font-semibold">{formatCurrency(bill.total_amount || bill.amount || 0)}</TableCell>
+                        <TableCell>{statusBadge(bill.payment_status || "unpaid")}</TableCell>
+                        <TableCell className="text-muted-foreground text-xs whitespace-nowrap">{bill.bill_date ? format(new Date(bill.bill_date), "dd MMM yyyy") : "-"}</TableCell>
+                        <TableCell className="text-muted-foreground text-xs whitespace-nowrap">{bill.due_date ? format(new Date(bill.due_date), "dd MMM yyyy") : "-"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -298,7 +313,7 @@ const AccountsLedger = () => {
                 </TableHeader>
                 <TableBody>
                   {ledgerEntries.length === 0 ? (
-                    <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No ledger entries. Post an invoice to generate entries.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No ledger entries yet. Payments recorded here will appear in the ledger.</TableCell></TableRow>
                   ) : ledgerEntries.map((entry) => (
                     <TableRow key={entry.id} className="border-border/50">
                       <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{format(new Date(entry.entry_date), "dd MMM yyyy")}</TableCell>
@@ -320,15 +335,15 @@ const AccountsLedger = () => {
       <Dialog open={paymentDialog} onOpenChange={setPaymentDialog}>
         <DialogContent className="sm:max-w-[450px]">
           <DialogHeader>
-            <DialogTitle>Record Payment</DialogTitle>
+            <DialogTitle>Record Payment Received</DialogTitle>
             <DialogDescription>
-              Record payment for {selectedAr?.invoices?.invoice_number || "invoice"} - Balance: {selectedAr ? formatCurrency(selectedAr.balance) : ""}
+              Mark {selectedInvoice?.invoice_number} as paid — {selectedInvoice ? formatCurrency(selectedInvoice.total_amount) : ""}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Payment Amount *</Label>
-              <Input type="number" value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} placeholder="0.00" />
+              <Label>Amount Received *</Label>
+              <Input type="number" value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} placeholder={selectedInvoice ? String(selectedInvoice.total_amount) : "0.00"} />
             </div>
             <div className="space-y-2">
               <Label>Payment Method</Label>
@@ -345,7 +360,7 @@ const AccountsLedger = () => {
             </div>
             <div className="space-y-2">
               <Label>Reference Number</Label>
-              <Input value={paymentRef} onChange={(e) => setPaymentRef(e.target.value)} placeholder="Transaction reference" />
+              <Input value={paymentRef} onChange={(e) => setPaymentRef(e.target.value)} placeholder="Transaction reference (optional)" />
             </div>
           </div>
           <DialogFooter>
