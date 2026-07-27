@@ -58,12 +58,13 @@ serve(async (req) => {
       <p style="color:#888;font-size:12px;">Sent automatically by RouteAce.</p>
     `;
 
+    const fromAddress = Deno.env.get("RESEND_FROM_EMAIL") ?? "RouteAce <noreply@routeace.app>";
     let sent = false; let error: string | null = null;
     if (RESEND_KEY) {
       try {
         const resend = new Resend(RESEND_KEY);
         await resend.emails.send({
-          from: "RouteAce <onboarding@resend.dev>",
+          from: fromAddress,
           to: [t.contact_email],
           subject, html,
         });

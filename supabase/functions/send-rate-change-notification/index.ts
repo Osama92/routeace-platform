@@ -82,6 +82,7 @@ serve(async (req) => {
     console.log("Rate change notification payload:", payload);
 
     const resend = new Resend(resendApiKey);
+    const fromAddress = Deno.env.get("RESEND_FROM_EMAIL") ?? "RouteAce <noreply@routeace.app>";
     const serviceClient = createClient(supabaseUrl, serviceRoleKey);
 
     // Fetch active notification recipients
@@ -224,7 +225,7 @@ serve(async (req) => {
     for (const email of recipientEmails) {
       try {
         await resend.emails.send({
-          from: "RouteAce <onboarding@resend.dev>",
+          from: fromAddress,
           to: [email],
           subject,
           html: htmlBody,

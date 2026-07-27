@@ -41,7 +41,7 @@ async function sendResellerWelcomeEmail(opts: {
     const { Resend } = await import("https://esm.sh/resend@2.0.0");
     const resend = new Resend(resendApiKey);
     await resend.emails.send({
-      from: "RouteAce <onboarding@resend.dev>",
+      from: Deno.env.get("RESEND_FROM_EMAIL") ?? "RouteAce <noreply@routeace.app>",
       to: [opts.email],
       subject: `Your RouteAce organisation "${opts.orgName}" is ready`,
       html: `

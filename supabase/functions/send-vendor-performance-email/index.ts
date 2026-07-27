@@ -177,7 +177,7 @@ serve(async (req) => {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              from: "RouteAce <noreply@routeace.com>",
+              from: Deno.env.get("RESEND_FROM_EMAIL") ?? "RouteAce <noreply@routeace.app>",
               to: vendor.vendorEmail,
               subject: `Weekly Performance Report - Week ${currentWeek} | ${vendor.vendorName}`,
               html: emailHtml,

@@ -95,7 +95,7 @@ async function sendWelcomeEmail(opts: {
     const { Resend } = await import("https://esm.sh/resend@2.0.0");
     const resend = new Resend(resendApiKey);
     const result = await resend.emails.send({
-      from: "RouteAce <onboarding@resend.dev>",
+      from: Deno.env.get("RESEND_FROM_EMAIL") ?? "RouteAce <noreply@routeace.app>",
       to: [opts.email],
       subject: `Welcome to RouteAce - Your ${ROLE_LABELS[opts.role] ?? opts.role} account is ready`,
       html: `

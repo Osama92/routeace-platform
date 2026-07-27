@@ -102,6 +102,7 @@ serve(async (req) => {
     }
 
     const resend = new Resend(resendApiKey);
+    const fromAddress = Deno.env.get("RESEND_FROM_EMAIL") ?? "RouteAce <noreply@routeace.app>";
 
     const formatCurrency = (amount: number) => {
       return new Intl.NumberFormat("en-NG", {
@@ -179,7 +180,7 @@ serve(async (req) => {
 
     try {
       const emailResponse = await resend.emails.send({
-        from: "RouteAce <onboarding@resend.dev>",
+        from: fromAddress,
         to: [submitterEmail],
         subject,
         html: body,

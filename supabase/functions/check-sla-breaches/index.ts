@@ -95,7 +95,7 @@ async function sendBreachEmail(resend: Resend, breach: SLABreach, recipients: st
 
   try {
     const emailResponse = await resend.emails.send({
-      from: 'RouteAce <onboarding@resend.dev>',
+      from: Deno.env.get("RESEND_FROM_EMAIL") ?? "RouteAce <noreply@routeace.app>",
       to: recipients,
       subject: `🚨 [AUTO] SLA Breach: ${dispatchNumber} - ${breachTypeLabel}`,
       html: emailHtml,

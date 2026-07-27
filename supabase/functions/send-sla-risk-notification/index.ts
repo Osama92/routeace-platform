@@ -43,6 +43,7 @@ Deno.serve(async (req) => {
     }
 
     const resend = new Resend(resendApiKey);
+    const fromAddress = Deno.env.get("RESEND_FROM_EMAIL") ?? "RouteAce <noreply@routeace.app>";
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -137,7 +138,7 @@ Deno.serve(async (req) => {
 
     // Send email
     const emailResponse = await resend.emails.send({
-      from: "RouteAce <onboarding@resend.dev>",
+      from: fromAddress,
       to: [payload.customerEmail],
       subject: `📍 Delivery Update: ${payload.dispatchNumber} - ${payload.riskLevel.toUpperCase()} Risk Alert`,
       html: emailHtml,

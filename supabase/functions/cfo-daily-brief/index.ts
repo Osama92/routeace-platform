@@ -129,7 +129,7 @@ Deno.serve(async (req) => {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              from: "Routeace CFO <onboarding@resend.dev>",
+              from: Deno.env.get("RESEND_FROM_EMAIL") ?? "RouteAce <noreply@routeace.app>",
               to: [recipient],
               subject: `Daily CFO Brief - ${snap.date}`,
               html: buildEmail(snap),

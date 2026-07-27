@@ -26,12 +26,13 @@ interface DispatchPayload {
 async function sendEmail(to: string, subject: string, html: string) {
   const apiKey = Deno.env.get("RESEND_API_KEY");
   if (!apiKey) return { ok: false, error: "RESEND_API_KEY not set", skipped: true };
+  const fromAddress = Deno.env.get("RESEND_FROM_EMAIL") ?? "RouteAce <noreply@routeace.app>";
   try {
     const r = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        from: "RouteAce Alerts <onboarding@resend.dev>",
+        from: fromAddress,
         to: [to],
         subject,
         html,
