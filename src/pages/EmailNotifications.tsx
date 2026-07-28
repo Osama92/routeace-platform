@@ -125,12 +125,15 @@ const EmailNotificationsPage = () => {
   });
 
   const fetchData = async (page = 1) => {
-    if (!organizationId) return;
+    if (!organizationId) {
+      console.log("[EmailNotifications] fetchData skipped — no organizationId");
+      return;
+    }
     setLoading(true);
+    console.log("[EmailNotifications] fetchData start", { page, organizationId });
     try {
-      // Fetch a generous window from each source so we can merge and sort correctly.
-      // We over-fetch (page * PAGE_SIZE + PAGE_SIZE) so the merge stays accurate per page.
       const fetchLimit = page * PAGE_SIZE + PAGE_SIZE;
+      console.log("[EmailNotifications] fetchLimit", fetchLimit);
 
       const [dispatchesRes, manualRes, systemRes] = await Promise.all([
         supabase
@@ -161,6 +164,34 @@ const EmailNotificationsPage = () => {
           body: { organization_id: organizationId, limit: fetchLimit },
         }),
       ]);
+
+      console.log("[EmailNotifications] dispatches", {
+        count: dispatchesRes.data?.length,
+        error: dispatchesRes.error?.message,
+      });
+      console.log("[EmailNotifications] email_notifications (manual)", {
+        count: manualRes.data?.length,
+        error: manualRes.error?.message,
+        sample: manualRes.data?.slice(0, 3).map((r: any) => ({
+          id: r.id,
+          organization_id: r.organization_id,
+          recipient_email: r.recipient_email,
+          status: r.status,
+          created_at: r.created_at,
+        })),
+      });
+      console.log("[EmailNotifications] get-email-log (system)", {
+        count: systemRes.data?.data?.length,
+        error: systemRes.error?.message,
+        functionError: systemRes.data?.error,
+        sample: systemRes.data?.data?.slice(0, 3).map((r: any) => ({
+          id: r.id,
+          recipient_email: r.recipient_email,
+          template_name: r.template_name,
+          status: r.status,
+          created_at: r.created_at,
+        })),
+      });
 
       if (dispatchesRes.error) throw dispatchesRes.error;
 
@@ -193,11 +224,20 @@ const EmailNotificationsPage = () => {
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
 
+      console.log("[EmailNotifications] merged total", merged.length, "— manual:", manual.length, "system:", system.length);
+      console.log("[EmailNotifications] most recent 3", merged.slice(0, 3).map(r => ({
+        source: r.source,
+        recipient_email: r.recipient_email,
+        subject: r.subject,
+        status: r.status,
+        created_at: r.created_at,
+      })));
+
       setTotalCount(merged.length);
       setDispatches(dispatchesRes.data || []);
       setEmailNotifications(merged);
     } catch (error: any) {
-      console.error("Error fetching data:", error);
+      console.error("[EmailNotifications] fetchData error:", error);
       toast({
         title: "Error",
         description: "Failed to load data",
