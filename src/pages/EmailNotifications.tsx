@@ -50,6 +50,8 @@ import {
   Users,
   Truck,
   Timer,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -93,10 +95,13 @@ interface EmailNotification {
 }
 
 const SLA_HOURS = 2; // 2 hours SLA for customer notifications
+const PAGE_SIZE = 25;
 
 const EmailNotificationsPage = () => {
   const [dispatches, setDispatches] = useState<Dispatch[]>([]);
   const [emailNotifications, setEmailNotifications] = useState<EmailNotification[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -119,10 +124,14 @@ const EmailNotificationsPage = () => {
     include_leadership: true,
   });
 
-  const fetchData = async () => {
+  const fetchData = async (page = 1) => {
     if (!organizationId) return;
     setLoading(true);
     try {
+      // Fetch a generous window from each source so we can merge and sort correctly.
+      // We over-fetch (page * PAGE_SIZE + PAGE_SIZE) so the merge stays accurate per page.
+      const fetchLimit = page * PAGE_SIZE + PAGE_SIZE;
+
       const [dispatchesRes, manualRes, systemRes] = await Promise.all([
         supabase
           .from("dispatches")
@@ -142,20 +151,19 @@ const EmailNotificationsPage = () => {
           .eq("organization_id", organizationId)
           .order("created_at", { ascending: false })
           .limit(100),
-        // Manual notifications sent via the Send Update button
         supabase
           .from("email_notifications")
           .select(`*, dispatches (dispatch_number, status)`)
           .eq("organization_id", organizationId)
           .order("created_at", { ascending: false })
-          .limit(200),
-        // System emails via service-role edge function (email_send_log has no org_id, RLS blocks direct reads)
-        supabase.functions.invoke("get-email-log", { body: { organization_id: organizationId } }),
+          .limit(fetchLimit),
+        supabase.functions.invoke("get-email-log", {
+          body: { organization_id: organizationId, limit: fetchLimit },
+        }),
       ]);
 
       if (dispatchesRes.error) throw dispatchesRes.error;
 
-      // Normalise manual notifications
       const manual: EmailNotification[] = (manualRes.data || []).map((n: any) => ({
         ...n,
         source: "manual" as const,
@@ -163,8 +171,6 @@ const EmailNotificationsPage = () => {
       }));
 
       const systemRaw = systemRes.data?.data ?? [];
-
-      // Normalise system log entries into the same shape
       const system: EmailNotification[] = systemRaw.map((n: any) => ({
         id: n.id,
         dispatch_id: null,
@@ -183,11 +189,11 @@ const EmailNotificationsPage = () => {
         dispatches: null,
       }));
 
-      // Merge and sort by created_at descending
       const merged = [...manual, ...system].sort(
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
 
+      setTotalCount(merged.length);
       setDispatches(dispatchesRes.data || []);
       setEmailNotifications(merged);
     } catch (error: any) {
@@ -203,8 +209,8 @@ const EmailNotificationsPage = () => {
   };
 
   useEffect(() => {
-    if (organizationId) fetchData();
-  }, [organizationId]);
+    if (organizationId) fetchData(currentPage);
+  }, [organizationId, currentPage]);
 
   const handleSelectDispatch = (dispatchId: string) => {
     const dispatch = dispatches.find(d => d.id === dispatchId);
@@ -322,15 +328,27 @@ const EmailNotificationsPage = () => {
   };
 
   const filteredNotifications = emailNotifications.filter(notification => {
-    const matchesSearch = 
+    const matchesSearch =
       notification.recipient_email.toLowerCase().includes(searchQuery.toLowerCase()) ||
       notification.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
       notification.dispatches?.dispatch_number?.toLowerCase().includes(searchQuery.toLowerCase());
-    
     const matchesStatus = statusFilter === "all" || notification.status === statusFilter;
-    
     return matchesSearch && matchesStatus;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filteredNotifications.length / PAGE_SIZE));
+  const paginatedNotifications = filteredNotifications.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE
+  );
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    // If we're near the end of what we've fetched, re-fetch with a larger window
+    if (page * PAGE_SIZE >= emailNotifications.length - PAGE_SIZE) {
+      fetchData(page);
+    }
+  };
 
   const slaStats = {
     total: emailNotifications.length,
@@ -471,11 +489,11 @@ const EmailNotificationsPage = () => {
                   <Input
                     placeholder="Search emails..."
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
                     className="pl-10 bg-secondary/50"
                   />
                 </div>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setCurrentPage(1); }}>
                   <SelectTrigger className="w-[140px] bg-secondary/50">
                     <Filter className="w-4 h-4 mr-2" />
                     <SelectValue />
@@ -489,7 +507,7 @@ const EmailNotificationsPage = () => {
                 </Select>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={fetchData}>
+                <Button variant="outline" onClick={() => { setCurrentPage(1); fetchData(1); }}>
                   <RefreshCw className="w-4 h-4 mr-2" />
                   Refresh
                 </Button>
@@ -521,6 +539,51 @@ const EmailNotificationsPage = () => {
                 <p>No email notifications found</p>
               </div>
             ) : (
+              <div className="flex items-center justify-between mb-3 text-sm text-muted-foreground">
+                <span>
+                  Showing {((currentPage - 1) * PAGE_SIZE) + 1}–{Math.min(currentPage * PAGE_SIZE, filteredNotifications.length)} of {filteredNotifications.length} emails
+                </span>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage === 1}
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                    .reduce<(number | "...")[]>((acc, p, idx, arr) => {
+                      if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push("...");
+                      acc.push(p);
+                      return acc;
+                    }, [])
+                    .map((p, idx) =>
+                      p === "..." ? (
+                        <span key={`ellipsis-${idx}`} className="px-2">…</span>
+                      ) : (
+                        <Button
+                          key={p}
+                          variant={currentPage === p ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => handlePageChange(p as number)}
+                          className="w-8 h-8 p-0"
+                        >
+                          {p}
+                        </Button>
+                      )
+                    )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
@@ -536,7 +599,7 @@ const EmailNotificationsPage = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredNotifications.map((notification) => {
+                    {paginatedNotifications.map((notification) => {
                       const slaStatus = getSlaStatus(notification);
                       return (
                         <TableRow key={notification.id}>

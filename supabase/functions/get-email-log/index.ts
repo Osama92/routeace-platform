@@ -31,12 +31,16 @@ Deno.serve(async (req) => {
 
   const svc = createClient(supabaseUrl, serviceKey);
 
-  // Parse requested organization_id from body
+  // Parse requested organization_id and limit from body
   let requestedOrgId: string | null = null;
+  let requestedLimit = 300;
   try {
     const body = await req.json();
     requestedOrgId = body?.organization_id ?? null;
-  } catch (_) { /* no body or invalid JSON — treat as null */ }
+    if (typeof body?.limit === "number" && body.limit > 0) {
+      requestedLimit = Math.min(body.limit, 1000);
+    }
+  } catch (_) { /* no body or invalid JSON — use defaults */ }
 
   // Fetch caller's roles
   const rolesRes = await svc
@@ -115,7 +119,7 @@ Deno.serve(async (req) => {
     .select("id, template_name, recipient_email, status, error_message, created_at")
     .in("recipient_email", Array.from(emailSet))
     .order("created_at", { ascending: false })
-    .limit(300);
+    .limit(requestedLimit);
 
   if (error) {
     return new Response(JSON.stringify({ error: error.message }), {
