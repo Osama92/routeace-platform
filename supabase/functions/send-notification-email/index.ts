@@ -164,6 +164,7 @@ serve(async (req) => {
 
     // Always log with the enhanced subject
     await serviceClient.from("email_notifications").insert({
+      organization_id: orgId,
       dispatch_id: payload.dispatch_id ?? null,
       recipient_email: payload.recipient_email,
       recipient_type: payload.recipient_type,
