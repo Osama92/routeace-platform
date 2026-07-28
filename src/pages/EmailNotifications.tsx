@@ -263,6 +263,7 @@ const EmailNotificationsPage = () => {
       // Send to customer (real email) + log in backend
       const { data, error } = await supabase.functions.invoke("send-notification-email", {
         body: {
+          organization_id: organizationId,
           dispatch_id: formData.dispatch_id,
           recipient_email: dispatch.customers.email,
           recipient_type: "customer",
@@ -290,6 +291,7 @@ const EmailNotificationsPage = () => {
         if (leadershipEmail) {
           await supabase.functions.invoke("send-notification-email", {
             body: {
+              organization_id: organizationId,
               dispatch_id: formData.dispatch_id,
               recipient_email: leadershipEmail,
               recipient_type: "leadership",

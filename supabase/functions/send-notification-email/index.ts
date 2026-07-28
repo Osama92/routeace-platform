@@ -5,13 +5,14 @@ import { Resend } from "https://esm.sh/resend@2.0.0";
 import { buildCors } from "../_shared/cors.ts";
 let corsHeaders: Record<string, string> = buildCors();
 interface SendNotificationEmailRequest {
+  organization_id?: string | null;
   dispatch_id?: string | null;
   recipient_email: string;
-  recipient_type: string; // customer, leadership, support, etc.
+  recipient_type: string;
   subject: string;
   body: string;
   notification_type?: string | null;
-  include_dispatch_details?: boolean; // If true, fetch truck & locations for subject
+  include_dispatch_details?: boolean;
 }
 
 serve(async (req) => {
@@ -74,6 +75,29 @@ serve(async (req) => {
     const resend = new Resend(resendApiKey);
     const serviceClient = createClient(supabaseUrl, serviceRoleKey);
 
+    // Resolve organization context.
+    // Priority: payload.organization_id (set by frontend) → membership lookup (fallback for non-super_admin).
+    // Super admins have no organization_members row, so the lookup returns null for them.
+    let orgId: string | null = payload.organization_id ?? null;
+    let orgName = "RouteAce";
+
+    if (!orgId) {
+      const { data: callerMembership } = await serviceClient
+        .from("organization_members")
+        .select("organization_id, organizations ( name )")
+        .eq("user_id", userData.user.id)
+        .maybeSingle();
+      orgId = (callerMembership as any)?.organization_id ?? null;
+      orgName = (callerMembership as any)?.organizations?.name ?? "RouteAce";
+    } else {
+      const { data: orgRow } = await serviceClient
+        .from("organizations")
+        .select("name")
+        .eq("id", orgId)
+        .maybeSingle();
+      orgName = (orgRow as any)?.name ?? "RouteAce";
+    }
+
     // Build enhanced subject with truck and locations if dispatch_id provided
     let finalSubject = payload.subject;
     if (payload.dispatch_id && payload.include_dispatch_details !== false) {
@@ -102,14 +126,6 @@ serve(async (req) => {
     try {
       const platformFromEmail = Deno.env.get("RESEND_FROM_EMAIL") ?? "noreply@routeace.app";
       const siteUrl = Deno.env.get("SITE_URL") ?? "https://routeace.app";
-
-      const { data: callerMembership } = await serviceClient
-        .from("organization_members")
-        .select("organization_id, organizations ( name )")
-        .eq("user_id", userData.user.id)
-        .maybeSingle();
-      const orgName = (callerMembership as any)?.organizations?.name ?? "RouteAce";
-      const orgId = (callerMembership as any)?.organization_id ?? null;
 
       let orgSupportEmail: string | null = null;
       if (orgId) {
