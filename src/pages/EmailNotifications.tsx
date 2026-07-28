@@ -150,7 +150,7 @@ const EmailNotificationsPage = () => {
           .order("created_at", { ascending: false })
           .limit(200),
         // System emails via service-role edge function (email_send_log has no org_id, RLS blocks direct reads)
-        supabase.functions.invoke("get-email-log"),
+        supabase.functions.invoke("get-email-log", { body: { organization_id: organizationId } }),
       ]);
 
       if (dispatchesRes.error) throw dispatchesRes.error;
