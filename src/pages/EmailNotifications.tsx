@@ -344,11 +344,18 @@ const EmailNotificationsPage = () => {
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
-    // If we're near the end of what we've fetched, re-fetch with a larger window
     if (page * PAGE_SIZE >= emailNotifications.length - PAGE_SIZE) {
       fetchData(page);
     }
   };
+
+  const pagePills = Array.from({ length: totalPages }, (_, i) => i + 1)
+    .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+    .reduce((acc: (number | string)[], p, idx, arr) => {
+      if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push("...");
+      acc.push(p);
+      return acc;
+    }, []);
 
   const slaStats = {
     total: emailNotifications.length,
@@ -552,28 +559,21 @@ const EmailNotificationsPage = () => {
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </Button>
-                  {Array.from({ length: totalPages }, (_, i) => i + 1)
-                    .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
-                    .reduce<(number | "...")[]>((acc, p, idx, arr) => {
-                      if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push("...");
-                      acc.push(p);
-                      return acc;
-                    }, [])
-                    .map((p, idx) =>
-                      p === "..." ? (
-                        <span key={`ellipsis-${idx}`} className="px-2">…</span>
-                      ) : (
-                        <Button
-                          key={p}
-                          variant={currentPage === p ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => handlePageChange(p as number)}
-                          className="w-8 h-8 p-0"
-                        >
-                          {p}
-                        </Button>
-                      )
-                    )}
+                  {pagePills.map((p, idx) =>
+                    p === "..." ? (
+                      <span key={`ellipsis-${idx}`} className="px-2">…</span>
+                    ) : (
+                      <Button
+                        key={p}
+                        variant={currentPage === p ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => handlePageChange(p as number)}
+                        className="w-8 h-8 p-0"
+                      >
+                        {p}
+                      </Button>
+                    )
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
