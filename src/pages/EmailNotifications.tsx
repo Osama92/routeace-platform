@@ -546,6 +546,7 @@ const EmailNotificationsPage = () => {
                 <p>No email notifications found</p>
               </div>
             ) : (
+              <>
               <div className="flex items-center justify-between mb-3 text-sm text-muted-foreground">
                 <span>
                   Showing {((currentPage - 1) * PAGE_SIZE) + 1}–{Math.min(currentPage * PAGE_SIZE, filteredNotifications.length)} of {filteredNotifications.length} emails
@@ -683,6 +684,7 @@ const EmailNotificationsPage = () => {
                   </TableBody>
                 </Table>
               </div>
+              </>
             )}
           </CardContent>
         </Card>
