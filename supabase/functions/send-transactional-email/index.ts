@@ -1,7 +1,7 @@
 import * as React from 'npm:react@18.3.1'
 import { renderAsync } from 'npm:@react-email/components@0.0.22'
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { corsHeaders } from '../_shared/cors.ts'
+import { buildCors } from '../_shared/cors.ts'
 import { TEMPLATES } from '../_shared/transactional-email-templates/registry.ts'
 
 // Configuration baked in at scaffold time - do NOT change these manually.
@@ -31,6 +31,8 @@ function generateToken(): string {
 // or cron invocations).
 
 Deno.serve(async (req) => {
+  const corsHeaders = buildCors(req)
+
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
@@ -163,7 +165,7 @@ Deno.serve(async (req) => {
             message_id: messageId,
             template_name: templateName,
             recipient_email: effectiveRecipient,
-            status: 'skipped',
+            status: 'suppressed',
             error_message: 'disabled_by_tenant',
           })
           return new Response(

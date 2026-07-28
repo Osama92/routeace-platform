@@ -84,6 +84,8 @@ interface EmailNotification {
   sla_met?: boolean | null;
   sla_response_time_minutes?: number | null;
   notification_type?: string | null;
+  error_message?: string | null;
+  source?: "manual" | "system";
   dispatches?: {
     dispatch_number: string;
     status: string | null;
@@ -121,7 +123,7 @@ const EmailNotificationsPage = () => {
     if (!organizationId) return;
     setLoading(true);
     try {
-      const [dispatchesRes, notificationsRes] = await Promise.all([
+      const [dispatchesRes, manualRes, systemRes] = await Promise.all([
         supabase
           .from("dispatches")
           .select(`
@@ -140,25 +142,56 @@ const EmailNotificationsPage = () => {
           .eq("organization_id", organizationId)
           .order("created_at", { ascending: false })
           .limit(100),
+        // Manual notifications sent via the Send Update button
         supabase
           .from("email_notifications")
-          .select(`
-            *,
-            dispatches (
-              dispatch_number,
-              status
-            )
-          `)
+          .select(`*, dispatches (dispatch_number, status)`)
           .eq("organization_id", organizationId)
+          .order("created_at", { ascending: false })
+          .limit(200),
+        // System emails: auth, transactional, trial lifecycle, queue-based
+        supabase
+          .from("email_send_log")
+          .select("*")
           .order("created_at", { ascending: false })
           .limit(200),
       ]);
 
       if (dispatchesRes.error) throw dispatchesRes.error;
-      if (notificationsRes.error) throw notificationsRes.error;
+
+      // Normalise manual notifications
+      const manual: EmailNotification[] = (manualRes.data || []).map((n: any) => ({
+        ...n,
+        source: "manual" as const,
+        notification_type: n.notification_type || "manual",
+      }));
+
+      // Normalise system log entries into the same shape
+      const system: EmailNotification[] = (systemRes.data || []).map((n: any) => ({
+        id: n.id,
+        dispatch_id: null,
+        recipient_email: n.recipient_email,
+        recipient_type: "system",
+        subject: n.template_name
+          ? n.template_name.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())
+          : "System Email",
+        body: null,
+        status: n.status,
+        sent_at: n.status === "sent" ? n.created_at : null,
+        created_at: n.created_at,
+        error_message: n.error_message,
+        notification_type: n.template_name || "system",
+        source: "system" as const,
+        dispatches: null,
+      }));
+
+      // Merge and sort by created_at descending
+      const merged = [...manual, ...system].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
 
       setDispatches(dispatchesRes.data || []);
-      setEmailNotifications(notificationsRes.data || []);
+      setEmailNotifications(merged);
     } catch (error: any) {
       console.error("Error fetching data:", error);
       toast({
@@ -529,19 +562,35 @@ const EmailNotificationsPage = () => {
                             {notification.subject}
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline" className="capitalize">
-                              {notification.notification_type?.replace("_", " ") || "Update"}
-                            </Badge>
+                            <div className="flex flex-col gap-1">
+                              <Badge variant="outline" className="capitalize w-fit">
+                                {notification.notification_type?.replace(/_/g, " ") || "Update"}
+                              </Badge>
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] w-fit ${notification.source === "system" ? "border-primary/40 text-primary" : "border-muted-foreground/40 text-muted-foreground"}`}
+                              >
+                                {notification.source === "system" ? "System" : "Manual"}
+                              </Badge>
+                            </div>
                           </TableCell>
                           <TableCell>
-                            <Badge
-                              variant={
-                                notification.status === "sent" ? "default" :
-                                notification.status === "failed" ? "destructive" : "secondary"
-                              }
-                            >
-                              {notification.status || "pending"}
-                            </Badge>
+                            <div className="flex flex-col gap-1">
+                              <Badge
+                                variant={
+                                  notification.status === "sent" ? "default" :
+                                  notification.status === "failed" || notification.status === "dlq" ? "destructive" :
+                                  notification.status === "suppressed" ? "secondary" : "secondary"
+                                }
+                              >
+                                {notification.status || "pending"}
+                              </Badge>
+                              {notification.error_message && (
+                                <span className="text-[10px] text-destructive leading-tight max-w-[160px] truncate" title={notification.error_message}>
+                                  {notification.error_message}
+                                </span>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell>
                             {slaStatus && (

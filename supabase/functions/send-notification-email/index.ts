@@ -47,17 +47,16 @@ serve(async (req) => {
     }
 
     // Basic role gate (admin/support/operations)
-    const { data: roleRow } = await authedClient
+    const { data: roleRows } = await authedClient
       .from("user_roles")
       .select("role")
-      .eq("user_id", userData.user.id)
-      .maybeSingle();
-    const role = (roleRow as any)?.role as string | undefined;
+      .eq("user_id", userData.user.id);
     const allowed = new Set([
       "admin", "support", "operations",
       "super_admin", "org_admin", "ops_manager", "finance_manager", "dispatcher",
     ]);
-    if (!role || !allowed.has(role)) {
+    const hasAllowedRole = (roleRows ?? []).some((r: any) => allowed.has(r.role));
+    if (!hasAllowedRole) {
       return new Response(JSON.stringify({ success: false, error: "Forbidden" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
