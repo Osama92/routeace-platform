@@ -367,6 +367,7 @@ const handler = async (req: Request): Promise<Response> => {
           }
 
           await supabase.from("email_notifications").insert({
+            organization_id: orgIdForLog,
             dispatch_id,
             recipient_email: customerEmail,
             recipient_type: "customer",
@@ -396,6 +397,7 @@ const handler = async (req: Request): Promise<Response> => {
         } else {
           console.error("Failed to send status update email after retries:", lastError);
           await supabase.from("email_notifications").insert({
+            organization_id: orgIdForLog,
             dispatch_id,
             recipient_email: customerEmail,
             recipient_type: "customer",
