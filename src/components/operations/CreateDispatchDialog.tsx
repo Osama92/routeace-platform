@@ -6,10 +6,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { Plus, Loader2, Route, ArrowLeftRight, ArrowRight } from "lucide-react";
+import { Plus, Loader2, Route, ArrowLeftRight, ArrowRight, ChevronsUpDown, Check } from "lucide-react";
 import { isQuotaError, emitQuotaExceeded, resourceFromError } from "@/lib/quotaErrors";
 import { AddressAutocomplete } from "@/components/shared/AddressAutocomplete";
 
@@ -20,6 +22,8 @@ const CreateDispatchDialog = () => {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [returnTrip, setReturnTrip] = useState(false);
+  const [routeComboOpen, setRouteComboOpen] = useState(false);
+  const [customerComboOpen, setCustomerComboOpen] = useState(false);
   const [extraDrops, setExtraDrops] = useState<{ address: string; notes: string }[]>([]);
   const [form, setForm] = useState({
     customer_id: "",
@@ -426,29 +430,40 @@ const CreateDispatchDialog = () => {
               <Route className="w-4 h-4" />
               Quick-fill from Route Library
             </div>
-            <Select
-              value={form.route_id}
-              onValueChange={handleRouteSelect}
-            >
-              <SelectTrigger className="bg-white">
-                <SelectValue placeholder={
-                  routesLoading ? "Loading routes…" :
-                  routes?.length ? "Select a saved route to auto-fill addresses" :
-                  "No routes saved yet — add one in Routes Library"
-                } />
-              </SelectTrigger>
-              <SelectContent>
-                {routes?.map((r: any) => (
-                  <SelectItem key={r.id} value={r.id}>
-                    <span className="font-medium">{r.name}</span>
-                    <span className="text-muted-foreground ml-1 text-xs">
-                      {r.origin?.split(",")[0]} → {r.destination?.split(",")[0]}
-                      {r.distance_km ? ` · ${r.distance_km} km` : ""}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Popover open={routeComboOpen} onOpenChange={setRouteComboOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" role="combobox" className="w-full justify-between bg-white font-normal">
+                  {form.route_id
+                    ? routes?.find((r: any) => r.id === form.route_id)?.name ?? "Select route…"
+                    : routesLoading ? "Loading routes…" : "Select a saved route to auto-fill addresses"}
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Search routes…" />
+                  <CommandList className="max-h-60 overflow-y-auto">
+                    <CommandEmpty>No routes found.</CommandEmpty>
+                    <CommandGroup>
+                      {routes?.map((r: any) => (
+                        <CommandItem
+                          key={r.id}
+                          value={`${r.name} ${r.origin} ${r.destination}`}
+                          onSelect={() => { handleRouteSelect(r.id); setRouteComboOpen(false); }}
+                        >
+                          <Check className={`mr-2 h-4 w-4 ${form.route_id === r.id ? "opacity-100" : "opacity-0"}`} />
+                          <span className="font-medium">{r.name}</span>
+                          <span className="text-muted-foreground ml-1 text-xs truncate">
+                            {r.origin?.split(",")[0]} → {r.destination?.split(",")[0]}
+                            {r.distance_km ? ` · ${r.distance_km} km` : ""}
+                          </span>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
             {form.route_id && (
               <p className="text-xs text-emerald-600 font-medium">
                 ✓ Pickup, delivery & distance auto-filled — you can still edit below
@@ -459,21 +474,39 @@ const CreateDispatchDialog = () => {
           {/* ── Customer ────────────────────────────────────────────────── */}
           <div>
             <Label>Customer *</Label>
-            <Select value={form.customer_id} onValueChange={(v) => setForm((p) => ({ ...p, customer_id: v }))}>
-              <SelectTrigger>
-                <SelectValue placeholder={customers?.length ? "Select customer or partner" : "No customers or partners added yet"} />
-              </SelectTrigger>
-              <SelectContent>
-                {customers?.map((c: any) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.company_name}
-                    {c._source === "partner" && (
-                      <span className="text-muted-foreground text-xs ml-1">· Partner</span>
-                    )}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Popover open={customerComboOpen} onOpenChange={setCustomerComboOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
+                  {form.customer_id
+                    ? customers?.find((c: any) => c.id === form.customer_id)?.company_name ?? "Select customer…"
+                    : customers?.length ? "Select customer or partner" : "No customers or partners added yet"}
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Search customers…" />
+                  <CommandList className="max-h-60 overflow-y-auto">
+                    <CommandEmpty>No customers found.</CommandEmpty>
+                    <CommandGroup>
+                      {customers?.map((c: any) => (
+                        <CommandItem
+                          key={c.id}
+                          value={c.company_name}
+                          onSelect={() => { setForm((p) => ({ ...p, customer_id: c.id })); setCustomerComboOpen(false); }}
+                        >
+                          <Check className={`mr-2 h-4 w-4 ${form.customer_id === c.id ? "opacity-100" : "opacity-0"}`} />
+                          {c.company_name}
+                          {c._source === "partner" && (
+                            <span className="text-muted-foreground text-xs ml-1">· Partner</span>
+                          )}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
 
           {/* ── Addresses ───────────────────────────────────────────────── */}

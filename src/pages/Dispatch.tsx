@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -33,6 +35,8 @@ import {
   User,
   RefreshCw,
   Fuel,
+  ChevronsUpDown,
+  Check,
   Pencil,
   CheckCircle,
   XCircle,
@@ -178,6 +182,8 @@ const DispatchPage = () => {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [savedRoutes, setSavedRoutes] = useState<any[]>([]);
   const [returnTrip, setReturnTrip] = useState(false);
+  const [routeComboOpen, setRouteComboOpen] = useState(false);
+  const [customerComboOpen, setCustomerComboOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -1212,38 +1218,49 @@ const DispatchPage = () => {
                     <RouteIcon className="w-4 h-4" />
                     Quick-fill from Route Library
                   </div>
-                  <Select
-                    value={formData.route_id}
-                    onValueChange={(routeId) => {
-                      const r = savedRoutes.find((x) => x.id === routeId);
-                      setFormData((prev) => ({
-                        ...prev,
-                        route_id: routeId,
-                        pickup_address: r?.origin ?? prev.pickup_address,
-                        delivery_address: r?.destination ?? prev.delivery_address,
-                        distance_km: r?.distance_km ? String(r.distance_km) : prev.distance_km,
-                      }));
-                    }}
-                  >
-                    <SelectTrigger className="bg-white">
-                      <SelectValue placeholder={
-                        savedRoutes.length
-                          ? "Select a saved route to auto-fill addresses"
-                          : "No saved routes — add one in Routes Library"
-                      } />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {savedRoutes.map((r) => (
-                        <SelectItem key={r.id} value={r.id}>
-                          <span className="font-medium">{r.name}</span>
-                          <span className="text-muted-foreground ml-1 text-xs">
-                            {r.origin?.split(",")[0]} → {r.destination?.split(",")[0]}
-                            {r.distance_km ? ` · ${r.distance_km} km` : ""}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Popover open={routeComboOpen} onOpenChange={setRouteComboOpen}>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" role="combobox" className="w-full justify-between bg-white font-normal">
+                        {formData.route_id
+                          ? savedRoutes.find((r) => r.id === formData.route_id)?.name ?? "Select route…"
+                          : savedRoutes.length ? "Select a saved route to auto-fill addresses" : "No saved routes — add one in Routes Library"}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search routes…" />
+                        <CommandList className="max-h-60 overflow-y-auto">
+                          <CommandEmpty>No routes found.</CommandEmpty>
+                          <CommandGroup>
+                            {savedRoutes.map((r) => (
+                              <CommandItem
+                                key={r.id}
+                                value={`${r.name} ${r.origin} ${r.destination}`}
+                                onSelect={() => {
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    route_id: r.id,
+                                    pickup_address: r.origin ?? prev.pickup_address,
+                                    delivery_address: r.destination ?? prev.delivery_address,
+                                    distance_km: r.distance_km ? String(r.distance_km) : prev.distance_km,
+                                  }));
+                                  setRouteComboOpen(false);
+                                }}
+                              >
+                                <Check className={`mr-2 h-4 w-4 ${formData.route_id === r.id ? "opacity-100" : "opacity-0"}`} />
+                                <span className="font-medium">{r.name}</span>
+                                <span className="text-muted-foreground ml-1 text-xs truncate">
+                                  {r.origin?.split(",")[0]} → {r.destination?.split(",")[0]}
+                                  {r.distance_km ? ` · ${r.distance_km} km` : ""}
+                                </span>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                   {formData.route_id && (
                     <p className="text-xs text-emerald-600 font-medium">
                       ✓ Pickup, delivery & distance auto-filled — edit below if needed
@@ -1254,21 +1271,36 @@ const DispatchPage = () => {
                 {/* ── Customer ─────────────────────────────────────────── */}
                 <div className="space-y-2">
                   <Label htmlFor="customer_id">Customer *</Label>
-                  <Select
-                    value={formData.customer_id}
-                    onValueChange={(value) => setFormData((prev) => ({ ...prev, customer_id: value }))}
-                  >
-                    <SelectTrigger className="bg-secondary/50">
-                      <SelectValue placeholder="Select customer" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {customers.map((customer) => (
-                        <SelectItem key={customer.id} value={customer.id}>
-                          {customer.company_name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Popover open={customerComboOpen} onOpenChange={setCustomerComboOpen}>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" role="combobox" className="w-full justify-between bg-secondary/50 font-normal">
+                        {formData.customer_id
+                          ? customers.find((c) => c.id === formData.customer_id)?.company_name ?? "Select customer"
+                          : "Select customer"}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search customers…" />
+                        <CommandList className="max-h-60 overflow-y-auto">
+                          <CommandEmpty>No customers found.</CommandEmpty>
+                          <CommandGroup>
+                            {customers.map((customer) => (
+                              <CommandItem
+                                key={customer.id}
+                                value={customer.company_name}
+                                onSelect={() => { setFormData((prev) => ({ ...prev, customer_id: customer.id })); setCustomerComboOpen(false); }}
+                              >
+                                <Check className={`mr-2 h-4 w-4 ${formData.customer_id === customer.id ? "opacity-100" : "opacity-0"}`} />
+                                {customer.company_name}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
 
                 {/* ── Addresses ────────────────────────────────────────── */}
