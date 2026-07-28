@@ -149,12 +149,8 @@ const EmailNotificationsPage = () => {
           .eq("organization_id", organizationId)
           .order("created_at", { ascending: false })
           .limit(200),
-        // System emails: auth, transactional, trial lifecycle, queue-based
-        supabase
-          .from("email_send_log")
-          .select("*")
-          .order("created_at", { ascending: false })
-          .limit(200),
+        // System emails via service-role edge function (email_send_log has no org_id, RLS blocks direct reads)
+        supabase.functions.invoke("get-email-log"),
       ]);
 
       if (dispatchesRes.error) throw dispatchesRes.error;
@@ -166,8 +162,10 @@ const EmailNotificationsPage = () => {
         notification_type: n.notification_type || "manual",
       }));
 
+      const systemRaw = systemRes.data?.data ?? [];
+
       // Normalise system log entries into the same shape
-      const system: EmailNotification[] = (systemRes.data || []).map((n: any) => ({
+      const system: EmailNotification[] = systemRaw.map((n: any) => ({
         id: n.id,
         dispatch_id: null,
         recipient_email: n.recipient_email,
