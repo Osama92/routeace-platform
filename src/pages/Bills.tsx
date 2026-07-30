@@ -1054,8 +1054,8 @@ export default function BillsPage() {
           </div>
           <DialogFooter className="px-8 py-5 border-t shrink-0 bg-background">
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button onClick={() => createBill.mutate()} disabled={!form.vendor_name || form.vendor_name === "__new"}>
-              Create Bill
+            <Button onClick={() => createBill.mutate()} disabled={createBill.isPending || !form.vendor_name || form.vendor_name === "__new"}>
+              {createBill.isPending ? "Creating..." : "Create Bill"}
             </Button>
           </DialogFooter>
         </DialogContent>
