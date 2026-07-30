@@ -8,7 +8,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast as sonnerToast } from "@/lib/toast";
 import PendingApprovalScreen from "./PendingApprovalScreen";
 import SuspendedAccountScreen from "./SuspendedAccountScreen";
-import TrialExpiredScreen from "./TrialExpiredScreen";
 import AccessDeniedModal from "./AccessDeniedModal";
 import AccountProvisioningScreen from "./AccountProvisioningScreen";
 import { AlertTriangle } from "lucide-react";
@@ -132,10 +131,10 @@ const ProtectedRoute = ({ children, allowedRoles, lcOnly }: ProtectedRouteProps)
     return <PendingApprovalScreen />;
   }
 
-  // TRIAL EXPIRED LOCKOUT - Super Admin always bypasses so they can upgrade.
-  if (trialExpired && !isSuperAdminBypass && location.pathname !== "/settings") {
-    return <TrialExpiredScreen />;
-  }
+  // TRIAL EXPIRY: no hard lockout. When a trial ends, the org auto-reverts to the
+  // free Starter plan (see process_trial_lifecycle + AuthContext free-tier handling),
+  // so the user keeps working under free-tier limits with an upgrade CTA/banner.
+  // TrialExpiredScreen is retained only as an explicit opt-in (not routed here).
 
   // SUPER ADMIN BYPASS: Allow access to everything
   if (isSuperAdminBypass) {

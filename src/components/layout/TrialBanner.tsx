@@ -22,8 +22,54 @@ export default function TrialBanner() {
     if (hoursSince < REDISPLAY_HOURS) setDismissed(true);
   }, []);
 
-  // Never show to super_admins or non-trial orgs
-  if (subscriptionStatus !== "trial" || isSuperAdmin) return null;
+  // Never show to super_admins
+  if (isSuperAdmin) return null;
+
+  // Free plan (post-trial revert): show a gentle upgrade prompt.
+  if (subscriptionStatus === "free") {
+    if (dismissed) return null;
+    return (
+      <div
+        role="banner"
+        aria-label="Free plan status"
+        className={cn(
+          "w-full border-b px-4 py-2.5 flex items-center gap-3",
+          "bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-800"
+        )}
+      >
+        <div className="flex items-center gap-2 shrink-0">
+          <Zap className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-500 text-white">
+            Free plan
+          </span>
+        </div>
+        <p className="text-sm flex-1 min-w-0 truncate text-slate-700 dark:text-slate-200">
+          Your trial has ended and you're now on the Free plan. Upgrade to unlock fleet management, analytics & team access.
+        </p>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            size="sm"
+            className="h-7 text-xs gap-1 font-semibold"
+            onClick={() => navigate("/settings?tab=billing")}
+          >
+            <Zap className="w-3.5 h-3.5" />
+            Upgrade
+            <ArrowRight className="w-3 h-3" />
+          </Button>
+          <button
+            aria-label="Dismiss free plan banner"
+            onClick={handleDismiss}
+            className="p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 transition-colors text-slate-500 dark:text-slate-400"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Trial banner only for active trials
+  if (subscriptionStatus !== "trial") return null;
   if (trialDaysRemaining === null) return null;
   if (dismissed) return null;
 

@@ -69,6 +69,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCompanySettings } from "@/hooks/useCompanySettings";
 import SubscriptionManager from "@/components/subscription/SubscriptionManager";
+import VehicleSubscriptionTracker from "@/components/billing/VehicleSubscriptionTracker";
 
 
 interface Integration {
@@ -520,6 +521,7 @@ const SettingsPage = () => {
         {/* Billing Tab */}
         <TabsContent value="billing" className="space-y-6">
           <SubscriptionManager />
+          <VehicleSubscriptionTracker />
         </TabsContent>
 
         <TabsContent value="integrations" className="space-y-6">
