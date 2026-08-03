@@ -82,10 +82,17 @@ Deno.serve(async (req) => {
     if (orgId && planName) {
       const { data: planLimits } = await admin.rpc("get_plan_limits", { tier: planName }).single();
       if (planLimits) {
+        // Per-vehicle plans (heavy_fleet, mixed_fleet) are billed for a specific
+        // vehicle_count at checkout — max_vehicles must reflect what was actually
+        // purchased, not the tier's flat default (which would silently cap the
+        // customer below what they paid for, or above it and undercharge them).
+        const tierMaxVehicles = (planLimits as any).max_vehicles;
+        const effectiveMaxVehicles = vehicleCount > 0 ? vehicleCount : tierMaxVehicles;
+
         await admin.from("tenant_config").update({
           plan_tier:              planName,
           max_users:              (planLimits as any).max_users,
-          max_vehicles:           (planLimits as any).max_vehicles,
+          max_vehicles:           effectiveMaxVehicles,
           max_branches:           (planLimits as any).max_branches,
           max_monthly_dispatches: (planLimits as any).max_monthly_dispatches,
           max_api_calls:          (planLimits as any).max_api_calls,
