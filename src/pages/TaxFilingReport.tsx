@@ -82,11 +82,11 @@ interface PayrollRecord {
 
 interface VATBreakdown {
   output_vat: number; // VAT on sales invoices (liability - you owe)
-  input_vat: number;  // VAT on expenses (recoverable)
+  input_vat: number;  // VAT on vendor bills (recoverable)
   shipping_vat: number;
   net_vat_payable: number;
   invoice_count: number;
-  expense_count: number;
+  bill_count: number;
 }
 
 interface WHTBreakdown {
@@ -116,7 +116,7 @@ const formatCurrency = (amount: number) => {
 
 const TaxFilingReport = () => {
   const [taxData, setTaxData] = useState<TaxSummary[]>([]);
-  const [vatBreakdown, setVatBreakdown] = useState<VATBreakdown>({ output_vat: 0, input_vat: 0, shipping_vat: 0, net_vat_payable: 0, invoice_count: 0, expense_count: 0 });
+  const [vatBreakdown, setVatBreakdown] = useState<VATBreakdown>({ output_vat: 0, input_vat: 0, shipping_vat: 0, net_vat_payable: 0, invoice_count: 0, bill_count: 0 });
   const [whtBreakdown, setWhtBreakdown] = useState<WHTBreakdown>({ total_wht_deducted: 0, wht_on_invoices: 0, wht_on_capital: 0, dispatch_count: 0 });
   const [monthlyObligations, setMonthlyObligations] = useState<MonthlyTaxObligation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -152,7 +152,7 @@ const TaxFilingReport = () => {
       const endDate = endOfYear(new Date(selectedYear, 0, 1));
 
       // Fetch all data in parallel
-      const [salariesRes, invoicesRes, expensesRes, capitalRes, dispatchesRes] = await Promise.all([
+      const [salariesRes, invoicesRes, billsRes, capitalRes, dispatchesRes] = await Promise.all([
         // PAYE data from driver salaries
         supabase
           .from("driver_salaries")
@@ -167,13 +167,15 @@ const TaxFilingReport = () => {
           .gte("created_at", startDate.toISOString())
           .lte("created_at", endDate.toISOString())
           .not("status", "eq", "cancelled"),
-        // Input VAT from expenses (recoverable)
+        // Input VAT from vendor bills (recoverable) — VAT actually charged by
+        // vendors on purchases, NOT internal expenses (fuel, allowances, etc.)
+        // which typically carry no reclaimable VAT invoice.
         supabase
-          .from("expenses")
-          .select("id, amount, category, expense_date, approval_status, description")
-          .gte("expense_date", startDate.toISOString())
-          .lte("expense_date", endDate.toISOString())
-          .eq("approval_status", "approved"),
+          .from("bills")
+          .select("id, bill_number, tax_amount, total_amount, bill_date, created_at, vendor_name")
+          .gte("bill_date", startDate.toISOString())
+          .lte("bill_date", endDate.toISOString())
+          .not("payment_status", "eq", "cancelled"),
         // WHT from capital repayments
         supabase
           .from("capital_repayments")
@@ -227,11 +229,12 @@ const TaxFilingReport = () => {
 
       // Process VAT breakdown
       const invoices = invoicesRes.data || [];
-      const expenses = expensesRes.data || [];
+      const bills = billsRes.data || [];
       const outputVat = invoices.reduce((sum, inv) => sum + (inv.tax_amount || 0), 0);
       const shippingVat = invoices.reduce((sum, inv) => sum + (inv.shipping_vat_amount || 0), 0);
-      // Estimate input VAT at 7.5% of approved expenses
-      const inputVat = expenses.reduce((sum, exp) => sum + ((exp.amount || 0) * 0.075), 0);
+      // Input VAT = actual VAT charged by vendors on bills (recoverable),
+      // sourced from bills.tax_amount — not estimated from internal expenses.
+      const inputVat = bills.reduce((sum, b) => sum + (b.tax_amount || 0), 0);
       const netVat = (outputVat + shippingVat) - inputVat;
 
       setVatBreakdown({
@@ -240,7 +243,7 @@ const TaxFilingReport = () => {
         shipping_vat: shippingVat,
         net_vat_payable: Math.max(0, netVat),
         invoice_count: invoices.length,
-        expense_count: expenses.length,
+        bill_count: bills.length,
       });
 
       // Process WHT breakdown
@@ -267,8 +270,8 @@ const TaxFilingReport = () => {
           const d = new Date(inv.invoice_date || inv.created_at);
           return d >= monthStart && d <= monthEnd;
         });
-        const monthExpenses = expenses.filter(exp => {
-          const d = new Date(exp.expense_date);
+        const monthBills = bills.filter(b => {
+          const d = new Date(b.bill_date || b.created_at);
           return d >= monthStart && d <= monthEnd;
         });
         const monthSalaries = (salariesRes.data || []).filter((s: any) => {
@@ -281,7 +284,7 @@ const TaxFilingReport = () => {
         });
 
         const mOutputVat = monthInvoices.reduce((s, i) => s + (i.tax_amount || 0) + (i.shipping_vat_amount || 0), 0);
-        const mInputVat = monthExpenses.reduce((s, e) => s + ((e.amount || 0) * 0.075), 0);
+        const mInputVat = monthBills.reduce((s, b) => s + (b.tax_amount || 0), 0);
         const mPaye = monthSalaries.reduce((s: number, sal: any) => s + (sal.tax_amount || 0), 0);
         const mWht = monthCapital.reduce((s, c) => s + (c.wht_amount || 0), 0);
         const mNetVat = Math.max(0, mOutputVat - mInputVat);
@@ -435,7 +438,7 @@ const TaxFilingReport = () => {
       head: [["Tax Type", "Amount (NGN)", "Status"]],
       body: [
         ["Output VAT (Sales)", formatCurrency(vatBreakdown.output_vat), "Collected"],
-        ["Input VAT (Expenses)", formatCurrency(vatBreakdown.input_vat), "Recoverable"],
+        ["Input VAT (Vendor Bills)", formatCurrency(vatBreakdown.input_vat), "Recoverable"],
         ["Net VAT Payable", formatCurrency(vatBreakdown.net_vat_payable), "Due to FIRS"],
         ["PAYE Tax Withheld", formatCurrency(totals.totalTax), "Due to FIRS"],
         ["WHT Deducted", formatCurrency(whtBreakdown.total_wht_deducted), "Credit Available"],
@@ -466,7 +469,7 @@ const TaxFilingReport = () => {
   };
 
   return (
-    <DashboardLayout title="Tax Filing Report" subtitle="VAT, PAYE, WHT - Real-time tax obligations from invoices & expenses">
+    <DashboardLayout title="Tax Filing Report" subtitle="VAT, PAYE, WHT - Real-time tax obligations from invoices & vendor bills">
       {/* Controls */}
       <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between mb-6">
         <div className="flex gap-4 items-center flex-wrap">
@@ -559,13 +562,13 @@ const TaxFilingReport = () => {
             <Card>
               <CardHeader>
                 <CardTitle>Tax Obligation Breakdown - FY {selectedYear}</CardTitle>
-                <CardDescription>Real-time calculations from invoices, expenses, payroll, and capital transactions</CardDescription>
+                <CardDescription>Real-time calculations from invoices, vendor bills, payroll, and capital transactions</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
                   {[
                     { label: "Output VAT (Sales Invoices)", amount: vatBreakdown.output_vat + vatBreakdown.shipping_vat, type: "liability", pct: totalObligation > 0 ? ((vatBreakdown.output_vat + vatBreakdown.shipping_vat) / totalObligation * 100) : 0 },
-                    { label: "Input VAT (Expense Claims)", amount: vatBreakdown.input_vat, type: "credit", pct: totalObligation > 0 ? (vatBreakdown.input_vat / totalObligation * 100) : 0 },
+                    { label: "Input VAT (Vendor Bills)", amount: vatBreakdown.input_vat, type: "credit", pct: totalObligation > 0 ? (vatBreakdown.input_vat / totalObligation * 100) : 0 },
                     { label: "Net VAT Payable to FIRS", amount: vatBreakdown.net_vat_payable, type: "due", pct: totalObligation > 0 ? (vatBreakdown.net_vat_payable / totalObligation * 100) : 0 },
                     { label: "PAYE Tax (Employee Withholding)", amount: totals.totalTax, type: "due", pct: totalObligation > 0 ? (totals.totalTax / totalObligation * 100) : 0 },
                     { label: "WHT Credits (Deducted at Source)", amount: whtBreakdown.total_wht_deducted, type: "credit", pct: totalObligation > 0 ? (whtBreakdown.total_wht_deducted / totalObligation * 100) : 0 },
@@ -628,13 +631,13 @@ const TaxFilingReport = () => {
 
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2"><ArrowDownRight className="w-5 h-5 text-green-500" />Input VAT (Expenses)</CardTitle>
-                  <CardDescription>Recoverable VAT from {vatBreakdown.expense_count} approved expenses</CardDescription>
+                  <CardTitle className="flex items-center gap-2"><ArrowDownRight className="w-5 h-5 text-green-500" />Input VAT (Vendor Bills)</CardTitle>
+                  <CardDescription>Recoverable VAT from {vatBreakdown.bill_count} vendor bills</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
                     <div className="flex justify-between p-3 rounded-lg bg-muted/50">
-                      <span>Expense VAT (7.5% estimated)</span>
+                      <span>VAT charged on bills</span>
                       <span className="font-bold">{formatCurrency(vatBreakdown.input_vat)}</span>
                     </div>
                     <div className="flex justify-between p-3 rounded-lg bg-green-500/10 border border-green-500/20">
