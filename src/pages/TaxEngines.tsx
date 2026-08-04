@@ -6,16 +6,17 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Calculator, TrendingUp, TrendingDown, Shield, Download, Globe, AlertTriangle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 
 const fmt = (n: number, sym = "₦") =>
   `${sym}${Math.abs(n).toLocaleString("en-NG", { minimumFractionDigits: 0 })}`;
 
 export default function TaxEngines() {
   const [country, setCountry] = useState("NG");
+  const { organizationId } = useAuth();
 
   const { data: taxRates = [] } = useQuery({
     queryKey: ["tax-rates"],
@@ -25,18 +26,62 @@ export default function TaxEngines() {
     },
   });
 
-  const { data: taxLedger = [] } = useQuery({
-    queryKey: ["tax-ledger"],
+  // VAT source: live invoices (output) and vendor bills (input) — same
+  // source of truth as Accounts Ledger and Tax Filing Report. tax_ledger /
+  // accounting_ledger are never written to by the invoice/bill flow, so
+  // this page previously always showed zero.
+  const { data: invoices = [] } = useQuery({
+    queryKey: ["tax-engine-invoices", organizationId],
+    enabled: !!organizationId,
     queryFn: async () => {
-      const { data } = await supabase.from("tax_ledger").select("*").order("created_at", { ascending: false }).limit(100);
+      const { data } = await supabase
+        .from("invoices")
+        .select("id, invoice_number, tax_amount, shipping_vat_amount, subtotal, total_amount, status, customers(company_name)")
+        .eq("organization_id", organizationId)
+        .neq("status", "cancelled");
+      return data || [];
+    },
+  });
+
+  const { data: bills = [] } = useQuery({
+    queryKey: ["tax-engine-bills", organizationId],
+    enabled: !!organizationId,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("bills")
+        .select("id, bill_number, tax_amount, total_amount, vendor_name, payment_status")
+        .eq("organization_id", organizationId)
+        .neq("payment_status", "cancelled");
+      return data || [];
+    },
+  });
+
+  // capital_repayments has no organization_id (scoped via funding_id -> capital_funding)
+  // and no vendor_name/wht_rate of its own — those live on the parent capital_funding
+  // row (investor_name, wht_rate). This WHT bucket is specifically withholding on
+  // investor/capital interest, not general vendor payment WHT.
+  const { data: capitalRepayments = [] } = useQuery({
+    queryKey: ["tax-engine-wht", organizationId],
+    enabled: !!organizationId,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("capital_repayments")
+        .select("id, wht_amount, due_date, status, capital_funding!inner(investor_name, wht_rate, organization_id)")
+        .eq("capital_funding.organization_id", organizationId)
+        .gt("wht_amount", 0);
       return data || [];
     },
   });
 
   const { data: glData = [] } = useQuery({
-    queryKey: ["gl-for-tax"],
+    queryKey: ["gl-for-tax", organizationId],
+    enabled: !!organizationId,
     queryFn: async () => {
-      const { data } = await supabase.from("accounting_ledger").select("*").order("entry_date", { ascending: false });
+      const { data } = await supabase
+        .from("accounting_ledger")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .order("entry_date", { ascending: false });
       return data || [];
     },
   });
@@ -45,23 +90,32 @@ export default function TaxEngines() {
   const vatRate = countryRates.find(r => r.tax_type === "VAT")?.rate_percentage || 0;
   const citRate = countryRates.find(r => r.tax_type === "CIT")?.rate_percentage || 0;
 
-  // Compute VAT from GL
-  const outputVat = taxLedger.filter(t => t.tax_type === "VAT" && t.direction === "output").reduce((s, t) => s + Number(t.amount), 0);
-  const inputVat = taxLedger.filter(t => t.tax_type === "VAT" && t.direction === "input").reduce((s, t) => s + Number(t.amount), 0);
+  // VAT netting from live invoices/bills
+  const outputVat = invoices.reduce((s, inv: any) => s + (inv.tax_amount || 0) + (inv.shipping_vat_amount || 0), 0);
+  const inputVat = bills.reduce((s, b: any) => s + (b.tax_amount || 0), 0);
   const vatNet = outputVat - inputVat;
 
-  // WHT tracking
-  const whtEntries = taxLedger.filter(t => t.tax_type === "WHT");
-  const totalWht = whtEntries.reduce((s, t) => s + Number(t.amount), 0);
+  // WHT tracking from capital repayments (same source as Tax Filing Report)
+  const whtEntries = capitalRepayments;
+  const totalWht = whtEntries.reduce((s, t: any) => s + Number(t.wht_amount || 0), 0);
 
-  // CIT estimation from GL
-  const totalRevenue = glData.filter(e => e.account_type === "revenue" || e.account_name?.includes("revenue")).reduce((s, e) => s + Number(e.credit || 0), 0);
-  const totalExpenses = glData.filter(e => e.account_type === "expense" || e.account_name?.includes("expense") || e.account_name?.includes("cost")).reduce((s, e) => s + Number(e.debit || 0), 0);
+  // CIT estimation — prefer live invoices/bills for revenue/expense base;
+  // fall back to accounting_ledger only if it has data (kept for orgs using GL directly).
+  const glRevenue = glData.filter((e: any) => e.account_type === "revenue" || e.account_name?.includes("revenue")).reduce((s: number, e: any) => s + Number(e.credit || 0), 0);
+  const glExpenses = glData.filter((e: any) => e.account_type === "expense" || e.account_name?.includes("expense") || e.account_name?.includes("cost")).reduce((s: number, e: any) => s + Number(e.debit || 0), 0);
+
+  const invoiceRevenue = invoices.reduce((s, inv: any) => s + (inv.subtotal || 0), 0);
+  const billExpenses = bills.reduce((s, b: any) => s + ((b.total_amount || 0) - (b.tax_amount || 0)), 0);
+
+  const totalRevenue = glData.length > 0 ? glRevenue : invoiceRevenue;
+  const totalExpenses = glData.length > 0 ? glExpenses : billExpenses;
   const profitBeforeTax = totalRevenue - totalExpenses;
   const citProjected = Math.max(0, (profitBeforeTax * citRate) / 100);
   const citAfterWht = Math.max(0, citProjected - totalWht);
 
   const countries = [...new Set(taxRates.map(r => r.country_code))];
+
+  const hasVatEntries = invoices.some((i: any) => (i.tax_amount || 0) + (i.shipping_vat_amount || 0) > 0) || bills.some((b: any) => (b.tax_amount || 0) > 0);
 
   return (
     <DashboardLayout title="Tax Automation Engine" subtitle="VAT netting, WHT tracking & CIT projection - multi-country compliant">
@@ -124,7 +178,7 @@ export default function TaxEngines() {
                   <p className={`text-2xl font-bold ${vatNet > 0 ? "text-destructive" : "text-green-600"}`}>{fmt(vatNet)}</p>
                 </div>
               </div>
-              {taxLedger.filter(t => t.tax_type === "VAT").length === 0 && (
+              {!hasVatEntries && (
                 <p className="text-center py-8 text-muted-foreground">No VAT entries yet. Post invoices and vendor bills to populate.</p>
               )}
             </CardContent>
@@ -152,14 +206,14 @@ export default function TaxEngines() {
                 <p className="text-center py-8 text-muted-foreground">No WHT entries. WHT is auto-calculated when vendor payments are processed.</p>
               ) : (
                 <Table>
-                  <TableHeader><TableRow><TableHead>Vendor</TableHead><TableHead>Rate</TableHead><TableHead className="text-right">Amount</TableHead><TableHead>Period</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+                  <TableHeader><TableRow><TableHead>Investor</TableHead><TableHead>Rate</TableHead><TableHead className="text-right">Amount</TableHead><TableHead>Due Date</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
                   <TableBody>
-                    {whtEntries.map(e => (
+                    {whtEntries.map((e: any) => (
                       <TableRow key={e.id}>
-                        <TableCell>{e.vendor_name || "-"}</TableCell>
-                        <TableCell>{e.tax_rate_applied}%</TableCell>
-                        <TableCell className="text-right font-medium">{fmt(Number(e.amount))}</TableCell>
-                        <TableCell className="text-muted-foreground text-xs">{e.period || "-"}</TableCell>
+                        <TableCell>{e.capital_funding?.investor_name || "-"}</TableCell>
+                        <TableCell>{e.capital_funding?.wht_rate ? `${e.capital_funding.wht_rate}%` : "-"}</TableCell>
+                        <TableCell className="text-right font-medium">{fmt(Number(e.wht_amount))}</TableCell>
+                        <TableCell className="text-muted-foreground text-xs">{e.due_date ? new Date(e.due_date).toLocaleDateString() : "-"}</TableCell>
                         <TableCell><Badge variant="outline">{e.status}</Badge></TableCell>
                       </TableRow>
                     ))}
