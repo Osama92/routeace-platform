@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,6 +7,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Calculator, TrendingUp, TrendingDown, Shield, Download, Globe, AlertTriangle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -14,9 +16,29 @@ import { useAuth } from "@/contexts/AuthContext";
 const fmt = (n: number, sym = "₦") =>
   `${sym}${Math.abs(n).toLocaleString("en-NG", { minimumFractionDigits: 0 })}`;
 
+// WHT withholding rate applied to the pre-tax value of invoices/bills.
+// Flat 2% for now (goods/contracts rate) — can be split by goods vs
+// services (5%) once line items carry a category classification.
+const WHT_RATE_PERCENT = 2;
+
+// Nigeria CIT turnover banding (Finance Act): companies with annual
+// turnover up to ₦50m pay 0% CIT; above ₦50m pay 30%. Other countries'
+// bands can be added here as they're confirmed; tax_rates table remains
+// a fallback/guide for countries not yet modeled with real banding.
+const CIT_BANDS: Record<string, { threshold: number; lowRate: number; highRate: number }> = {
+  NG: { threshold: 50_000_000, lowRate: 0, highRate: 30 },
+};
+
 export default function TaxEngines() {
   const [country, setCountry] = useState("NG");
   const { organizationId } = useAuth();
+
+  // Manual CIT adjustment inputs — the platform has no asset register or
+  // prior-year loss tracking yet, so these are entered by the user per the
+  // standard CIT computation: PBT + disallowed expenses - capital allowances - loss relief.
+  const [disallowedExpenses, setDisallowedExpenses] = useState("0");
+  const [capitalAllowances, setCapitalAllowances] = useState("0");
+  const [lossRelief, setLossRelief] = useState("0");
 
   const { data: taxRates = [] } = useQuery({
     queryKey: ["tax-rates"],
@@ -26,17 +48,17 @@ export default function TaxEngines() {
     },
   });
 
-  // VAT source: live invoices (output) and vendor bills (input) — same
-  // source of truth as Accounts Ledger and Tax Filing Report. tax_ledger /
-  // accounting_ledger are never written to by the invoice/bill flow, so
-  // this page previously always showed zero.
+  // VAT + WHT source: live invoices (output) and vendor bills (input) —
+  // same source of truth as Accounts Ledger and Tax Filing Report.
+  // tax_ledger / accounting_ledger are never written to by the invoice/bill
+  // flow, so this page previously always showed zero.
   const { data: invoices = [] } = useQuery({
     queryKey: ["tax-engine-invoices", organizationId],
     enabled: !!organizationId,
     queryFn: async () => {
       const { data } = await supabase
         .from("invoices")
-        .select("id, invoice_number, tax_amount, shipping_vat_amount, subtotal, total_amount, status, customers(company_name)")
+        .select("id, invoice_number, tax_amount, shipping_vat_amount, subtotal, total_amount, status, invoice_date, created_at, customers(company_name)")
         .eq("organization_id", organizationId)
         .neq("status", "cancelled");
       return data || [];
@@ -49,26 +71,9 @@ export default function TaxEngines() {
     queryFn: async () => {
       const { data } = await supabase
         .from("bills")
-        .select("id, bill_number, tax_amount, total_amount, vendor_name, payment_status")
+        .select("id, bill_number, tax_amount, total_amount, vendor_name, payment_status, bill_date, created_at")
         .eq("organization_id", organizationId)
         .neq("payment_status", "cancelled");
-      return data || [];
-    },
-  });
-
-  // capital_repayments has no organization_id (scoped via funding_id -> capital_funding)
-  // and no vendor_name/wht_rate of its own — those live on the parent capital_funding
-  // row (investor_name, wht_rate). This WHT bucket is specifically withholding on
-  // investor/capital interest, not general vendor payment WHT.
-  const { data: capitalRepayments = [] } = useQuery({
-    queryKey: ["tax-engine-wht", organizationId],
-    enabled: !!organizationId,
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("capital_repayments")
-        .select("id, wht_amount, due_date, status, capital_funding!inner(investor_name, wht_rate, organization_id)")
-        .eq("capital_funding.organization_id", organizationId)
-        .gt("wht_amount", 0);
       return data || [];
     },
   });
@@ -88,19 +93,42 @@ export default function TaxEngines() {
 
   const countryRates = taxRates.filter(r => r.country_code === country);
   const vatRate = countryRates.find(r => r.tax_type === "VAT")?.rate_percentage || 0;
-  const citRate = countryRates.find(r => r.tax_type === "CIT")?.rate_percentage || 0;
+  const fallbackCitRate = countryRates.find(r => r.tax_type === "CIT")?.rate_percentage || 0;
 
   // VAT netting from live invoices/bills
   const outputVat = invoices.reduce((s, inv: any) => s + (inv.tax_amount || 0) + (inv.shipping_vat_amount || 0), 0);
   const inputVat = bills.reduce((s, b: any) => s + (b.tax_amount || 0), 0);
   const vatNet = outputVat - inputVat;
 
-  // WHT tracking from capital repayments (same source as Tax Filing Report)
-  const whtEntries = capitalRepayments;
-  const totalWht = whtEntries.reduce((s, t: any) => s + Number(t.wht_amount || 0), 0);
+  // WHT on invoices raised — deducted BY YOUR CUSTOMER before they pay you,
+  // then remitted to FIRS on your behalf. Computed as 2% of pre-tax invoice value.
+  const whtOnInvoiceLines = useMemo(() => invoices.map((inv: any) => ({
+    id: inv.id,
+    number: inv.invoice_number || inv.id.slice(0, 8),
+    party: inv.customers?.company_name || "Customer",
+    date: inv.invoice_date || inv.created_at,
+    base: inv.subtotal || 0,
+    wht: (inv.subtotal || 0) * (WHT_RATE_PERCENT / 100),
+  })), [invoices]);
+  const whtOnInvoices = whtOnInvoiceLines.reduce((s, l) => s + l.wht, 0);
 
-  // CIT estimation — prefer live invoices/bills for revenue/expense base;
-  // fall back to accounting_ledger only if it has data (kept for orgs using GL directly).
+  // WHT on vendor bills — deducted BY YOU from what you pay vendors, then
+  // remitted to FIRS on the vendor's behalf. Computed as 2% of the bill's
+  // pre-VAT (net) amount.
+  const whtOnBillLines = useMemo(() => bills.map((b: any) => ({
+    id: b.id,
+    number: b.bill_number || b.id.slice(0, 8),
+    party: b.vendor_name || "Vendor",
+    date: b.bill_date || b.created_at,
+    base: (b.total_amount || 0) - (b.tax_amount || 0),
+    wht: ((b.total_amount || 0) - (b.tax_amount || 0)) * (WHT_RATE_PERCENT / 100),
+  })), [bills]);
+  const whtOnBills = whtOnBillLines.reduce((s, l) => s + l.wht, 0);
+
+  const totalWht = whtOnInvoices + whtOnBills;
+
+  // CIT — turnover-banded rate + full computation:
+  // Taxable Profit = PBT + Disallowed Expenses - Capital Allowances - Loss Relief
   const glRevenue = glData.filter((e: any) => e.account_type === "revenue" || e.account_name?.includes("revenue")).reduce((s: number, e: any) => s + Number(e.credit || 0), 0);
   const glExpenses = glData.filter((e: any) => e.account_type === "expense" || e.account_name?.includes("expense") || e.account_name?.includes("cost")).reduce((s: number, e: any) => s + Number(e.debit || 0), 0);
 
@@ -110,10 +138,23 @@ export default function TaxEngines() {
   const totalRevenue = glData.length > 0 ? glRevenue : invoiceRevenue;
   const totalExpenses = glData.length > 0 ? glExpenses : billExpenses;
   const profitBeforeTax = totalRevenue - totalExpenses;
-  const citProjected = Math.max(0, (profitBeforeTax * citRate) / 100);
+
+  const annualTurnover = totalRevenue; // same figure used as "Total Revenue" — CIT turnover basis
+
+  const citBand = CIT_BANDS[country];
+  const citRate = citBand
+    ? (annualTurnover <= citBand.threshold ? citBand.lowRate : citBand.highRate)
+    : fallbackCitRate;
+
+  const disallowed = parseFloat(disallowedExpenses) || 0;
+  const allowances = parseFloat(capitalAllowances) || 0;
+  const relief = parseFloat(lossRelief) || 0;
+  const taxableProfit = Math.max(0, profitBeforeTax + disallowed - allowances - relief);
+
+  const citProjected = Math.max(0, (taxableProfit * citRate) / 100);
   const citAfterWht = Math.max(0, citProjected - totalWht);
 
-  const countries = [...new Set(taxRates.map(r => r.country_code))];
+  const countries = [...new Set(taxRates.map(r => r.country_code)), ...Object.keys(CIT_BANDS)].filter((v, i, a) => a.indexOf(v) === i);
 
   const hasVatEntries = invoices.some((i: any) => (i.tax_amount || 0) + (i.shipping_vat_amount || 0) > 0) || bills.some((b: any) => (b.tax_amount || 0) > 0);
 
@@ -192,33 +233,61 @@ export default function TaxEngines() {
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <div className="p-4 rounded-lg bg-primary/5 border border-primary/20">
-                  <p className="text-sm text-muted-foreground">Total WHT Deducted</p>
-                  <p className="text-2xl font-bold">{fmt(totalWht)}</p>
-                  <p className="text-xs text-muted-foreground mt-1">Available as CIT credit</p>
+                  <p className="text-sm text-muted-foreground">Total WHT Deducted (on Invoices Raised)</p>
+                  <p className="text-2xl font-bold">{fmt(whtOnInvoices)}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{WHT_RATE_PERCENT}% of invoice value before tax — withheld by customers, available as CIT credit</p>
                 </div>
                 <div className="p-4 rounded-lg bg-muted/50 border border-border/50">
-                  <p className="text-sm text-muted-foreground">WHT Entries</p>
-                  <p className="text-2xl font-bold">{whtEntries.length}</p>
-                  <p className="text-xs text-muted-foreground mt-1">Across all vendors</p>
+                  <p className="text-sm text-muted-foreground">WHT Deducted Across All Vendors</p>
+                  <p className="text-2xl font-bold">{fmt(whtOnBills)}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{WHT_RATE_PERCENT}% of VATed bill amount — withheld from vendor payments, remitted to FIRS</p>
                 </div>
               </div>
-              {whtEntries.length === 0 ? (
-                <p className="text-center py-8 text-muted-foreground">No WHT entries. WHT is auto-calculated when vendor payments are processed.</p>
+
+              {whtOnInvoiceLines.length === 0 && whtOnBillLines.length === 0 ? (
+                <p className="text-center py-8 text-muted-foreground">No WHT entries. WHT is calculated from invoices raised and vendor bills.</p>
               ) : (
-                <Table>
-                  <TableHeader><TableRow><TableHead>Investor</TableHead><TableHead>Rate</TableHead><TableHead className="text-right">Amount</TableHead><TableHead>Due Date</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-                  <TableBody>
-                    {whtEntries.map((e: any) => (
-                      <TableRow key={e.id}>
-                        <TableCell>{e.capital_funding?.investor_name || "-"}</TableCell>
-                        <TableCell>{e.capital_funding?.wht_rate ? `${e.capital_funding.wht_rate}%` : "-"}</TableCell>
-                        <TableCell className="text-right font-medium">{fmt(Number(e.wht_amount))}</TableCell>
-                        <TableCell className="text-muted-foreground text-xs">{e.due_date ? new Date(e.due_date).toLocaleDateString() : "-"}</TableCell>
-                        <TableCell><Badge variant="outline">{e.status}</Badge></TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="px-3 py-2 bg-muted/50 text-xs font-semibold text-muted-foreground">
+                      WHT on Invoices ({whtOnInvoiceLines.length})
+                    </div>
+                    <div className="max-h-72 overflow-y-auto">
+                      <Table>
+                        <TableHeader><TableRow><TableHead className="text-xs">Invoice #</TableHead><TableHead className="text-xs">Customer</TableHead><TableHead className="text-xs text-right">WHT</TableHead></TableRow></TableHeader>
+                        <TableBody>
+                          {whtOnInvoiceLines.filter(l => l.wht > 0).map(l => (
+                            <TableRow key={l.id}>
+                              <TableCell className="text-xs font-medium">{l.number}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground truncate max-w-[120px]">{l.party}</TableCell>
+                              <TableCell className="text-xs text-right font-semibold">{fmt(l.wht)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="px-3 py-2 bg-muted/50 text-xs font-semibold text-muted-foreground">
+                      WHT on Vendor Bills ({whtOnBillLines.length})
+                    </div>
+                    <div className="max-h-72 overflow-y-auto">
+                      <Table>
+                        <TableHeader><TableRow><TableHead className="text-xs">Bill #</TableHead><TableHead className="text-xs">Vendor</TableHead><TableHead className="text-xs text-right">WHT</TableHead></TableRow></TableHeader>
+                        <TableBody>
+                          {whtOnBillLines.filter(l => l.wht > 0).map(l => (
+                            <TableRow key={l.id}>
+                              <TableCell className="text-xs font-medium">{l.number}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground truncate max-w-[120px]">{l.party}</TableCell>
+                              <TableCell className="text-xs text-right font-semibold">{fmt(l.wht)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -232,18 +301,46 @@ export default function TaxEngines() {
               <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-3">
-                    <div className="flex justify-between p-3 rounded bg-muted/50"><span className="text-sm">Total Revenue</span><span className="font-bold text-green-600">{fmt(totalRevenue)}</span></div>
+                    <div className="flex justify-between p-3 rounded bg-muted/50"><span className="text-sm">Total Revenue (Turnover)</span><span className="font-bold text-green-600">{fmt(totalRevenue)}</span></div>
                     <div className="flex justify-between p-3 rounded bg-muted/50"><span className="text-sm">Total Expenses</span><span className="font-bold text-destructive">{fmt(totalExpenses)}</span></div>
                     <div className="flex justify-between p-3 rounded bg-primary/5 border border-primary/20"><span className="text-sm font-medium">Profit Before Tax</span><span className="font-bold">{fmt(profitBeforeTax)}</span></div>
+                    <div className="flex justify-between p-3 rounded bg-muted/50"><span className="text-sm">+ Disallowed Expenses</span><span className="font-bold">{fmt(disallowed)}</span></div>
+                    <div className="flex justify-between p-3 rounded bg-muted/50"><span className="text-sm">- Capital Allowances</span><span className="font-bold text-green-600">({fmt(allowances)})</span></div>
+                    <div className="flex justify-between p-3 rounded bg-muted/50"><span className="text-sm">- Loss Relief b/f</span><span className="font-bold text-green-600">({fmt(relief)})</span></div>
+                    <div className="flex justify-between p-3 rounded bg-primary/10 border border-primary/30"><span className="text-sm font-medium">Taxable Profit</span><span className="font-bold">{fmt(taxableProfit)}</span></div>
                   </div>
                   <div className="space-y-3">
-                    <div className="flex justify-between p-3 rounded bg-muted/50"><span className="text-sm">CIT Rate ({country})</span><span className="font-bold">{citRate}%</span></div>
+                    <div className="flex justify-between p-3 rounded bg-muted/50">
+                      <span className="text-sm">CIT Rate ({country}{citBand ? ` — turnover-banded` : ""})</span>
+                      <span className="font-bold">{citRate}%</span>
+                    </div>
+                    {citBand && (
+                      <p className="text-[11px] text-muted-foreground px-3 -mt-2">
+                        Turnover {fmt(annualTurnover)} {annualTurnover <= citBand.threshold ? "≤" : ">"} {fmt(citBand.threshold)} threshold → {citRate}% band
+                      </p>
+                    )}
                     <div className="flex justify-between p-3 rounded bg-muted/50"><span className="text-sm">Gross CIT</span><span className="font-bold">{fmt(citProjected)}</span></div>
                     <div className="flex justify-between p-3 rounded bg-muted/50"><span className="text-sm">Less: WHT Credits</span><span className="font-bold text-green-600">({fmt(totalWht)})</span></div>
                     <div className="flex justify-between p-3 rounded bg-destructive/5 border border-destructive/20"><span className="text-sm font-medium">Net CIT Payable</span><span className="font-bold text-destructive">{fmt(citAfterWht)}</span></div>
+
+                    <div className="pt-2 space-y-3 border-t border-border/50">
+                      <p className="text-xs font-semibold text-muted-foreground">Manual Adjustments</p>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="disallowed" className="text-xs">Disallowed Expenses (fines, penalties, non-deductible depreciation)</Label>
+                        <Input id="disallowed" type="number" value={disallowedExpenses} onChange={e => setDisallowedExpenses(e.target.value)} className="h-8 text-sm" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="allowances" className="text-xs">Capital Allowances</Label>
+                        <Input id="allowances" type="number" value={capitalAllowances} onChange={e => setCapitalAllowances(e.target.value)} className="h-8 text-sm" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="relief" className="text-xs">Loss Relief Carried Forward</Label>
+                        <Input id="relief" type="number" value={lossRelief} onChange={e => setLossRelief(e.target.value)} className="h-8 text-sm" />
+                      </div>
+                    </div>
                   </div>
                 </div>
-                {profitBeforeTax <= 0 && (
+                {taxableProfit <= 0 && (
                   <div className="flex items-center gap-2 p-3 rounded bg-green-500/5 border border-green-500/20">
                     <AlertTriangle className="w-4 h-4 text-green-600" />
                     <span className="text-sm text-green-600">No CIT payable - tax loss position. Loss can be carried forward.</span>
@@ -258,7 +355,11 @@ export default function TaxEngines() {
         <TabsContent value="rates">
           <Card className="border-border/50">
             <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Globe className="w-4 h-4" />Configured Tax Rates</CardTitle></CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
+              <p className="text-xs text-muted-foreground">
+                These are reference/default rates. Nigeria's CIT rate is computed dynamically from turnover banding
+                (see CIT Projection tab) rather than the flat rate below.
+              </p>
               <Table>
                 <TableHeader><TableRow><TableHead>Country</TableHead><TableHead>Tax Type</TableHead><TableHead>Name</TableHead><TableHead className="text-right">Rate %</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
                 <TableBody>
