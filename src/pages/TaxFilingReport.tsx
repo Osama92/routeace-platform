@@ -96,6 +96,16 @@ interface WHTBreakdown {
   dispatch_count: number;
 }
 
+interface VATInvoiceLine {
+  id: string;
+  number: string;
+  party: string; // customer or vendor name
+  date: string | null;
+  amount: number;     // subtotal / pre-tax amount
+  vat_amount: number; // tax_amount (+ shipping_vat for invoices)
+  total_amount: number;
+}
+
 interface MonthlyTaxObligation {
   month: string;
   output_vat: number;
@@ -117,6 +127,8 @@ const formatCurrency = (amount: number) => {
 const TaxFilingReport = () => {
   const [taxData, setTaxData] = useState<TaxSummary[]>([]);
   const [vatBreakdown, setVatBreakdown] = useState<VATBreakdown>({ output_vat: 0, input_vat: 0, shipping_vat: 0, net_vat_payable: 0, invoice_count: 0, bill_count: 0 });
+  const [outputVatLines, setOutputVatLines] = useState<VATInvoiceLine[]>([]);
+  const [inputVatLines, setInputVatLines] = useState<VATInvoiceLine[]>([]);
   const [whtBreakdown, setWhtBreakdown] = useState<WHTBreakdown>({ total_wht_deducted: 0, wht_on_invoices: 0, wht_on_capital: 0, dispatch_count: 0 });
   const [monthlyObligations, setMonthlyObligations] = useState<MonthlyTaxObligation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -245,6 +257,38 @@ const TaxFilingReport = () => {
         invoice_count: invoices.length,
         bill_count: bills.length,
       });
+
+      // Line-level breakdown so each VAT figure can be traced back to the
+      // exact invoices/bills that make it up — at a glance and for error-checking.
+      setOutputVatLines(
+        invoices
+          .filter((inv: any) => (inv.tax_amount || 0) + (inv.shipping_vat_amount || 0) > 0)
+          .map((inv: any) => ({
+            id: inv.id,
+            number: inv.invoice_number || inv.id.slice(0, 8),
+            party: inv.customers?.company_name || "Customer",
+            date: inv.invoice_date || inv.created_at,
+            amount: inv.subtotal || 0,
+            vat_amount: (inv.tax_amount || 0) + (inv.shipping_vat_amount || 0),
+            total_amount: inv.total_amount || 0,
+          }))
+          .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())
+      );
+
+      setInputVatLines(
+        bills
+          .filter((b: any) => (b.tax_amount || 0) > 0)
+          .map((b: any) => ({
+            id: b.id,
+            number: b.bill_number || b.id.slice(0, 8),
+            party: b.vendor_name || "Vendor",
+            date: b.bill_date || b.created_at,
+            amount: (b.total_amount || 0) - (b.tax_amount || 0),
+            vat_amount: b.tax_amount || 0,
+            total_amount: b.total_amount || 0,
+          }))
+          .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())
+      );
 
       // Process WHT breakdown
       const capitalRepayments = capitalRes.data || [];
@@ -626,6 +670,43 @@ const TaxFilingReport = () => {
                       <span className="font-bold text-red-600">{formatCurrency(vatBreakdown.output_vat + vatBreakdown.shipping_vat)}</span>
                     </div>
                   </div>
+
+                  {/* Invoice-level breakdown — shows exactly what makes up Output VAT */}
+                  <div className="mt-4 border rounded-lg overflow-hidden">
+                    <div className="px-3 py-2 bg-muted/50 text-xs font-semibold text-muted-foreground">
+                      Breakdown by invoice ({outputVatLines.length})
+                    </div>
+                    <div className="max-h-72 overflow-y-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="text-xs">Invoice #</TableHead>
+                            <TableHead className="text-xs">Customer</TableHead>
+                            <TableHead className="text-xs text-right">Amount</TableHead>
+                            <TableHead className="text-xs text-right">VAT</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {outputVatLines.length === 0 ? (
+                            <TableRow><TableCell colSpan={4} className="text-center text-xs text-muted-foreground py-6">No invoices with VAT in this period</TableCell></TableRow>
+                          ) : outputVatLines.map((line) => (
+                            <TableRow key={line.id}>
+                              <TableCell className="text-xs font-medium">{line.number}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground truncate max-w-[120px]">{line.party}</TableCell>
+                              <TableCell className="text-xs text-right">{formatCurrency(line.amount)}</TableCell>
+                              <TableCell className="text-xs text-right font-semibold text-red-600">{formatCurrency(line.vat_amount)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    {outputVatLines.length > 0 && (
+                      <div className="flex justify-between px-3 py-2 border-t bg-red-500/5 text-xs font-bold">
+                        <span>Total ({outputVatLines.length} invoices)</span>
+                        <span className="text-red-600">{formatCurrency(outputVatLines.reduce((s, l) => s + l.vat_amount, 0))}</span>
+                      </div>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
 
@@ -644,6 +725,43 @@ const TaxFilingReport = () => {
                       <span className="font-medium">Total Recoverable VAT</span>
                       <span className="font-bold text-green-600">-{formatCurrency(vatBreakdown.input_vat)}</span>
                     </div>
+                  </div>
+
+                  {/* Bill-level breakdown — shows exactly what makes up Input VAT */}
+                  <div className="mt-4 border rounded-lg overflow-hidden">
+                    <div className="px-3 py-2 bg-muted/50 text-xs font-semibold text-muted-foreground">
+                      Breakdown by bill ({inputVatLines.length})
+                    </div>
+                    <div className="max-h-72 overflow-y-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="text-xs">Bill #</TableHead>
+                            <TableHead className="text-xs">Vendor</TableHead>
+                            <TableHead className="text-xs text-right">Amount</TableHead>
+                            <TableHead className="text-xs text-right">VAT</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {inputVatLines.length === 0 ? (
+                            <TableRow><TableCell colSpan={4} className="text-center text-xs text-muted-foreground py-6">No bills with VAT in this period</TableCell></TableRow>
+                          ) : inputVatLines.map((line) => (
+                            <TableRow key={line.id}>
+                              <TableCell className="text-xs font-medium">{line.number}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground truncate max-w-[120px]">{line.party}</TableCell>
+                              <TableCell className="text-xs text-right">{formatCurrency(line.amount)}</TableCell>
+                              <TableCell className="text-xs text-right font-semibold text-green-600">{formatCurrency(line.vat_amount)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    {inputVatLines.length > 0 && (
+                      <div className="flex justify-between px-3 py-2 border-t bg-green-500/5 text-xs font-bold">
+                        <span>Total ({inputVatLines.length} bills)</span>
+                        <span className="text-green-600">{formatCurrency(inputVatLines.reduce((s, l) => s + l.vat_amount, 0))}</span>
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
