@@ -93,7 +93,12 @@ export default function TaxEngines() {
 
   const countryRates = taxRates.filter(r => r.country_code === country);
   const vatRate = countryRates.find(r => r.tax_type === "VAT")?.rate_percentage || 0;
-  const fallbackCitRate = countryRates.find(r => r.tax_type === "CIT")?.rate_percentage || 0;
+  // A country can define several CIT bands (e.g. Nigeria small/medium/large).
+  // Take the highest as the fallback so we never under-state the liability —
+  // countries with modelled turnover banding (see CIT_BANDS) override this anyway.
+  const fallbackCitRate = countryRates
+    .filter(r => r.tax_type === "CIT")
+    .reduce((max, r) => Math.max(max, Number(r.rate_percentage) || 0), 0);
 
   // VAT netting from live invoices/bills
   const outputVat = invoices.reduce((s, inv: any) => s + (inv.tax_amount || 0) + (inv.shipping_vat_amount || 0), 0);
