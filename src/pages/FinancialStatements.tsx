@@ -15,8 +15,11 @@ import { startOfMonth, startOfQuarter, startOfYear } from "date-fns";
 const fmt = (n: number, sym = "₦") =>
   `${n < 0 ? "-" : ""}${sym}${Math.abs(n).toLocaleString("en-NG", { minimumFractionDigits: 0 })}`;
 
-// Direct cost of delivering the service (COGS) vs general overhead (OPEX).
-const COGS_CATEGORIES = ["fuel", "maintenance", "driver_salary", "tolls", "repairs", "equipment"];
+// COGS vs OPEX is driven by the expenses.is_cogs flag — the platform-wide
+// convention already used by AdminAnalytics, ProfitLoss, BudgetVarianceAnalysis,
+// RouteLevelCosting, CustomerProfitabilityReport and TargetPerformanceWidget.
+// Do NOT reintroduce a hardcoded category list here: it would silently disagree
+// with every other P&L surface in the product.
 
 export default function FinancialStatements() {
   const [period, setPeriod] = useState("all");
@@ -42,7 +45,9 @@ export default function FinancialStatements() {
         .from("invoices")
         .select("id, invoice_number, subtotal, tax_amount, shipping_vat_amount, total_amount, status, invoice_date, created_at, customers(company_name)")
         .eq("organization_id", organizationId)
-        .neq("status", "cancelled");
+        // Draft invoices are not revenue and carry no VAT liability — they are
+        // unissued documents. Matches Zoho/QuickBooks treatment.
+        .not("status", "in", '("cancelled","draft")');
       return data || [];
     },
   });
@@ -66,7 +71,7 @@ export default function FinancialStatements() {
     queryFn: async () => {
       const { data } = await supabase
         .from("expenses")
-        .select("id, amount, category, expense_date, description")
+        .select("id, amount, category, expense_date, description, is_cogs")
         .eq("organization_id", organizationId)
         .eq("approval_status", "approved");
       return data || [];
@@ -91,8 +96,8 @@ export default function FinancialStatements() {
 
   // ── P&L ──────────────────────────────────────────────────────────
   const totalRevenue = filteredInvoices.reduce((s, inv: any) => s + (inv.subtotal || 0), 0);
-  const cogsExpenses = filteredExpenses.filter((e: any) => COGS_CATEGORIES.includes(e.category));
-  const opexExpenses = filteredExpenses.filter((e: any) => !COGS_CATEGORIES.includes(e.category));
+  const cogsExpenses = filteredExpenses.filter((e: any) => e.is_cogs === true);
+  const opexExpenses = filteredExpenses.filter((e: any) => e.is_cogs !== true);
   const totalCogs = cogsExpenses.reduce((s: number, e: any) => s + Number(e.amount || 0), 0);
   const grossProfit = totalRevenue - totalCogs;
   const totalOpex = opexExpenses.reduce((s: number, e: any) => s + Number(e.amount || 0), 0);

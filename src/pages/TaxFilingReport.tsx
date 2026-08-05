@@ -59,6 +59,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { format, startOfYear, endOfYear, startOfMonth, endOfMonth } from "date-fns";
 import jsPDF from "jspdf";
@@ -140,6 +141,7 @@ const TaxFilingReport = () => {
   const [nrsStatus, setNrsStatus] = useState<"connected" | "pending" | "disconnected">("pending");
   const [activeTab, setActiveTab] = useState("overview");
   const { toast } = useToast();
+  const { organizationId } = useAuth();
 
   const yearOptions = Array.from({ length: 5 }, (_, i) => {
     const year = new Date().getFullYear() - i;
@@ -158,46 +160,54 @@ const TaxFilingReport = () => {
   };
 
   const fetchAllTaxData = async () => {
+    if (!organizationId) { setLoading(false); return; }
     setLoading(true);
     try {
       const startDate = startOfYear(new Date(selectedYear, 0, 1));
       const endDate = endOfYear(new Date(selectedYear, 0, 1));
 
-      // Fetch all data in parallel
+      // Fetch all data in parallel — every tenant table is org-scoped.
       const [salariesRes, invoicesRes, billsRes, capitalRes, dispatchesRes] = await Promise.all([
         // PAYE data from driver salaries
         supabase
           .from("driver_salaries")
-          .select("id, driver_id, gross_amount, tax_amount, period_start, drivers (full_name)")
+          .select("id, driver_id, gross_amount, tax_amount, period_start, drivers!inner (full_name, organization_id)")
+          .eq("drivers.organization_id", organizationId)
           .gte("period_start", startDate.toISOString())
           .lte("period_start", endDate.toISOString())
           .eq("status", "paid"),
-        // Output VAT from invoices
+        // Output VAT from invoices. Draft invoices are NOT a VAT liability —
+        // VAT is only due once the invoice is actually issued to the customer.
         supabase
           .from("invoices")
           .select("id, invoice_number, subtotal, tax_amount, shipping_vat_amount, total_amount, tax_type, status, invoice_date, created_at, customers(company_name)")
+          .eq("organization_id", organizationId)
           .gte("created_at", startDate.toISOString())
           .lte("created_at", endDate.toISOString())
-          .not("status", "eq", "cancelled"),
+          .not("status", "in", '("cancelled","draft")'),
         // Input VAT from vendor bills (recoverable) — VAT actually charged by
         // vendors on purchases, NOT internal expenses (fuel, allowances, etc.)
         // which typically carry no reclaimable VAT invoice.
         supabase
           .from("bills")
           .select("id, bill_number, tax_amount, total_amount, bill_date, created_at, vendor_name")
+          .eq("organization_id", organizationId)
           .gte("bill_date", startDate.toISOString())
           .lte("bill_date", endDate.toISOString())
           .not("payment_status", "eq", "cancelled"),
-        // WHT from capital repayments
+        // WHT on investor/capital interest. capital_repayments has no
+        // organization_id — it is scoped through its parent capital_funding row.
         supabase
           .from("capital_repayments")
-          .select("id, wht_amount, due_date, status")
+          .select("id, wht_amount, due_date, status, capital_funding!inner(organization_id)")
+          .eq("capital_funding.organization_id", organizationId)
           .gte("due_date", startDate.toISOString())
           .lte("due_date", endDate.toISOString()),
         // Dispatch count for context
         supabase
           .from("dispatches")
           .select("id, created_at")
+          .eq("organization_id", organizationId)
           .gte("created_at", startDate.toISOString())
           .lte("created_at", endDate.toISOString())
           .not("status", "eq", "cancelled"),
@@ -356,7 +366,7 @@ const TaxFilingReport = () => {
   useEffect(() => {
     fetchAllTaxData();
     checkRemitaConfig();
-  }, [selectedYear]);
+  }, [selectedYear, organizationId]);
 
   const totals = {
     drivers: taxData.length,

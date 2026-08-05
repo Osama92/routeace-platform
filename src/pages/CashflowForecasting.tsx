@@ -16,8 +16,8 @@ import { useToast } from "@/hooks/use-toast";
 const fmt = (n: number, sym = "₦") =>
   `${n < 0 ? "-" : ""}${sym}${Math.abs(n).toLocaleString("en-NG", { minimumFractionDigits: 0 })}`;
 
-// Direct cost of delivering the service — same categorisation as Financial Statements.
-const COGS_CATEGORIES = ["fuel", "maintenance", "driver_salary", "tolls", "repairs", "equipment"];
+// Note: COGS/OPEX split is driven by the expenses.is_cogs flag platform-wide.
+// This page only needs total burn, so it sums all approved expenses.
 
 export default function CashflowForecasting() {
   const { organizationId } = useAuth();
@@ -39,7 +39,8 @@ export default function CashflowForecasting() {
         .from("invoices")
         .select("id, invoice_number, subtotal, total_amount, status, due_date, invoice_date, created_at, customers(company_name)")
         .eq("organization_id", organizationId)
-        .neq("status", "cancelled");
+        // Draft invoices are unissued — they are not collectable receivables.
+        .not("status", "in", '("cancelled","draft")');
       return data || [];
     },
   });

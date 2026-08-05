@@ -98,10 +98,15 @@ const ProfitLossPage = () => {
       const { start, end } = getDateRange();
 
       // Fetch invoices (revenue) - org-scoped
+      // Revenue excludes draft (unissued) and cancelled invoices. Previously ALL
+      // invoices were summed, which overstated revenue by including both.
+      // Revenue is recognised net of VAT (subtotal), not gross — VAT collected
+      // is a liability owed to FIRS, never the company's income.
       const { data: invoices } = await supabase
         .from("invoices")
-        .select("total_amount, status")
+        .select("subtotal, total_amount, status")
         .eq("organization_id", organizationId)
+        .not("status", "in", '("cancelled","draft")')
         .gte("created_at", start.toISOString())
         .lte("created_at", end.toISOString());
 
@@ -122,7 +127,10 @@ const ProfitLossPage = () => {
         .lte("created_at", end.toISOString());
 
       // Calculate P&L
-      const revenue = (invoices || []).reduce((sum, inv) => sum + Number(inv.total_amount || 0), 0);
+      // Use subtotal (ex-VAT). Falling back to total_amount only for legacy rows
+      // that predate the subtotal column being populated.
+      const revenue = (invoices || []).reduce(
+        (sum, inv: any) => sum + Number(inv.subtotal ?? inv.total_amount ?? 0), 0);
       const cogs = (expenses || []).filter(e => e.is_cogs).reduce((sum, e) => sum + Number(e.amount || 0), 0);
       const operatingExpenses = (expenses || []).filter(e => !e.is_cogs).reduce((sum, e) => sum + Number(e.amount || 0), 0);
       const grossProfit = revenue - cogs;
