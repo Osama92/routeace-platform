@@ -9,6 +9,7 @@ import {
   Loader2, ArrowUpRight, ArrowDownRight, AlertTriangle, Gauge, Wallet
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { startOfMonth, startOfYear, subMonths, format } from "date-fns";
 import { motion } from "framer-motion";
 
@@ -26,12 +27,14 @@ const CFODashboard = () => {
   const [metrics, setMetrics] = useState<HealthMetric[]>([]);
   const [revenueByMonth, setRevenueByMonth] = useState<{ month: string; revenue: number }[]>([]);
   const [stressScore, setStressScore] = useState(0);
+  const { organizationId } = useAuth();
 
   useEffect(() => {
-    fetchCFOData();
-  }, []);
+    if (organizationId) fetchCFOData();
+  }, [organizationId]);
 
   const fetchCFOData = async () => {
+    if (!organizationId) { setLoading(false); return; }
     setLoading(true);
     try {
       const now = new Date();
@@ -40,17 +43,30 @@ const CFODashboard = () => {
       const nowISO = now.toISOString();
 
       const [invRes, expRes, arRes, cashRes] = await Promise.all([
-        supabase.from("invoices").select("total_amount, tax_amount, amount, status, created_at").gte("created_at", ytdStart),
-        supabase.from("expenses").select("amount, created_at").gte("created_at", ytdStart),
-        supabase.from("accounts_receivable").select("amount_due, amount_paid, balance, status"),
-        supabase.from("cashflow_forecasts").select("projected_inflow, projected_outflow, actual_inflow, actual_outflow").gte("forecast_date", mtdStart),
+        // Draft/cancelled invoices are not revenue — a draft is an unissued document.
+        supabase.from("invoices")
+          .select("subtotal, total_amount, tax_amount, amount, status, created_at")
+          .eq("organization_id", organizationId)
+          .not("status", "in", '("cancelled","draft")')
+          .gte("created_at", ytdStart),
+        supabase.from("expenses").select("amount, created_at")
+          .eq("organization_id", organizationId)
+          .gte("created_at", ytdStart),
+        supabase.from("accounts_receivable").select("amount_due, amount_paid, balance, status")
+          .eq("organization_id", organizationId),
+        supabase.from("cashflow_forecasts")
+          .select("projected_inflow, projected_outflow, actual_inflow, actual_outflow")
+          .eq("organization_id", organizationId)
+          .gte("forecast_date", mtdStart),
       ]);
 
       const invoices = invRes.data || [];
       const expenses = expRes.data || [];
       const arRecords = arRes.data || [];
 
-      const totalRevenue = invoices.reduce((s, i) => s + (i.total_amount || 0), 0);
+      // Revenue is recognised ex-VAT: output VAT is a liability owed to FIRS,
+      // never company income.
+      const totalRevenue = invoices.reduce((s: number, i: any) => s + (i.subtotal ?? i.total_amount ?? 0), 0);
       const totalExpenses = expenses.reduce((s, e) => s + (e.amount || 0), 0);
       const grossMargin = totalRevenue > 0 ? ((totalRevenue - totalExpenses) / totalRevenue) * 100 : 0;
       const netProfit = totalRevenue - totalExpenses;

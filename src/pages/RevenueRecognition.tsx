@@ -7,10 +7,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, FileText, Clock, CheckCircle, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Skeleton } from "@/components/ui/skeleton";
 import { motion } from "framer-motion";
 
 const RevenueRecognition = () => {
+  const { organizationId } = useAuth();
   const [loading, setLoading] = useState(true);
   const [contracts, setContracts] = useState<any[]>([]);
   const [deferred, setDeferred] = useState<any[]>([]);
@@ -23,8 +25,8 @@ const RevenueRecognition = () => {
     setLoading(true);
     try {
       const [cRes, dRes] = await Promise.all([
-        supabase.from("revenue_contracts").select("*").order("created_at", { ascending: false }).limit(50),
-        supabase.from("deferred_revenue_ledger").select("*").order("created_at", { ascending: false }).limit(50),
+        supabase.from("revenue_contracts").select("*").eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(50),
+        supabase.from("deferred_revenue_ledger").select("*").eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(50),
       ]);
       setContracts(cRes.data || []);
       setDeferred(dRes.data || []);

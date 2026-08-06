@@ -35,7 +35,7 @@ const startOfMonthISO = () => {
 };
 
 const Dashboard = () => {
-  const { userRole, tenantMode } = useAuth();
+  const { userRole, tenantMode, organizationId } = useAuth();
   const [kpis, setKpis] = useState({
     activeShipments: 0,
     onTimeRate: 0,
@@ -47,6 +47,7 @@ const Dashboard = () => {
 
 
   useEffect(() => {
+    if (!organizationId) return;
     const fetchKpis = async () => {
       const start = startOfMonthISO();
 
@@ -54,19 +55,26 @@ const Dashboard = () => {
       const { count: activeCount } = await supabase
         .from("dispatches")
         .select("id", { count: "exact", head: true })
+        .eq("organization_id", organizationId)
         .not("status", "in", "(delivered,cancelled)");
 
-      // Revenue MTD (all invoices raised this month, regardless of payment status)
+      // Revenue MTD - invoices issued this month regardless of payment status,
+      // but EXCLUDING drafts (an unissued document is not revenue) and
+      // cancellations. Recognised ex-VAT: output VAT is owed to FIRS, not income.
       const { data: invoices } = await supabase
         .from("invoices")
-        .select("total_amount")
+        .select("subtotal, total_amount")
+        .eq("organization_id", organizationId)
+        .not("status", "in", '("cancelled","draft")')
         .gte("created_at", start);
-      const revenueMtd = (invoices || []).reduce((sum, r: any) => sum + Number(r.total_amount || 0), 0);
+      const revenueMtd = (invoices || []).reduce(
+        (sum, r: any) => sum + Number(r.subtotal ?? r.total_amount ?? 0), 0);
 
       // Distance MTD (sum delivered dispatches this month)
       const { data: delivered } = await supabase
         .from("dispatches")
         .select("distance_km,cost")
+        .eq("organization_id", organizationId)
         .eq("status", "delivered")
         .gte("created_at", start);
       const totalDistanceKm = (delivered || []).reduce((sum, r: any) => sum + Number(r.distance_km || 0), 0);
@@ -77,6 +85,7 @@ const Dashboard = () => {
       const { data: deliveredTimes } = await supabase
         .from("dispatches")
         .select("scheduled_delivery,actual_delivery")
+        .eq("organization_id", organizationId)
         .eq("status", "delivered")
         .gte("created_at", start)
         .not("scheduled_delivery", "is", null)
@@ -97,7 +106,7 @@ const Dashboard = () => {
     };
 
     fetchKpis();
-  }, []);
+  }, [organizationId]);
 
   const isDept = tenantMode === "LOGISTICS_DEPARTMENT";
 

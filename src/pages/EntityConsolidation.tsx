@@ -6,10 +6,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Building2, ArrowLeftRight, Globe } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Skeleton } from "@/components/ui/skeleton";
 import { motion } from "framer-motion";
 
 const EntityConsolidation = () => {
+  const { organizationId } = useAuth();
   const [loading, setLoading] = useState(true);
   const [entities, setEntities] = useState<any[]>([]);
   const [interco, setInterco] = useState<any[]>([]);
@@ -22,8 +24,8 @@ const EntityConsolidation = () => {
     setLoading(true);
     try {
       const [eRes, iRes] = await Promise.all([
-        supabase.from("legal_entities").select("*").order("created_at", { ascending: false }),
-        supabase.from("intercompany_transactions").select("*").order("created_at", { ascending: false }).limit(50),
+        supabase.from("legal_entities").select("*").eq("organization_id", organizationId).order("created_at", { ascending: false }),
+        supabase.from("intercompany_transactions").select("*").eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(50),
       ]);
       setEntities(eRes.data || []);
       setInterco(iRes.data || []);

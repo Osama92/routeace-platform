@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,29 +21,30 @@ const severityColors: Record<string, string> = {
 };
 
 export default function RevenueProtection() {
+  const { organizationId } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const { data: losses = [], isLoading } = useQuery({
-    queryKey: ["revenue-loss-events"],
+    queryKey: ["revenue-loss-events", organizationId], enabled: !!organizationId,
     queryFn: async () => {
-      const { data } = await supabase.from("revenue_loss_events").select("*").order("created_at", { ascending: false }).limit(100);
+      const { data } = await supabase.from("revenue_loss_events").select("*").eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(100);
       return data || [];
     },
   });
 
   const { data: analyses = [] } = useQuery({
-    queryKey: ["revenue-loss-analysis"],
+    queryKey: ["revenue-loss-analysis", organizationId], enabled: !!organizationId,
     queryFn: async () => {
-      const { data } = await supabase.from("revenue_loss_analysis").select("*").order("created_at", { ascending: false }).limit(10);
+      const { data } = await supabase.from("revenue_loss_analysis").select("*").eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(10);
       return data || [];
     },
   });
 
   const { data: fraudEvents = [] } = useQuery({
-    queryKey: ["fraud-detection-events"],
+    queryKey: ["fraud-detection-events", organizationId], enabled: !!organizationId,
     queryFn: async () => {
-      const { data } = await supabase.from("fraud_detection_events").select("*").order("created_at", { ascending: false }).limit(50);
+      const { data } = await supabase.from("fraud_detection_events").select("*").eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(50);
       return data || [];
     },
   });
@@ -54,7 +56,7 @@ export default function RevenueProtection() {
     },
     onSuccess: (data) => {
       toast({ title: "Revenue scan complete", description: `Detected ${data?.detected || 0} loss events. Total: ₦${(data?.total_loss || 0).toLocaleString()}` });
-      queryClient.invalidateQueries({ queryKey: ["revenue-loss-events"] });
+      queryClient.invalidateQueries({ queryKey: ["revenue-loss-events", organizationId] });
     },
     onError: (e) => toast({ title: "Scan failed", description: e.message, variant: "destructive" }),
   });

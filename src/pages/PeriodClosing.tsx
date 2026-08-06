@@ -47,7 +47,7 @@ const DEFAULT_CHECKLIST: ChecklistItem[] = [
 ];
 
 export default function PeriodClosing() {
-  const { user } = useAuth();
+  const { user, organizationId } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
   const [initOpen, setInitOpen] = useState(false);
@@ -55,11 +55,13 @@ export default function PeriodClosing() {
   const navigate = useNavigate();
 
   const { data: periods, isLoading } = useQuery({
-    queryKey: ["period-closings"],
+    queryKey: ["period-closings", organizationId],
+    enabled: !!organizationId,
     queryFn: async () => {
       const { data } = await supabase
         .from("period_closings")
         .select("*")
+        .eq("organization_id", organizationId)
         .order("period_start", { ascending: false })
         .limit(24);
       return (data || []) as any[];
@@ -76,10 +78,10 @@ export default function PeriodClosing() {
       const end = period.period_end;
 
       const [invRes, payRes, billRes, expRes] = await Promise.all([
-        supabase.from("invoices").select("id", { count: "exact" }).gte("created_at", start).lte("created_at", end),
-        supabase.from("ar_payments").select("id", { count: "exact" }).gte("payment_date", start).lte("payment_date", end),
-        supabase.from("bills").select("id, payment_status", { count: "exact" }).gte("bill_date", start).lte("bill_date", end),
-        supabase.from("expenses").select("id", { count: "exact" }).gte("expense_date", start).lte("expense_date", end),
+        supabase.from("invoices").select("id", { count: "exact" }).eq("organization_id", organizationId).gte("created_at", start).lte("created_at", end),
+        supabase.from("ar_payments").select("id", { count: "exact" }).eq("organization_id", organizationId).gte("payment_date", start).lte("payment_date", end),
+        supabase.from("bills").select("id, payment_status", { count: "exact" }).eq("organization_id", organizationId).gte("bill_date", start).lte("bill_date", end),
+        supabase.from("expenses").select("id", { count: "exact" }).eq("organization_id", organizationId).gte("expense_date", start).lte("expense_date", end),
       ]);
 
       const checklist = DEFAULT_CHECKLIST.map(item => ({
@@ -89,10 +91,14 @@ export default function PeriodClosing() {
 
       // Revenue/expense totals
       const [revRes, costRes] = await Promise.all([
-        supabase.from("invoices").select("total_amount").gte("created_at", start).lte("created_at", end),
-        supabase.from("expenses").select("amount").gte("expense_date", start).lte("expense_date", end),
+        // Revenue excludes draft/cancelled and is recognised ex-VAT.
+        supabase.from("invoices").select("subtotal, total_amount")
+          .eq("organization_id", organizationId)
+          .not("status", "in", '("cancelled","draft")')
+          .gte("created_at", start).lte("created_at", end),
+        supabase.from("expenses").select("amount").eq("organization_id", organizationId).gte("expense_date", start).lte("expense_date", end),
       ]);
-      const totalRevenue = (revRes.data || []).reduce((s, r) => s + (r.total_amount || 0), 0);
+      const totalRevenue = (revRes.data || []).reduce((s, r: any) => s + (r.subtotal ?? r.total_amount ?? 0), 0);
       const totalExpenses = (costRes.data || []).reduce((s, r) => s + (r.amount || 0), 0);
 
       const { error } = await supabase.from("period_closings").update({

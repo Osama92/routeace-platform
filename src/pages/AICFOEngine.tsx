@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { supabase } from "@/integrations/supabase/client";
 import { useIsPaidPlan } from "@/hooks/useIsPaidPlan";
+import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Wallet, Receipt, TrendingDown, ShieldCheck,
@@ -36,10 +37,12 @@ const initial: CFOSnapshot = {
 export default function AICFOEngine() {
   const navigate = useNavigate();
   const { isPaid, loading: planLoading } = useIsPaidPlan();
+  const { organizationId } = useAuth();
   const [snap, setSnap] = useState<CFOSnapshot>(initial);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!organizationId) { setLoading(false); return; }
     const load = async () => {
       try {
         const monthStart = new Date();
@@ -47,9 +50,15 @@ export default function AICFOEngine() {
         monthStart.setHours(0, 0, 0, 0);
 
         const [arRes, apRes, invRes] = await Promise.all([
-          supabase.from("accounts_receivable").select("balance, due_date, status"),
-          supabase.from("accounts_payable").select("balance, status"),
-          supabase.from("invoices").select("total_amount, invoice_date, status").gte("invoice_date", monthStart.toISOString().slice(0, 10)),
+          supabase.from("accounts_receivable").select("balance, due_date, status")
+            .eq("organization_id", organizationId),
+          supabase.from("accounts_payable").select("balance, status")
+            .eq("organization_id", organizationId),
+          // Draft/cancelled invoices are not revenue.
+          supabase.from("invoices").select("subtotal, total_amount, invoice_date, status")
+            .eq("organization_id", organizationId)
+            .not("status", "in", '("cancelled","draft")')
+            .gte("invoice_date", monthStart.toISOString().slice(0, 10)),
         ]);
 
         const ar = arRes.data || [];
@@ -64,9 +73,9 @@ export default function AICFOEngine() {
         const payablesTotal = ap
           .filter((r: any) => r.status !== "paid")
           .reduce((s, r: any) => s + Number(r.balance || 0), 0);
+        // Revenue ex-VAT: output VAT is a liability owed to FIRS, not income.
         const revenueMTD = inv
-          .filter((r: any) => r.status !== "cancelled")
-          .reduce((s, r: any) => s + Number(r.total_amount || 0), 0);
+          .reduce((s, r: any) => s + Number(r.subtotal ?? r.total_amount ?? 0), 0);
 
         setSnap({
           cashPosition: revenueMTD - payablesTotal,
@@ -89,7 +98,7 @@ export default function AICFOEngine() {
     } else {
       setLoading(false);
     }
-  }, [isPaid]);
+  }, [isPaid, organizationId]);
 
   const fmt = (n: number) =>
     new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(n);
