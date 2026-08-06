@@ -49,6 +49,20 @@ const SLAManagement = () => {
   const [policyDialogOpen, setPolicyDialogOpen] = useState(false);
   const [contractDialogOpen, setContractDialogOpen] = useState(false);
   const [editingPolicy, setEditingPolicy] = useState<any>(null);
+  const emptyContract = {
+    customer_id: "",
+    contract_number: "",
+    contract_name: "",
+    effective_date: new Date().toISOString().slice(0, 10),
+    expiry_date: "",
+    sla_duration_days: "3",
+    penalty_per_day: "",
+    grace_period_hours: "0",
+    max_penalty_cap: "",
+    dispute_resolution_clause: "",
+    status: "active",
+  };
+  const [contractForm, setContractForm] = useState({ ...emptyContract });
 
   // Defense-in-depth client-side tenant guard (RLS is the primary guard)
   const guardOrg = <T extends { organization_id?: string | null }>(rows: T[] | null | undefined) =>
@@ -82,6 +96,56 @@ const SLAManagement = () => {
       if (error) throw error;
       return guardOrg(data);
     },
+  });
+
+  // Customers for the contract dialog dropdown (tenant-scoped)
+  const { data: customers = [] } = useQuery({
+    queryKey: ["sla-contract-customers", organizationId],
+    enabled: !!organizationId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("customers")
+        .select("id, company_name")
+        .eq("organization_id", organizationId!)
+        .order("company_name");
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  // Create SLA contract. organization_id is set explicitly as well as by the
+  // DB trigger so the row is correctly tenant-scoped either way.
+  const contractMutation = useMutation({
+    mutationFn: async (form: typeof emptyContract) => {
+      if (!form.contract_number.trim()) throw new Error("Contract number is required");
+      if (!form.contract_name.trim()) throw new Error("Contract name is required");
+      if (!form.penalty_per_day) throw new Error("Penalty per day is required");
+
+      const payload: any = {
+        organization_id: organizationId,
+        customer_id: form.customer_id || null,
+        contract_number: form.contract_number.trim(),
+        contract_name: form.contract_name.trim(),
+        effective_date: form.effective_date,
+        expiry_date: form.expiry_date || null,
+        sla_duration_days: Number(form.sla_duration_days) || 0,
+        penalty_per_day: Number(form.penalty_per_day) || 0,
+        grace_period_hours: Number(form.grace_period_hours) || 0,
+        max_penalty_cap: form.max_penalty_cap ? Number(form.max_penalty_cap) : null,
+        dispute_resolution_clause: form.dispute_resolution_clause || null,
+        status: form.status,
+        version: 1,
+      };
+      const { error } = await supabase.from("sla_contracts").insert(payload);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["sla-contracts", organizationId] });
+      toast.success("SLA contract created");
+      setContractDialogOpen(false);
+      setContractForm({ ...emptyContract });
+    },
+    onError: (e: any) => toast.error(e.message || "Failed to create contract"),
   });
 
   // Fetch SLA Breach Records (tenant-scoped)
@@ -602,6 +666,151 @@ const SLAManagement = () => {
                 </Table>
               </CardContent>
             </Card>
+
+            {/* Create SLA Contract dialog. Previously the "Add Contract" button
+                set contractDialogOpen but no Dialog consumed it, so clicking it
+                silently did nothing (bug #19) and no sla_contracts row could
+                ever be created — which also meant breach detection had no
+                contracts to evaluate (bug #62). */}
+            <Dialog open={contractDialogOpen} onOpenChange={setContractDialogOpen}>
+              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>New Client SLA Contract</DialogTitle>
+                  <DialogDescription>
+                    Define contract-specific SLA terms and penalties for a client.
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="grid gap-4 py-2">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Client</Label>
+                      <Select
+                        value={contractForm.customer_id}
+                        onValueChange={(v) => setContractForm((f) => ({ ...f, customer_id: v }))}
+                      >
+                        <SelectTrigger><SelectValue placeholder="Select client" /></SelectTrigger>
+                        <SelectContent>
+                          {customers.map((c: any) => (
+                            <SelectItem key={c.id} value={c.id}>{c.company_name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Contract Number *</Label>
+                      <Input
+                        value={contractForm.contract_number}
+                        onChange={(e) => setContractForm((f) => ({ ...f, contract_number: e.target.value }))}
+                        placeholder="SLA-2026-001"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Contract Name *</Label>
+                    <Input
+                      value={contractForm.contract_name}
+                      onChange={(e) => setContractForm((f) => ({ ...f, contract_name: e.target.value }))}
+                      placeholder="Annual haulage SLA"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Effective Date *</Label>
+                      <Input
+                        type="date"
+                        value={contractForm.effective_date}
+                        onChange={(e) => setContractForm((f) => ({ ...f, effective_date: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Expiry Date</Label>
+                      <Input
+                        type="date"
+                        value={contractForm.expiry_date}
+                        onChange={(e) => setContractForm((f) => ({ ...f, expiry_date: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label>SLA Duration (days) *</Label>
+                      <Input
+                        type="number" min="0"
+                        value={contractForm.sla_duration_days}
+                        onChange={(e) => setContractForm((f) => ({ ...f, sla_duration_days: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Penalty / Day (NGN) *</Label>
+                      <Input
+                        type="number" min="0"
+                        value={contractForm.penalty_per_day}
+                        onChange={(e) => setContractForm((f) => ({ ...f, penalty_per_day: e.target.value }))}
+                        placeholder="50000"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Grace Period (hrs)</Label>
+                      <Input
+                        type="number" min="0"
+                        value={contractForm.grace_period_hours}
+                        onChange={(e) => setContractForm((f) => ({ ...f, grace_period_hours: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Max Penalty Cap (NGN)</Label>
+                      <Input
+                        type="number" min="0"
+                        value={contractForm.max_penalty_cap}
+                        onChange={(e) => setContractForm((f) => ({ ...f, max_penalty_cap: e.target.value }))}
+                        placeholder="Leave blank for no cap"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Status</Label>
+                      <Select
+                        value={contractForm.status}
+                        onValueChange={(v) => setContractForm((f) => ({ ...f, status: v }))}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="active">Active</SelectItem>
+                          <SelectItem value="draft">Draft</SelectItem>
+                          <SelectItem value="expired">Expired</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Dispute Resolution Clause</Label>
+                    <Textarea
+                      rows={3}
+                      value={contractForm.dispute_resolution_clause}
+                      onChange={(e) => setContractForm((f) => ({ ...f, dispute_resolution_clause: e.target.value }))}
+                      placeholder="Optional contractual notes"
+                    />
+                  </div>
+                </div>
+
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setContractDialogOpen(false)}>Cancel</Button>
+                  <Button
+                    onClick={() => contractMutation.mutate(contractForm)}
+                    disabled={contractMutation.isPending}
+                  >
+                    {contractMutation.isPending ? "Creating..." : "Create Contract"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </TabsContent>
 
           {/* Breach Records Tab */}
