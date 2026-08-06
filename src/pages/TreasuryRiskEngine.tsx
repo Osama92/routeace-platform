@@ -81,7 +81,7 @@ const TreasuryRiskEngine = () => {
         orgEq(supabase.from("accounts_payable").select("amount_due, balance, status, due_date")),
         orgEq(supabase.from("accounting_ledger").select("debit, credit, account_name").eq("account_type", "asset").in("account_name", ["cash", "bank"])),
         orgEq(supabase.from("capital_funding").select("amount, total_repaid, status").eq("status", "active")),
-        orgEq(supabase.from("invoices").select("total_amount, status, customer_id")),
+        orgEq(supabase.from("invoices").select("total_amount, status, customer_id").not("status", "in", '("cancelled","draft")')),
       ]);
 
       const arData = arRes.data || [];

@@ -100,7 +100,7 @@ const FinanceLedger = () => {
       const orgEq = (q: any) => q.eq("organization_id", organizationId);
       // Fetch invoices and payments to auto-reconcile (org-scoped)
       const [invRes, payRes] = await Promise.all([
-        orgEq(supabase.from("invoices").select("id, total_amount, status, amount_paid").not("status", "eq", "cancelled")),
+        orgEq(supabase.from("invoices").select("id, total_amount, status, amount_paid").not("status", "in", '("cancelled","draft")')),
         orgEq(supabase.from("ar_payments").select("id, amount, invoice_id")),
       ]);
       const invoices = invRes.data || [];

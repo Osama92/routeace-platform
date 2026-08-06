@@ -167,11 +167,11 @@ const FinanceAIPerformance = () => {
       const orgEq = (q: any) => q.eq("organization_id", organizationId);
 
       const [invRes, arRes, expRes, billsRes, prevInvRes, cashRes] = await Promise.all([
-        orgEq(supabase.from("invoices").select("total_amount, status, created_at").gte("created_at", monthStart)),
+        orgEq(supabase.from("invoices").select("total_amount, status, created_at").not("status", "in", '("cancelled","draft")').gte("created_at", monthStart)),
         orgEq(supabase.from("accounts_receivable").select("balance, status, due_date, amount_due")),
         orgEq(supabase.from("expenses").select("amount, category").gte("created_at", monthStart)),
         orgEq(supabase.from("bills").select("total_amount, payment_status").gte("created_at", monthStart)),
-        orgEq(supabase.from("invoices").select("total_amount, status").gte("created_at", prevMonthStart).lte("created_at", prevMonthEnd)),
+        orgEq(supabase.from("invoices").select("total_amount, status").not("status", "in", '("cancelled","draft")').gte("created_at", prevMonthStart).lte("created_at", prevMonthEnd)),
         orgEq(supabase.from("cash_transactions").select("amount, transaction_type").gte("created_at", monthStart)),
       ]);
 

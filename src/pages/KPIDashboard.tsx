@@ -65,8 +65,8 @@ const KPIDashboard = () => {
       const orgEq = (q: any) => q.eq("organization_id", organizationId);
 
       const [curInv, prvInv, curDisp, prvDisp, curExp, prvExp, curFuel, prvFuel, vehicles, drivers, curWB, prvWB, curVP, prvVP, ar, ap, curMaint, prvMaint] = await Promise.all([
-        orgEq(supabase.from("invoices").select("total_amount, tax_amount, amount, status").gte("created_at", cI).lte("created_at", eI)),
-        orgEq(supabase.from("invoices").select("total_amount, tax_amount, amount, status").gte("created_at", pI).lte("created_at", peI)),
+        orgEq(supabase.from("invoices").select("total_amount, tax_amount, amount, status").not("status", "in", '("cancelled","draft")').gte("created_at", cI).lte("created_at", eI)),
+        orgEq(supabase.from("invoices").select("total_amount, tax_amount, amount, status").not("status", "in", '("cancelled","draft")').gte("created_at", pI).lte("created_at", peI)),
         orgEq(supabase.from("dispatches").select("id, distance_km, cost, status, actual_delivery, scheduled_delivery, on_time_flag, pod_confirmed, cargo_weight_kg, load_capacity_pct, created_at").gte("created_at", cI).lte("created_at", eI)),
         orgEq(supabase.from("dispatches").select("id, distance_km, cost, status, actual_delivery, scheduled_delivery, on_time_flag, pod_confirmed, cargo_weight_kg, load_capacity_pct, created_at").gte("created_at", pI).lte("created_at", peI)),
         orgEq(supabase.from("expenses").select("amount").gte("created_at", cI).lte("created_at", eI)),

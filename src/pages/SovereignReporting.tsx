@@ -70,7 +70,7 @@ const SovereignReporting = () => {
       // Pull real data from ledger (org-scoped)
       const [ledgerRes, invoicesRes, expensesRes, arRes, apRes] = await Promise.all([
         orgEq(supabase.from("accounting_ledger").select("*")),
-        orgEq(supabase.from("invoices").select("total_amount, tax_amount, status, customer_id")),
+        orgEq(supabase.from("invoices").select("total_amount, tax_amount, status, customer_id").not("status", "in", '("cancelled","draft")')),
         orgEq(supabase.from("expenses").select("amount, category, approval_status")),
         orgEq(supabase.from("accounts_receivable").select("amount_due, balance, status")),
         orgEq(supabase.from("accounts_payable").select("amount_due, balance, status")),

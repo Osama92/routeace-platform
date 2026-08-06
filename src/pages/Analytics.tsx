@@ -33,6 +33,7 @@ import {
   Minus,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { AnalyticsDateFilterBar, useAnalyticsDateFilter } from "@/components/analytics/AnalyticsDateFilter";
 import jsPDF from "jspdf";
@@ -76,6 +77,7 @@ function calcChange(current: number, previous: number) {
 }
 
 const AnalyticsPage = () => {
+  const { organizationId } = useAuth();
   const { range, periodType, offset, goBack, goForward, changePeriod } = useAnalyticsDateFilter("month");
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
@@ -96,10 +98,11 @@ const AnalyticsPage = () => {
   const [momComparison, setMomComparison] = useState<any[]>([]);
 
   useEffect(() => {
-    fetchAnalyticsData();
-  }, [periodType, range.start.getTime(), range.end.getTime()]);
+    if (organizationId) fetchAnalyticsData();
+  }, [organizationId, periodType, range.start.getTime(), range.end.getTime()]);
 
   const fetchAnalyticsData = async () => {
+    if (!organizationId) { setLoading(false); return; }
     setLoading(true);
     try {
       const startISO = range.start.toISOString();
@@ -121,19 +124,25 @@ const AnalyticsPage = () => {
       ] = await Promise.all([
         supabase.from("dispatches")
           .select("id, status, distance_km, scheduled_delivery, actual_delivery, pickup_address, delivery_address, created_at")
+          .eq("organization_id", organizationId)
           .gte("created_at", startISO).lte("created_at", endISO),
         supabase.from("invoices")
           .select("total_amount, created_at")
+          .eq("organization_id", organizationId).not("status", "in", '("cancelled","draft")')
           .gte("created_at", startISO).lte("created_at", endISO),
         supabase.from("dispatches")
           .select("id, status, distance_km, scheduled_delivery, actual_delivery, created_at")
+          .eq("organization_id", organizationId)
           .gte("created_at", prevStartISO).lte("created_at", prevEndISO),
         supabase.from("invoices")
           .select("total_amount, created_at")
+          .eq("organization_id", organizationId).not("status", "in", '("cancelled","draft")')
           .gte("created_at", prevStartISO).lte("created_at", prevEndISO),
-        supabase.from("vehicles").select("status"),
+        supabase.from("vehicles").select("status")
+          .eq("organization_id", organizationId),
         supabase.from("drivers")
           .select("full_name, rating, total_trips, status")
+          .eq("organization_id", organizationId)
           .order("rating", { ascending: false }).limit(5),
       ]);
 
@@ -242,10 +251,12 @@ const AnalyticsPage = () => {
           Promise.all([
             supabase.from("dispatches")
               .select("id, status, scheduled_delivery, actual_delivery")
+          .eq("organization_id", organizationId)
               .gte("created_at", mStart.toISOString())
               .lte("created_at", mEnd.toISOString()),
             supabase.from("invoices")
               .select("total_amount")
+          .eq("organization_id", organizationId).not("status", "in", '("cancelled","draft")')
               .gte("created_at", mStart.toISOString())
               .lte("created_at", mEnd.toISOString()),
           ]).then(([dRes, iRes]) => {

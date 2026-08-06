@@ -116,8 +116,8 @@ export default function DecisionCockpit() {
     enabled: !!organizationId,
     queryFn: async () => {
       const [curInv, prevInv, curExp, prevExp, curAR] = await Promise.all([
-        orgEq(supabase.from("invoices").select("total_amount, tax_amount, status").gte("created_at", start.toISOString()).lte("created_at", end.toISOString())),
-        orgEq(supabase.from("invoices").select("total_amount, tax_amount, status").gte("created_at", prev.start.toISOString()).lte("created_at", prev.end.toISOString())),
+        orgEq(supabase.from("invoices").select("total_amount, tax_amount, status").not("status", "in", '("cancelled","draft")').gte("created_at", start.toISOString()).lte("created_at", end.toISOString())),
+        orgEq(supabase.from("invoices").select("total_amount, tax_amount, status").not("status", "in", '("cancelled","draft")').gte("created_at", prev.start.toISOString()).lte("created_at", prev.end.toISOString())),
         orgEq(supabase.from("expenses").select("amount, approval_status").gte("created_at", start.toISOString()).lte("created_at", end.toISOString())),
         orgEq(supabase.from("expenses").select("amount, approval_status").gte("created_at", prev.start.toISOString()).lte("created_at", prev.end.toISOString())),
         orgEq(supabase.from("accounts_receivable").select("balance, status").eq("status", "unpaid")),

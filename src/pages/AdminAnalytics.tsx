@@ -205,13 +205,13 @@ const AdminAnalytics = () => {
       const prev = getPrevRange();
 
       const [invRes, expRes, prevInvRes, prevExpRes] = await Promise.all([
-        supabase.from("invoices").select("total_amount, status, created_at")
+        supabase.from("invoices").select("total_amount, status, created_at").not("status", "in", '("cancelled","draft")')
           .eq("organization_id", orgId)
           .gte("created_at", startISO).lte("created_at", endISO),
         supabase.from("expenses").select("amount, is_cogs, expense_date, category")
           .eq("organization_id", orgId)
           .gte("expense_date", format(range.start, "yyyy-MM-dd")).lte("expense_date", format(range.end, "yyyy-MM-dd")),
-        supabase.from("invoices").select("total_amount, status, created_at")
+        supabase.from("invoices").select("total_amount, status, created_at").not("status", "in", '("cancelled","draft")')
           .eq("organization_id", orgId)
           .gte("created_at", prev.start.toISOString()).lte("created_at", prev.end.toISOString()),
         supabase.from("expenses").select("amount, is_cogs, expense_date, category")
