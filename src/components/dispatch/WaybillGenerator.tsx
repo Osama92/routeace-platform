@@ -49,7 +49,7 @@ interface WaybillItem {
 
 const WaybillGenerator = () => {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, organizationId } = useAuth();
   const queryClient = useQueryClient();
   const [selectedWaybill, setSelectedWaybill] = useState<WaybillData | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -80,7 +80,8 @@ const WaybillGenerator = () => {
 
   // Fetch existing waybills
   const { data: waybills } = useQuery({
-    queryKey: ["waybills-list"],
+    queryKey: ["waybills-list", organizationId],
+    enabled: !!organizationId,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("waybills")
@@ -90,6 +91,7 @@ const WaybillGenerator = () => {
           drivers (full_name, phone),
           waybill_items (*)
         `)
+        .eq("organization_id", organizationId)
         .order("generated_at", { ascending: false })
         .limit(20);
       
@@ -116,6 +118,7 @@ const WaybillGenerator = () => {
           route_summary: plan.notes || `${plan.total_orders} orders across ${new Set(plan.dispatch_plan_items?.map((i: any) => i.route_group)).size} areas`,
           total_drops: plan.total_orders,
           generated_by: user?.id,
+          organization_id: organizationId,
           status: "generated"
         })
         .select()
@@ -321,8 +324,8 @@ const WaybillGenerator = () => {
                     <Truck className="w-4 h-4" /> Vehicle
                   </p>
                   <p className="font-medium">
-                    {selectedWaybill.vehicle?.registration_number || "Not assigned"}
-                    {selectedWaybill.vehicle?.truck_type && ` (${selectedWaybill.vehicle.truck_type})`}
+                    {selectedWaybill.vehicles?.registration_number || "Not assigned"}
+                    {selectedWaybill.vehicles?.truck_type && ` (${selectedWaybill.vehicles.truck_type})`}
                   </p>
                 </div>
                 <div>
@@ -330,11 +333,11 @@ const WaybillGenerator = () => {
                     <Users className="w-4 h-4" /> Driver
                   </p>
                   <p className="font-medium">
-                    {selectedWaybill.driver?.full_name || "Not assigned"}
+                    {selectedWaybill.drivers?.full_name || "Not assigned"}
                   </p>
-                  {selectedWaybill.driver?.phone && (
-                    <a href={`tel:${selectedWaybill.driver.phone}`} className="text-sm text-primary flex items-center gap-1">
-                      <Phone className="w-3 h-3" /> {selectedWaybill.driver.phone}
+                  {selectedWaybill.drivers?.phone && (
+                    <a href={`tel:${selectedWaybill.drivers.phone}`} className="text-sm text-primary flex items-center gap-1">
+                      <Phone className="w-3 h-3" /> {selectedWaybill.drivers.phone}
                     </a>
                   )}
                 </div>

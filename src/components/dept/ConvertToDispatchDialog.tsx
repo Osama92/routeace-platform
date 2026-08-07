@@ -119,6 +119,9 @@ export default function ConvertToDispatchDialog({ pendingRequests, onDone }: Pro
           status: "generated",
           pod_status: "pending_upload",
           generated_by: user.id,
+          // vehicle_id/driver_id are inherited from the dispatch by the
+          // waybill_inherit_dispatch_context trigger.
+          organization_id: organizationId,
         } as any);
       }
 
