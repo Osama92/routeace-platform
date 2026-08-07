@@ -151,7 +151,11 @@ export default function FleetInspectionEngine() {
         status,
         overall_score: score,
         inspector_notes: inspNotes || null,
-        blocked_dispatch: hasCriticalFail,
+        // Only a COMPLETED inspection with a safety-critical failure blocks
+        // dispatch. Previously hasCriticalFail was applied even when the
+        // checklist was unfinished, so every in-progress inspection left the
+        // vehicle permanently blocked.
+        blocked_dispatch: allChecked && hasCriticalFail,
         completed_at: allChecked ? new Date().toISOString() : null,
         inspector_id: (await supabase.auth.getUser()).data.user?.id,
       }).select("id").single();

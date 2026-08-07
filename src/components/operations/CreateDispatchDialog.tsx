@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,9 @@ const CreateDispatchDialog = () => {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Holds the id of a blocking inspection the user chose to override, so the
+  // decision can be recorded against them in dispatch_safety_gates.
+  const blockedOverrideRef = useRef<string | null>(null);
   const [returnTrip, setReturnTrip] = useState(false);
   const [routeComboOpen, setRouteComboOpen] = useState(false);
   const [customerComboOpen, setCustomerComboOpen] = useState(false);
@@ -237,6 +240,38 @@ const CreateDispatchDialog = () => {
       return;
     }
 
+    // Safety gate: a vehicle whose last COMPLETED inspection failed on a
+    // safety-critical item must not be dispatched unnoticed. Previously
+    // blocked_dispatch was recorded and displayed but never enforced at the
+    // point of dispatch, so a failed vehicle could still be sent out.
+    if (form.vehicle_id) {
+      const { data: blockingInspection } = await supabase
+        .from("vehicle_inspections")
+        .select("id, inspection_type, inspector_notes, completed_at")
+        .eq("vehicle_id", form.vehicle_id)
+        .eq("blocked_dispatch", true)
+        .not("completed_at", "is", null)
+        .order("completed_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (blockingInspection) {
+        const proceed = window.confirm(
+          "SAFETY WARNING\n\n" +
+          "This vehicle failed its most recent " +
+          `${blockingInspection.inspection_type?.replace("_", "-") || "safety"} inspection ` +
+          "on a safety-critical item and is flagged as blocked from dispatch.\n\n" +
+          (blockingInspection.inspector_notes ? `Inspector notes: ${blockingInspection.inspector_notes}\n\n` : "") +
+          "Dispatching anyway will be recorded against your user for audit.\n\n" +
+          "Proceed regardless?"
+        );
+        if (!proceed) return;
+        blockedOverrideRef.current = blockingInspection.id;
+      } else {
+        blockedOverrideRef.current = null;
+      }
+    }
+
     setSaving(true);
     try {
       const costValue = form.cost ? parseFloat(form.cost) : null;
@@ -369,6 +404,22 @@ const CreateDispatchDialog = () => {
       console.log("[CreateDispatch] Insert result:", { disp, error });
 
       if (error) throw error;
+
+      // Audit an override of the inspection safety gate.
+      if (blockedOverrideRef.current && disp?.id) {
+        await supabase.from("dispatch_safety_gates").insert({
+          organization_id: organizationId,
+          vehicle_id: form.vehicle_id || null,
+          dispatch_id: disp.id,
+          gate_type: "pre_dispatch",
+          decision: "overridden",
+          reason: "Dispatched despite a failed safety-critical inspection",
+          inspection_id: blockedOverrideRef.current,
+          override_by: user?.id ?? null,
+          override_reason: "Manual override at dispatch creation",
+        } as any);
+        blockedOverrideRef.current = null;
+      }
 
       const drops = extraDrops.filter((d) => d.address).map((d, i) => ({
         dispatch_id: disp!.id,
