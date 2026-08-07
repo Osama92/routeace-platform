@@ -64,7 +64,7 @@ const VEHICLE_TYPES: VehicleSuggestion[] = [
 
 const DispatchCreationPanel = () => {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, organizationId } = useAuth();
   const queryClient = useQueryClient();
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
   const [isGrouping, setIsGrouping] = useState(false);
@@ -115,6 +115,7 @@ const DispatchCreationPanel = () => {
       const { data, error } = await supabase
         .from("customers")
         .select("id, company_name, factory_address, factory_lat, factory_lng")
+        .eq("organization_id", organizationId)
         .order("company_name");
       if (error) throw error;
       return data;

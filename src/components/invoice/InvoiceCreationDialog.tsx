@@ -176,7 +176,9 @@ export const InvoiceCreationDialog = ({
       fetchAvailableDispatches();
       setStep("select_dispatch");
     }
-  }, [open]);
+    // organizationId is a dependency because both fetches are tenant-scoped
+    // and return nothing until it resolves.
+  }, [open, organizationId]);
 
   // Auto-calculate due date from payment terms
   useEffect(() => {
@@ -245,9 +247,13 @@ export const InvoiceCreationDialog = ({
   // ── Data fetching ─────────────────────────────────────────────────────────
 
   const fetchCustomers = async () => {
+    if (!organizationId) return;
+    // Scoped to the tenant: previously this listed every organization's
+    // customers in the invoice customer dropdown.
     const { data } = await supabase
       .from("customers")
       .select("id, company_name")
+      .eq("organization_id", organizationId)
       .order("company_name");
     setCustomers(data || []);
   };

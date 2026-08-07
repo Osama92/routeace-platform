@@ -127,7 +127,7 @@ const WORKFLOW_STATES: { state: DispatchWorkflowState; label: string; icon: any 
 
 const UnifiedDispatchWorkflow = () => {
   const { toast } = useToast();
-  const { user, hasAnyRole } = useAuth();
+  const { user, hasAnyRole, organizationId } = useAuth();
   const queryClient = useQueryClient();
   
   // Current workflow state
@@ -234,6 +234,7 @@ const UnifiedDispatchWorkflow = () => {
       const { data, error } = await supabase
         .from("customers")
         .select("id, company_name, factory_address, factory_lat, factory_lng")
+        .eq("organization_id", organizationId)
         .order("company_name");
       if (error) throw error;
       return data || [];

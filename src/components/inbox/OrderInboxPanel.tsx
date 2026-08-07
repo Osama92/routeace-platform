@@ -73,7 +73,7 @@
   */
  const OrderInboxPanel = () => {
  const { toast } = useToast();
- const { user } = useAuth();
+ const { user, organizationId } = useAuth();
  const queryClient = useQueryClient();
  const [searchTerm, setSearchTerm] = useState("");
  const [selectedOrder, setSelectedOrder] = useState<InboxOrder | null>(null);
@@ -124,8 +124,9 @@
        const { data: existingCustomer } = await supabase
          .from("customers")
          .select("id")
+         .eq("organization_id", organizationId)
          .eq("company_name", order.parsed_customer_name)
-         .single();
+         .maybeSingle();
  
        if (existingCustomer) {
          customerId = existingCustomer.id;
@@ -133,6 +134,7 @@
          const { data: newCustomer, error } = await supabase
            .from("customers")
            .insert({
+             organization_id: organizationId,
              company_name: order.parsed_customer_name,
              contact_name: order.parsed_customer_name,
              email: order.parsed_contact_email || `${Date.now()}@placeholder.com`,
