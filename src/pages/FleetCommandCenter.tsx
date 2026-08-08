@@ -10,6 +10,7 @@ import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   Truck, MapPin, Fuel, Activity, AlertTriangle, CheckCircle, Clock,
   TrendingUp, TrendingDown, Navigation, BarChart3, RefreshCw, Radio,
@@ -35,13 +36,19 @@ const fmtCurrency = (n: number) => {
 export default function FleetCommandCenter() {
   const [activeTab, setActiveTab] = useState("live");
 
-  // ── Live tenant-scoped data (RLS auto-filters by org for LC + LD users) ──
+  const { organizationId } = useAuth();
+
+  // ── Live tenant-scoped data (RLS is the primary guard; the explicit
+  //    organization_id filters below also keep the React Query cache from
+  //    serving another tenant's rows after an org switch) ──
   const { data: vehicles = [], isLoading: vehiclesLoading, refetch: refetchVehicles } = useQuery({
-    queryKey: ["fleet-cmd-vehicles"],
+    queryKey: ["fleet-cmd-vehicles", organizationId],
+    enabled: !!organizationId,
     queryFn: async () => {
       const { data } = await supabase
         .from("vehicles")
         .select("id, registration_number, vehicle_type, truck_type, status, current_fuel_level, health_score")
+        .eq("organization_id", organizationId)
         .order("registration_number", { ascending: true })
         .limit(100);
       return data || [];
@@ -49,23 +56,50 @@ export default function FleetCommandCenter() {
   });
 
   const { data: dispatches = [], isLoading: dispatchesLoading, refetch: refetchDispatches } = useQuery({
-    queryKey: ["fleet-cmd-dispatches"],
+    queryKey: ["fleet-cmd-dispatches", organizationId],
+    enabled: !!organizationId,
     queryFn: async () => {
       const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
       const { data } = await supabase
         .from("dispatches")
         .select("id, vehicle_id, driver_id, status, cost, on_time_flag, total_distance_km, fuel_variance, pickup_address, delivery_address, created_at")
+        .eq("organization_id", organizationId)
         .gte("created_at", since)
         .order("created_at", { ascending: false })
         .limit(500);
-      return data || [];
+      if (!data?.length) return [];
+
+      // Revenue lives in dispatch_financials.client_revenue, NOT dispatches.cost.
+      // `cost` is what the trip cost US (expenditure); billing the customer is a
+      // separate figure. Only 1 of 106 dispatches even has cost populated, while
+      // dispatch_financials holds the real revenue.
+      const { data: fin } = await supabase
+        .from("dispatch_financials")
+        .select("dispatch_id, client_revenue, finance_status")
+        .eq("organization_id", organizationId)
+        .in("dispatch_id", data.map((d: any) => d.id));
+
+      const revenueMap: Record<string, number> = {};
+      (fin || []).forEach((f: any) => {
+        // Prefer a completed finance entry when a dispatch has more than one.
+        const val = Number(f.client_revenue) || 0;
+        if (revenueMap[f.dispatch_id] == null || f.finance_status === "complete") {
+          revenueMap[f.dispatch_id] = val;
+        }
+      });
+
+      return data.map((d: any) => ({ ...d, client_revenue: revenueMap[d.id] ?? 0 }));
     },
   });
 
   const { data: drivers = [] } = useQuery({
-    queryKey: ["fleet-cmd-drivers"],
+    queryKey: ["fleet-cmd-drivers", organizationId],
+    enabled: !!organizationId,
     queryFn: async () => {
-      const { data } = await supabase.from("drivers").select("id, full_name").limit(200);
+      const { data } = await supabase.from("drivers")
+        .select("id, full_name")
+        .eq("organization_id", organizationId)
+        .limit(200);
       return data || [];
     },
   });
@@ -89,15 +123,19 @@ export default function FleetCommandCenter() {
     const onTimePct = total > 0 ? Math.round((onTime / total) * 100) : 0;
     const completionPct = total > 0 ? Math.round((completed.length / total) * 100) : 0;
 
+    // Revenue and cost are different figures and must not be conflated.
+    // Revenue = what we billed the client (dispatch_financials.client_revenue).
+    // Cost    = what the trip cost us (dispatches.cost).
+    const totalRevenue = dispatches.reduce((s: number, d: any) => s + (Number(d.client_revenue) || 0), 0);
     const totalCost = dispatches.reduce((s: number, d: any) => s + (Number(d.cost) || 0), 0);
     const totalKm = dispatches.reduce((s: number, d: any) => s + (Number(d.total_distance_km) || 0), 0);
     const costPerKm = totalKm > 0 ? Math.round(totalCost / totalKm) : 0;
 
     const fleetCount = vehicles.length || 1;
-    const revenuePerVehicle = totalCost / fleetCount;
+    const revenuePerVehicle = totalRevenue / fleetCount;
 
     const driverIds = new Set(dispatches.map((d: any) => d.driver_id).filter(Boolean));
-    const revenuePerDriver = driverIds.size > 0 ? totalCost / driverIds.size : 0;
+    const revenuePerDriver = driverIds.size > 0 ? totalRevenue / driverIds.size : 0;
 
     const idleVehicles = vehicles.filter((v: any) => v.status === "idle" || v.status === "inactive").length;
     const idlePct = vehicles.length > 0 ? Math.round((idleVehicles / vehicles.length) * 100) : 0;
@@ -120,7 +158,7 @@ export default function FleetCommandCenter() {
       const vOnTime = vDispatches.filter((d: any) => d.on_time_flag === true).length;
       const lastDriverId = vDispatches.find((d: any) => d.driver_id)?.driver_id;
       const driverName = lastDriverId ? (driverMap[lastDriverId] || "-") : "-";
-      const revenue = vDispatches.reduce((s: number, d: any) => s + (Number(d.cost) || 0), 0);
+      const revenue = vDispatches.reduce((s: number, d: any) => s + (Number(d.client_revenue) || 0), 0);
       const km = vDispatches.reduce((s: number, d: any) => s + (Number(d.total_distance_km) || 0), 0);
       const fuelVarianceAvg = vDispatches.length > 0
         ? vDispatches.reduce((s: number, d: any) => s + (Number(d.fuel_variance) || 0), 0) / vDispatches.length
