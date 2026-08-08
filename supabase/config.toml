@@ -73,6 +73,11 @@ project_id = "mbybrzggrpyhvcnxhlua"
     verify_jwt = false
   [functions.send-vendor-performance-email]
     verify_jwt = false
+  # Marketing-site visitors are anonymous, so this cannot require a JWT.
+  # Abuse is limited by the path allowlist, bot filtering, and the fact
+  # that the table itself has no public insert policy.
+  [functions.track-pageview]
+    verify_jwt = false
   [functions.update-delivery-status]
     verify_jwt = false
   [functions.zoho-sync]

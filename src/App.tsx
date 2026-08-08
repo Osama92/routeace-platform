@@ -1,4 +1,5 @@
 import { Toaster } from "@/components/ui/toaster";
+import { usePageviewTracking } from "@/hooks/usePageviewTracking";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import UpgradePromptDialog from "@/components/ui/UpgradePromptDialog";
@@ -132,6 +133,7 @@ import CoreLoginPage from "./pages/core/CoreLogin";
 import CoreIntelligence from "./pages/core/CoreIntelligence";
 import CoreSecurityCenter from "./pages/core/CoreSecurityCenter";
 import CoreInfrastructureFramework from "./pages/core/CoreInfrastructureFramework";
+import CoreWebsiteAnalytics from "./pages/core/CoreWebsiteAnalytics";
 // Operations pages
 import SLAManagement from "./pages/operations/SLAManagement";
 import StrategyDashboard from "./pages/StrategyDashboard";
@@ -469,6 +471,13 @@ const UnhandledRejectionGuard = () => {
   return null;
 };
 
+// Records anonymous marketing pageviews. Must live inside BrowserRouter
+// because it reads the current location.
+const PageviewTracker = () => {
+  usePageviewTracking();
+  return null;
+};
+
 const App = () => (
   <AppErrorBoundary>
     <UnhandledRejectionGuard />
@@ -480,6 +489,7 @@ const App = () => (
           <Toaster />
           <Sonner />
           <BrowserRouter>
+            <PageviewTracker />
             <UpgradePromptDialog />
             <WorkspaceProvider>
             <OSIsolationGuard>
@@ -700,6 +710,14 @@ const App = () => (
                 element={
                   <CoreProtectedRoute>
                     <CoreInfrastructureFramework />
+                  </CoreProtectedRoute>
+                }
+              />
+              <Route
+                path="/core/website-analytics"
+                element={
+                  <CoreProtectedRoute>
+                    <CoreWebsiteAnalytics />
                   </CoreProtectedRoute>
                 }
               />

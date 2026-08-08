@@ -35,6 +35,7 @@ import {
   RefreshCw,
   ChevronDown,
   ChevronRight,
+  Globe,
 } from "lucide-react";
 import CoreTeamManagement from "@/components/core/CoreTeamManagement";
 import AIInsightCards from "@/components/core/AIInsightCards";
@@ -480,8 +481,8 @@ const CoreDashboard = () => {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
-        {(coreRole === "core_founder" || coreRole === "core_cofounder" || coreRole === "core_product" || coreRole === "core_analyst") && (
-          <div className="mb-6">
+        <div className="mb-6 flex flex-wrap gap-2">
+          {(coreRole === "core_founder" || coreRole === "core_cofounder" || coreRole === "core_product" || coreRole === "core_analyst") && (
             <Button
               onClick={() => navigate("/core/intelligence")}
               className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
@@ -489,8 +490,12 @@ const CoreDashboard = () => {
               <Shield className="w-4 h-4 mr-2" />
               Open Intelligence Suite
             </Button>
-          </div>
-        )}
+          )}
+          <Button variant="outline" onClick={() => navigate("/core/website-analytics")}>
+            <Globe className="w-4 h-4 mr-2" />
+            Website Analytics
+          </Button>
+        </div>
 
         <Tabs defaultValue="overview" className="space-y-6">
           <TabsList className="bg-secondary/50 flex-wrap">
