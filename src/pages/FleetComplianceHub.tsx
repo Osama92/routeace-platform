@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -373,14 +373,25 @@ function FuelLogs({ orgId }: { orgId: string }) {
   const { toast } = useToast();
   const qc = useQueryClient();
   const { data: vehicles = [] } = useVehicles(orgId);
-  const monthStart = format(startOfMonth(new Date()), "yyyy-MM-dd");
+  // Window for the log list. This previously hard-filtered to the current
+  // calendar month, so a backdated entry — e.g. logged on 10 Aug for a
+  // 29 Jul fill — saved correctly but never appeared, giving the user no
+  // sign it had worked. Defaults to 90 days and is selectable.
+  const [fuelWindow, setFuelWindow] = useState<"30" | "90" | "365" | "all">("90");
+  const fuelSince = useMemo(() => {
+    if (fuelWindow === "all") return "1970-01-01";
+    const d = new Date();
+    d.setDate(d.getDate() - Number(fuelWindow));
+    return format(d, "yyyy-MM-dd");
+  }, [fuelWindow]);
+
   const { data: logs = [] } = useQuery({
-    queryKey: ["fuel-logs", orgId, monthStart],
+    queryKey: ["fuel-logs", orgId, fuelSince],
     queryFn: async () => {
       const { data } = await sb.from("fuel_logs")
         .select("*, dispatches(dispatch_number, suggested_fuel_liters, total_distance_km, distance_km)")
         .eq("organization_id", orgId)
-        .gte("log_date", monthStart)
+        .gte("log_date", fuelSince)
         .order("log_date", { ascending: false });
       return data ?? [];
     },
@@ -428,18 +439,36 @@ function FuelLogs({ orgId }: { orgId: string }) {
 
   const totalLitres = (logs as any[]).reduce((s, l) => s + Number(l.litres_dispensed || 0), 0);
   const totalCost = (logs as any[]).reduce((s, l) => s + Number(l.total_cost || 0), 0);
+  // The tile sums whatever window is selected, so the label must follow it —
+  // it previously always read "Cost MTD" regardless of the range shown.
+  const fuelWindowLabel =
+    fuelWindow === "all" ? "Cost (all time)" :
+    fuelWindow === "365" ? "Cost (12 months)" :
+    `Cost (${fuelWindow} days)`;
   const flagged = (logs as any[]).filter(l => l.is_flagged).length;
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card><CardContent className="pt-4 pb-4 text-center"><p className="text-2xl font-bold">{Math.round(totalLitres)}</p><p className="text-xs text-muted-foreground">Litres MTD</p></CardContent></Card>
-        <Card><CardContent className="pt-4 pb-4 text-center"><p className="text-2xl font-bold">₦{totalCost.toLocaleString()}</p><p className="text-xs text-muted-foreground">Cost MTD</p></CardContent></Card>
+        <Card><CardContent className="pt-4 pb-4 text-center"><p className="text-2xl font-bold">₦{totalCost.toLocaleString()}</p><p className="text-xs text-muted-foreground">{fuelWindowLabel}</p></CardContent></Card>
         <Card><CardContent className="pt-4 pb-4 text-center"><p className="text-2xl font-bold">{logs.length}</p><p className="text-xs text-muted-foreground">Fill-ups</p></CardContent></Card>
         <Card><CardContent className="pt-4 pb-4 text-center"><p className="text-2xl font-bold text-amber-600">{flagged}</p><p className="text-xs text-muted-foreground">Flagged</p></CardContent></Card>
       </div>
 
-      <div className="flex justify-end">
+      <div className="flex justify-between items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Showing</span>
+          <Select value={fuelWindow} onValueChange={(v) => setFuelWindow(v as any)}>
+            <SelectTrigger className="h-8 w-[150px] text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="30">Last 30 days</SelectItem>
+              <SelectItem value="90">Last 90 days</SelectItem>
+              <SelectItem value="365">Last 12 months</SelectItem>
+              <SelectItem value="all">All time</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild><Button><Fuel className="w-4 h-4 mr-2" />Log Fuel Fill-up</Button></DialogTrigger>
           <DialogContent>
