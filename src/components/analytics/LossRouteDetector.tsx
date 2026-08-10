@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { safeDivide } from "@/lib/apiValidator";
 import {
@@ -53,6 +54,7 @@ interface LossRoute {
  * Identifies routes where cost > revenue
  */
 const LossRouteDetector = () => {
+  const { organizationId } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [blacklistDialogOpen, setBlacklistDialogOpen] = useState(false);
@@ -60,7 +62,8 @@ const LossRouteDetector = () => {
 
   // Fetch route profitability data
   const { data: lossRoutes, isLoading } = useQuery({
-    queryKey: ["loss-routes"],
+    queryKey: ["loss-routes", organizationId],
+    enabled: !!organizationId,
     queryFn: async () => {
       const threeMonthsAgo = subMonths(new Date(), 3).toISOString();
 
@@ -73,19 +76,30 @@ const LossRouteDetector = () => {
           pickup_address,
           delivery_address,
           cost,
+          distance_km,
           actual_delivery,
           scheduled_delivery,
           status
         `)
+        .eq("organization_id", organizationId)
         .gte("created_at", threeMonthsAgo)
-        .eq("status", "delivered");
+        .in("status", ["delivered", "completed"]);
 
       if (dispatchError) throw dispatchError;
+
+      // The business owner defines what counts as a loss — see
+      // route_profitability_settings. Any configured test can flag a route.
+      const { data: thresholds } = await supabase
+        .from("route_profitability_settings")
+        .select("min_margin_percent, min_profit_per_trip, min_naira_per_km")
+        .eq("organization_id", organizationId)
+        .maybeSingle();
 
       // Get expenses by dispatch
       const { data: expenses, error: expenseError } = await supabase
         .from("expenses")
         .select("dispatch_id, amount, category")
+        .eq("organization_id", organizationId)
         .gte("created_at", threeMonthsAgo)
         .eq("approval_status", "approved");
 
@@ -94,10 +108,35 @@ const LossRouteDetector = () => {
       // Get invoices for revenue
       const { data: invoices, error: invoiceError } = await supabase
         .from("invoices")
-        .select("dispatch_id, total_amount, status")
+        .select("dispatch_id, subtotal, total_amount, status")
+        .eq("organization_id", organizationId)
+        .not("status", "in", '("cancelled","draft")')
         .gte("created_at", threeMonthsAgo);
 
       if (invoiceError) throw invoiceError;
+
+      // Trip revenue and vendor cost live in dispatch_financials. Reading
+      // revenue from invoices alone found almost nothing, since only 1
+      // invoice in production carries a dispatch_id.
+      const lossDispatchIds = (dispatches || []).map((d: any) => d.id);
+      const { data: financials } = lossDispatchIds.length
+        ? await supabase
+            .from("dispatch_financials")
+            .select("dispatch_id, client_revenue, vendor_cost, finance_status")
+            .eq("organization_id", organizationId)
+            .in("dispatch_id", lossDispatchIds)
+        : { data: [] as any[] };
+
+      const finByDispatch = new Map<string, { revenue: number; cost: number }>();
+      financials?.forEach((f: any) => {
+        const prev = finByDispatch.get(f.dispatch_id);
+        if (!prev || f.finance_status === "complete") {
+          finByDispatch.set(f.dispatch_id, {
+            revenue: Number(f.client_revenue) || 0,
+            cost: Number(f.vendor_cost) || 0,
+          });
+        }
+      });
 
       // Mock blacklist data (would come from route_blacklist table in production)
       const blacklist: { route_key: string; is_active: boolean }[] = [];
@@ -107,6 +146,7 @@ const LossRouteDetector = () => {
         revenue: number;
         cost: number;
         trips: number;
+        totalKm: number;
         delays: number[];
         maintenanceCost: number;
         fuelCost: number;
@@ -122,6 +162,7 @@ const LossRouteDetector = () => {
             revenue: 0,
             cost: 0,
             trips: 0,
+            totalKm: 0,
             delays: [],
             maintenanceCost: 0,
             fuelCost: 0,
@@ -132,7 +173,11 @@ const LossRouteDetector = () => {
 
         const route = routeMap.get(routeKey)!;
         route.trips += 1;
-        route.cost += dispatch.cost || 0;
+        route.totalKm += Number((dispatch as any).distance_km) || 0;
+        const fin = finByDispatch.get(dispatch.id);
+        // vendor_cost is the trip's actual cost of sale; dispatches.cost is a
+        // fallback for trips with no finance entry.
+        route.cost += fin?.cost ?? (dispatch.cost || 0);
 
         // Calculate delay
         if (dispatch.scheduled_delivery && dispatch.actual_delivery) {
@@ -142,10 +187,12 @@ const LossRouteDetector = () => {
           if (delayHours > 0) route.delays.push(delayHours);
         }
 
-        // Add revenue from invoice
-        const invoice = invoices?.find(i => i.dispatch_id === dispatch.id);
-        if (invoice) {
-          route.revenue += invoice.total_amount || 0;
+        // Revenue: finance entry first, invoice (ex-VAT) as fallback.
+        if (fin) {
+          route.revenue += fin.revenue;
+        } else {
+          const invoice = invoices?.find(i => i.dispatch_id === dispatch.id);
+          if (invoice) route.revenue += Number(invoice.subtotal ?? invoice.total_amount ?? 0);
         }
 
         // Add expenses
@@ -160,10 +207,33 @@ const LossRouteDetector = () => {
       // Convert to loss routes array
       const lossRoutesArray: LossRoute[] = [];
 
+      // Business-defined loss tests. Any configured test can flag a route;
+      // a null threshold means that test is not applied. Defaults to
+      // "negative margin" when the org has not set anything.
+      const minMargin      = thresholds?.min_margin_percent ?? 0;
+      const minProfitTrip  = thresholds?.min_profit_per_trip ?? null;
+      const minNairaPerKm  = thresholds?.min_naira_per_km ?? null;
+
       for (const [routeKey, data] of routeMap.entries()) {
         const loss = data.cost - data.revenue;
-        
-        if (loss > 0 || data.delays.some(d => d > 24)) { // Loss-making or chronic delays
+        const grossProfit = data.revenue - data.cost;
+        const marginPct = data.revenue > 0 ? (grossProfit / data.revenue) * 100 : (data.cost > 0 ? -100 : 0);
+        const profitPerTrip = data.trips > 0 ? grossProfit / data.trips : 0;
+        const nairaPerKm = data.totalKm > 0 ? data.revenue / data.totalKm : null;
+
+        // A route with no recorded revenue AND no recorded cost has simply
+        // not been costed yet — it is unmeasured, not unprofitable. Flagging
+        // it as loss-making would be misleading, so it is skipped.
+        const hasFinancialData = data.revenue > 0 || data.cost > 0;
+        const belowMargin   = hasFinancialData && marginPct < minMargin;
+        const belowProfit   = minProfitTrip != null && profitPerTrip < minProfitTrip;
+        const belowPerKm    = minNairaPerKm != null && nairaPerKm != null && nairaPerKm < minNairaPerKm;
+        const chronicDelays = data.delays.some(d => d > 24);
+
+        const belowProfitReal = hasFinancialData && belowProfit;
+        const belowPerKmReal  = hasFinancialData && belowPerKm;
+
+        if (belowMargin || belowProfitReal || belowPerKmReal || chronicDelays) {
           const avgDelay = data.delays.length > 0 
             ? data.delays.reduce((a, b) => a + b, 0) / data.delays.length 
             : 0;
@@ -171,6 +241,9 @@ const LossRouteDetector = () => {
           // Determine loss reasons
           const reasons: string[] = [];
           if (data.cost > data.revenue) reasons.push("cost_exceeds_revenue");
+          else if (belowMargin) reasons.push("below_margin_threshold");
+          if (belowProfitReal) reasons.push("below_profit_per_trip");
+          if (belowPerKmReal) reasons.push("below_naira_per_km");
           if (avgDelay > 24) reasons.push("chronic_delays");
           if (data.maintenanceCost > data.revenue * 0.2) reasons.push("maintenance_spike");
           if (data.fuelCost > data.revenue * 0.4) reasons.push("fuel_inefficiency");

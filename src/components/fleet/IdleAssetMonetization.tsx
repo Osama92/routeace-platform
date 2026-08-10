@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { safeDivide } from "@/lib/apiValidator";
 import {
@@ -39,19 +40,28 @@ interface IdleAsset {
  * Detects idle assets and suggests revenue recovery actions
  */
 const IdleAssetMonetization = () => {
+  const { organizationId } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [idleThresholdHours, setIdleThresholdHours] = useState(48);
 
   // Fetch vehicles with last dispatch info
   const { data: idleAssets, isLoading } = useQuery({
-    queryKey: ["idle-assets", idleThresholdHours],
+    queryKey: ["idle-assets", idleThresholdHours, organizationId],
+    enabled: !!organizationId,
     queryFn: async () => {
       // Get all active vehicles
       const { data: vehicles, error: vehicleError } = await supabase
         .from("vehicles")
-        .select("id, registration_number, truck_type, status")
-        .eq("status", "active");
+        .select("id, registration_number, truck_type, status, ownership_type")
+        .eq("organization_id", organizationId)
+        // Vehicle status is one of available | in_use | maintenance | retired.
+        // This previously filtered on "active", which is not a valid value, so
+        // the query matched nothing and the panel was permanently empty —
+        // which is why Refresh appeared to do nothing.
+        // Idle monetisation deliberately includes 3PL: an idle hired truck is
+        // still an earning opportunity.
+        .in("status", ["available", "in_use"]);
 
       if (vehicleError) throw vehicleError;
 
@@ -59,6 +69,7 @@ const IdleAssetMonetization = () => {
       const { data: dispatches, error: dispatchError } = await supabase
         .from("dispatches")
         .select("vehicle_id, created_at, status")
+        .eq("organization_id", organizationId)
         .not("vehicle_id", "is", null)
         .order("created_at", { ascending: false });
 
