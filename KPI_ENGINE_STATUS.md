@@ -49,7 +49,24 @@ reason. Fabricating a number would be worse than showing nothing.
 - [x] Nightly cron schedule at 02:00 UTC (enables MoM)
 - [x] Backfill current + prior period
 - [x] Verify computed values against source
-- [ ] Frontend: render "Not tracked" for null metrics
+- [x] Frontend: render "Not tracked" for null metrics
+
+### Frontend root cause
+
+`KPIEngineDashboard` computed ~30 metrics client-side with:
+
+```ts
+const safePct = (n, d) => (d > 0 ? Math.round((n / d) * 100) : 0);
+```
+
+An empty denominator returned **0**, so "no deliveries had a promised time
+to compare against" rendered identically to "0% were on time". That is the
+direct cause of the reported zeros. It now returns `null`, and
+`formatValue` renders null as "Not tracked". Progress bars are guarded
+against dividing a null.
+
+The component also had **no `organization_id` filter on any of its 10
+queries**; all are now scoped and the cache is keyed on the org.
 
 ### Two schema surprises caught before shipping
 

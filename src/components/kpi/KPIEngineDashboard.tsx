@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -110,7 +111,13 @@ interface KPIMetric {
   role: string;
   metricName: string;
   metricType: "leading" | "lagging";
-  value: number;
+  /**
+   * null means the metric cannot be computed from captured data — rendered
+   * as "Not tracked". Previously an undeterminable metric fell through to 0,
+   * which reads as "measured and failing" and was the cause of every role
+   * showing 0%.
+   */
+  value: number | null;
   target: number | null;
   unit: string;
   trend: "up" | "down" | "stable";
@@ -118,11 +125,13 @@ interface KPIMetric {
 }
 
 const KPIEngineDashboard = () => {
+  const { organizationId } = useAuth();
   const [selectedRole, setSelectedRole] = useState("overview");
 
   // Calculate KPIs from actual data
   const { data: kpiData, isLoading } = useQuery({
-    queryKey: ["kpi-engine-data"],
+    queryKey: ["kpi-engine-data", organizationId],
+    enabled: !!organizationId,
     queryFn: async () => {
       const now = new Date();
       const monthStart = startOfMonth(now);
@@ -146,41 +155,51 @@ const KPIEngineDashboard = () => {
         supabase
           .from("dispatches")
           .select("id, status, created_at, actual_pickup, actual_delivery, scheduled_pickup, scheduled_delivery, driver_id, customer_id")
+          .eq("organization_id", organizationId)
           .gte("created_at", monthStart.toISOString())
           .lte("created_at", monthEnd.toISOString()),
         supabase
           .from("dispatches")
           .select("id, status, customer_id")
+          .eq("organization_id", organizationId)
           .gte("created_at", prevMonthStart.toISOString())
           .lte("created_at", prevMonthEnd.toISOString()),
         supabase
           .from("vehicles")
-          .select("id, status, health_score"),
+          .select("id, status, health_score")
+          .eq("organization_id", organizationId),
         supabase
           .from("invoices")
           .select("id, total_amount, status, created_at, paid_date")
+          .eq("organization_id", organizationId)
           .gte("created_at", monthStart.toISOString()),
         supabase
           .from("invoices")
           .select("id, total_amount, status")
+          .eq("organization_id", organizationId)
           .gte("created_at", prevMonthStart.toISOString())
           .lte("created_at", prevMonthEnd.toISOString()),
         supabase
           .from("drivers")
-          .select("id, status, total_trips, rating"),
-        supabase
-          .from("customers")
-          .select("id, created_at"),
+          .select("id, status, total_trips, rating")
+          .eq("organization_id", organizationId),
         supabase
           .from("customers")
           .select("id, created_at")
+          .eq("organization_id", organizationId),
+        supabase
+          .from("customers")
+          .select("id, created_at")
+          .eq("organization_id", organizationId)
           .lte("created_at", prevMonthEnd.toISOString()),
         supabase
           .from("partners")
-          .select("id, approval_status"),
+          .select("id, approval_status")
+          .eq("organization_id", organizationId),
         supabase
           .from("vehicle_incidents")
           .select("id, incident_date, closed_at, status")
+          .eq("organization_id", organizationId)
           .gte("incident_date", monthStart.toISOString().slice(0, 10)),
       ]);
 
@@ -195,7 +214,11 @@ const KPIEngineDashboard = () => {
       const partners = partnersResult.data || [];
       const incidents = incidentsResult.data || [];
 
-      const safePct = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) : 0);
+      // Returns null — not 0 — when the denominator is empty. There is a real
+      // difference between "0% of 40 deliveries were on time" and "no
+      // deliveries had a promised time to compare against".
+      const safePct = (n: number, d: number): number | null =>
+        d > 0 ? Math.round((n / d) * 100) : null;
       const round1 = (n: number) => Math.round(n * 10) / 10;
       const trendOf = (curr: number, prev: number, lowerBetter = false): "up" | "down" | "stable" => {
         if (curr === prev) return "stable";
@@ -352,7 +375,9 @@ const KPIEngineDashboard = () => {
     refetchInterval: 60000, // Refresh every minute
   });
 
-  const formatValue = (value: number, unit: string) => {
+  const formatValue = (value: number | null, unit: string) => {
+    // A null metric has no measurable basis — say so rather than printing 0.
+    if (value === null || value === undefined) return "Not tracked";
     if (unit === "currency") {
       return new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", minimumFractionDigits: 0 }).format(value);
     }
@@ -522,7 +547,7 @@ const KPIEngineDashboard = () => {
                           {metric.target && (
                             <div className="space-y-1">
                               <Progress 
-                                value={Math.min((metric.value / metric.target) * 100, 100)} 
+                                value={metric.value === null ? 0 : Math.min((metric.value / metric.target) * 100, 100)} 
                                 className="h-2"
                               />
                               <p className="text-xs text-muted-foreground text-right">
@@ -567,7 +592,7 @@ const KPIEngineDashboard = () => {
                           {metric.target && (
                             <div className="space-y-1">
                               <Progress 
-                                value={Math.min((metric.value / metric.target) * 100, 100)} 
+                                value={metric.value === null ? 0 : Math.min((metric.value / metric.target) * 100, 100)} 
                                 className="h-2"
                               />
                               <p className="text-xs text-muted-foreground text-right">
