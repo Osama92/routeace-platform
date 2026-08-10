@@ -214,7 +214,7 @@ const WeeklyOpsDashboard = () => {
         <div>
           <h3 className="text-lg font-heading font-semibold flex items-center gap-2">
             <Calendar className="w-5 h-5 text-primary" />
-            Weekly Operations Dashboard
+            Operations Dashboard
           </h3>
           <p className="text-sm text-muted-foreground">
             {format(currentWeekStart, "MMMM d")} - {format(currentWeekEnd, "MMMM d, yyyy")}
