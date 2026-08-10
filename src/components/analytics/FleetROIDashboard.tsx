@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { safeDivide } from "@/lib/apiValidator";
 import {
   TrendingUp,
@@ -48,6 +49,7 @@ type TimePeriod = "monthly" | "quarterly" | "annual";
  * Investor-grade fleet asset returns
  */
 const FleetROIDashboard = () => {
+  const { organizationId } = useAuth();
   const [timePeriod, setTimePeriod] = useState<TimePeriod>("monthly");
   const [selectedYear] = useState(new Date().getFullYear());
 
@@ -68,12 +70,18 @@ const FleetROIDashboard = () => {
 
   // Fetch fleet ROI data
   const { data: roiData, isLoading } = useQuery({
-    queryKey: ["fleet-roi", timePeriod],
+    queryKey: ["fleet-roi", timePeriod, organizationId],
+    enabled: !!organizationId,
     queryFn: async () => {
       // Get vehicles with purchase info
       const { data: vehicles, error: vehicleError } = await supabase
         .from("vehicles")
-        .select("id, registration_number, truck_type, status");
+        .select("id, registration_number, truck_type, status, ownership_type")
+        .eq("organization_id", organizationId)
+        // ROI is only meaningful for assets the business actually owns —
+        // there is no capital employed in a hired/3PL truck to return on.
+        // Production holds 49 vehicles: 10 owned, 39 vendor.
+        .eq("ownership_type", "owned");
 
       if (vehicleError) throw vehicleError;
 
@@ -81,6 +89,7 @@ const FleetROIDashboard = () => {
       const { data: dispatches, error: dispatchError } = await supabase
         .from("dispatches")
         .select("id, vehicle_id, cost, distance_km, status")
+        .eq("organization_id", organizationId)
         .gte("created_at", dateRange.start.toISOString())
         .lte("created_at", dateRange.end.toISOString())
         .eq("status", "delivered");
@@ -91,6 +100,7 @@ const FleetROIDashboard = () => {
       const { data: expenses, error: expenseError } = await supabase
         .from("expenses")
         .select("vehicle_id, amount")
+        .eq("organization_id", organizationId)
         .gte("created_at", dateRange.start.toISOString())
         .lte("created_at", dateRange.end.toISOString())
         .eq("approval_status", "approved");
@@ -100,11 +110,38 @@ const FleetROIDashboard = () => {
       // Get invoices for revenue
       const { data: invoices, error: invoiceError } = await supabase
         .from("invoices")
-        .select("dispatch_id, total_amount")
+        .select("dispatch_id, subtotal, total_amount")
+        .eq("organization_id", organizationId)
+        .not("status", "in", '("cancelled","draft")')
         .gte("created_at", dateRange.start.toISOString())
         .lte("created_at", dateRange.end.toISOString());
 
       if (invoiceError) throw invoiceError;
+
+      // Trip revenue lives in dispatch_financials; invoices linked to a
+      // dispatch are the fallback. Without this, revenue per asset reads
+      // near-zero because only 1 invoice in production carries a dispatch_id.
+      const dispatchIds = (dispatches || []).map((d: any) => d.id);
+      const { data: financials } = dispatchIds.length
+        ? await supabase
+            .from("dispatch_financials")
+            .select("dispatch_id, client_revenue, finance_status")
+            .eq("organization_id", organizationId)
+            .in("dispatch_id", dispatchIds)
+        : { data: [] as any[] };
+
+      // Revenue per dispatch: finance entry first, invoice as fallback.
+      const revenueByDispatch = new Map<string, number>();
+      financials?.forEach((f: any) => {
+        if (!f.dispatch_id) return;
+        if (!revenueByDispatch.has(f.dispatch_id) || f.finance_status === "complete") {
+          revenueByDispatch.set(f.dispatch_id, Number(f.client_revenue) || 0);
+        }
+      });
+      invoices?.forEach((inv: any) => {
+        if (!inv.dispatch_id || revenueByDispatch.has(inv.dispatch_id)) return;
+        revenueByDispatch.set(inv.dispatch_id, Number(inv.subtotal ?? inv.total_amount ?? 0));
+      });
 
       // Calculate ROI for each vehicle
       const roiList: AssetROI[] = [];
@@ -119,11 +156,10 @@ const FleetROIDashboard = () => {
         const totalExpenseCost = vehicleExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
         const totalCost = totalDispatchCost + totalExpenseCost;
 
-        // Calculate revenue from invoices
+        // Revenue attributed to this asset's trips.
         let totalRevenue = 0;
         for (const dispatch of vehicleDispatches) {
-          const invoice = invoices?.find(i => i.dispatch_id === dispatch.id);
-          if (invoice) totalRevenue += invoice.total_amount || 0;
+          totalRevenue += revenueByDispatch.get(dispatch.id) || 0;
         }
 
         const netProfit = totalRevenue - totalCost;

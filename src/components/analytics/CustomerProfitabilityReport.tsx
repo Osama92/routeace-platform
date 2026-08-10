@@ -92,23 +92,31 @@ const CustomerProfitabilityReport = () => {
         .eq("organization_id", organizationId);
 
       // Fetch invoices grouped by customer - org-scoped
+      // Invoices billed directly to a customer (not via a dispatch).
       const { data: invoices } = await supabase
         .from("invoices")
-        .select("customer_id, total_amount, status")
+        .select("customer_id, dispatch_id, subtotal, total_amount, status")
         .eq("organization_id", organizationId)
-        .eq("status", "paid");
+        .not("status", "in", '("cancelled","draft")');
 
-      // Fetch expenses with COGS flag and customer_id - org-scoped
-      const { data: expenses } = await supabase
-        .from("expenses")
-        .select("customer_id, amount, is_cogs")
-        .eq("organization_id", organizationId);
-
-      // Fetch dispatches to count per customer - org-scoped
+      // Dispatches carry the customer link used to attribute trip economics.
       const { data: dispatches } = await supabase
         .from("dispatches")
         .select("customer_id, id")
         .eq("organization_id", organizationId);
+
+      // Revenue AND cost per trip. expenses.customer_id is never populated in
+      // practice (0 of 67 COGS rows carry one), so COGS could never attribute
+      // to a customer and gross profit always equalled revenue. dispatch_financials
+      // carries vendor_cost against a dispatch, which resolves to a customer.
+      const dispatchIds = (dispatches || []).map((d: any) => d.id);
+      const { data: financials } = dispatchIds.length
+        ? await supabase
+            .from("dispatch_financials")
+            .select("dispatch_id, client_revenue, vendor_cost, finance_status")
+            .eq("organization_id", organizationId)
+            .in("dispatch_id", dispatchIds)
+        : { data: [] as any[] };
 
       // Build profitability data
       const profitabilityMap = new Map<string, CustomerProfitability>();
@@ -125,21 +133,34 @@ const CustomerProfitabilityReport = () => {
         });
       });
 
-      // Add revenue from invoices
-      invoices?.forEach((inv) => {
-        const existing = profitabilityMap.get(inv.customer_id);
-        if (existing) {
-          existing.revenue += Number(inv.total_amount);
-        }
+      const dispatchCustomer = new Map<string, string>();
+      dispatches?.forEach((d: any) => {
+        if (d.id && d.customer_id) dispatchCustomer.set(d.id, d.customer_id);
       });
 
-      // Add COGS from expenses
-      expenses?.forEach((exp) => {
-        if (exp.customer_id && exp.is_cogs) {
-          const existing = profitabilityMap.get(exp.customer_id);
-          if (existing) {
-            existing.cogs += Number(exp.amount);
-          }
+      // Trip economics: revenue and cost attributed through the dispatch.
+      const countedDispatches = new Set<string>();
+      financials?.forEach((f: any) => {
+        const customerId = dispatchCustomer.get(f.dispatch_id);
+        if (!customerId) return;
+        const existing = profitabilityMap.get(customerId);
+        if (!existing) return;
+        existing.revenue += Number(f.client_revenue) || 0;
+        existing.cogs    += Number(f.vendor_cost) || 0;
+        countedDispatches.add(f.dispatch_id);
+      });
+
+      // Invoices billed directly to a customer, or against a dispatch that has
+      // no finance entry. Skips dispatches already counted above so revenue is
+      // not double-booked. Revenue is ex-VAT.
+      invoices?.forEach((inv: any) => {
+        if (inv.dispatch_id && countedDispatches.has(inv.dispatch_id)) return;
+        const customerId = inv.customer_id
+          ?? (inv.dispatch_id ? dispatchCustomer.get(inv.dispatch_id) : null);
+        if (!customerId) return;
+        const existing = profitabilityMap.get(customerId);
+        if (existing) {
+          existing.revenue += Number(inv.subtotal ?? inv.total_amount ?? 0);
         }
       });
 

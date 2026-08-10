@@ -23,6 +23,7 @@ import {
 } from "recharts";
 import { MapPin, TrendingUp, TrendingDown, DollarSign, Truck, Download } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -40,15 +41,17 @@ interface RouteCosting {
 }
 
 const RouteLevelCosting = () => {
+  const { organizationId } = useAuth();
   const [routes, setRoutes] = useState<RouteCosting[]>([]);
   const [loading, setLoading] = useState(true);
   const [totals, setTotals] = useState({ revenue: 0, cogs: 0, profit: 0, trips: 0 });
 
   useEffect(() => {
-    fetchRouteCosting();
-  }, []);
+    if (organizationId) fetchRouteCosting();
+  }, [organizationId]);
 
   const fetchRouteCosting = async () => {
+    if (!organizationId) { setLoading(false); return; }
     try {
       // Fetch dispatches with financial data
       const { data: dispatches } = await supabase
@@ -61,18 +64,38 @@ const RouteLevelCosting = () => {
           cost,
           status
         `)
-        .eq("status", "delivered");
+        .eq("organization_id", organizationId)
+        .in("status", ["delivered", "completed"]);
 
-      // Fetch invoices for revenue
-      const { data: invoices } = await supabase
-        .from("invoices")
-        .select("dispatch_id, total_amount")
-        .eq("status", "paid");
+      const dispatchIds = (dispatches || []).map((d: any) => d.id);
+
+      // Revenue comes from dispatch_financials.client_revenue — the figure the
+      // client was billed for the trip. Previously this read only paid invoices
+      // carrying a dispatch_id, of which there is exactly 1 in production, so
+      // revenue and gross profit rendered blank across every route.
+      const { data: financials } = dispatchIds.length
+        ? await supabase
+            .from("dispatch_financials")
+            .select("dispatch_id, client_revenue, finance_status")
+            .eq("organization_id", organizationId)
+            .in("dispatch_id", dispatchIds)
+        : { data: [] as any[] };
+
+      // Invoices remain a fallback for trips billed without a finance entry.
+      const { data: invoices } = dispatchIds.length
+        ? await supabase
+            .from("invoices")
+            .select("dispatch_id, subtotal, total_amount")
+            .eq("organization_id", organizationId)
+            .not("status", "in", '("cancelled","draft")')
+            .in("dispatch_id", dispatchIds)
+        : { data: [] as any[] };
 
       // Fetch COGS expenses
       const { data: expenses } = await supabase
         .from("expenses")
         .select("dispatch_id, amount")
+        .eq("organization_id", organizationId)
         .eq("is_cogs", true);
 
       if (!dispatches) {
@@ -80,12 +103,22 @@ const RouteLevelCosting = () => {
         return;
       }
 
-      // Build invoice and expense maps
-      const invoiceMap = new Map<string, number>();
-      invoices?.forEach((inv) => {
-        if (inv.dispatch_id) {
-          invoiceMap.set(inv.dispatch_id, (invoiceMap.get(inv.dispatch_id) || 0) + Number(inv.total_amount || 0));
+      // Revenue per dispatch: prefer the finance entry, fall back to an
+      // invoice (ex-VAT), and only then to nothing. `cost` is deliberately NOT
+      // used as a revenue fallback — it is what the trip cost us, not what the
+      // client was billed, and treating it as revenue forces margin to zero.
+      const revenueMap = new Map<string, number>();
+      financials?.forEach((f: any) => {
+        if (!f.dispatch_id) return;
+        const val = Number(f.client_revenue) || 0;
+        // A 'complete' entry wins where a dispatch has more than one.
+        if (!revenueMap.has(f.dispatch_id) || f.finance_status === "complete") {
+          revenueMap.set(f.dispatch_id, val);
         }
+      });
+      invoices?.forEach((inv: any) => {
+        if (!inv.dispatch_id || revenueMap.has(inv.dispatch_id)) return;
+        revenueMap.set(inv.dispatch_id, Number(inv.subtotal ?? inv.total_amount ?? 0));
       });
 
       const expenseMap = new Map<string, number>();
@@ -113,7 +146,7 @@ const RouteLevelCosting = () => {
           trips: [],
         };
 
-        const revenue = invoiceMap.get(d.id) || Number(d.cost || 0);
+        const revenue = revenueMap.get(d.id) || 0;
         const cogs = expenseMap.get(d.id) || 0;
 
         existing.trips.push({
