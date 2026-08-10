@@ -61,8 +61,12 @@ const formatCurrency = (value: number) => {
   return `₦${Math.round(value).toLocaleString()}`;
 };
 
-// Get the previous period range for comparison (MoM or YoY)
+// Get the previous period range for comparison (MoM or YoY).
+// Returns null where a comparison is not meaningful: "All time" has no
+// prior period, and comparing it against an equal span reaching back
+// before the business existed would invent a change figure.
 function getPreviousPeriodRange(start: Date, end: Date, periodType: string) {
+  if (periodType === "all") return null;
   if (periodType === "year") {
     return { start: subYears(start, 1), end: subYears(end, 1) };
   }
@@ -78,7 +82,7 @@ function calcChange(current: number, previous: number) {
 
 const AnalyticsPage = () => {
   const { organizationId } = useAuth();
-  const { range, periodType, offset, goBack, goForward, changePeriod } = useAnalyticsDateFilter("month");
+  const { range, periodType, offset, customRange, goBack, goForward, changePeriod, setCustom } = useAnalyticsDateFilter("all");
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const { toast } = useToast();
@@ -110,8 +114,11 @@ const AnalyticsPage = () => {
 
       // Previous period for comparison
       const prev = getPreviousPeriodRange(range.start, range.end, periodType);
-      const prevStartISO = prev.start.toISOString();
-      const prevEndISO = prev.end.toISOString();
+      // With no comparable prior period ("All time"), query a zero-width
+      // window so the comparison queries return nothing and every change
+      // figure renders as 0 rather than a fabricated percentage.
+      const prevStartISO = (prev?.start ?? range.start).toISOString();
+      const prevEndISO = (prev?.end ?? range.start).toISOString();
 
       // Fetch current + previous period data in parallel
       const [
@@ -425,6 +432,8 @@ const AnalyticsPage = () => {
           onBack={goBack}
           onForward={goForward}
           canGoForward={offset < 0}
+          customRange={customRange}
+          onCustomChange={setCustom}
         />
         <Button variant="outline" size="sm" onClick={handleExportReport} disabled={exporting}>
           <Download className="w-4 h-4 mr-2" />

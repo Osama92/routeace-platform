@@ -127,7 +127,7 @@ function calcChange(current: number, previous: number) {
 }
 
 const AdminAnalytics = () => {
-  const { range, periodType, offset, goBack, goForward, changePeriod } = useAnalyticsDateFilter("month");
+  const { range, periodType, offset, customRange, goBack, goForward, changePeriod, setCustom } = useAnalyticsDateFilter("all");
 
   const [pnlData, setPnlData] = useState<PnLData>({
     revenue: 0, cogs: 0, grossProfit: 0, operatingExpenses: 0, netProfit: 0, grossMargin: 0, netMargin: 0,
@@ -621,6 +621,8 @@ const AdminAnalytics = () => {
           onBack={goBack}
           onForward={goForward}
           canGoForward={offset < 0}
+          customRange={customRange}
+          onCustomChange={setCustom}
         />
         <Button variant="outline" size="sm" onClick={exportPnLToPDF}>
           <FileDown className="w-4 h-4 mr-2" /> Export P&L PDF
