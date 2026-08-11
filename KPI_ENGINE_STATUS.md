@@ -110,3 +110,43 @@ like a drop.
 | MTTR / TTR / PM compliance / downtime | `vehicle_maintenance_records` = 0 rows | Philbert |
 | Reconciliation rate | `finance_reconciliation` = 0 rows | Finance |
 | Support KPIs | no tickets raised yet | — |
+
+
+---
+
+## Follow-up fixes — 11 Aug 2026
+
+All three remaining code-fixable items closed.
+
+| Item | Outcome |
+|---|---|
+| Avg profit margin per asset | Derived from live data instead of the empty `asset_profitability` table. **29 assets, 33.8% average margin**, NGN29.9m revenue vs NGN21.3m cost. Was 0. |
+| Fleet KPIs owned-trucks-only | `FleetIntelligenceEngine` filtered to `ownership_type='owned'` — Relma drops from 30 vehicles to the 2 it owns. `FleetCCCDashboard` needed no change: it issues no queries of its own. |
+| Operations WoW / MoM / YoY | Granularity selector added. Default weekly view was showing 4 dispatches when 110 exist this year. |
+
+### Bugs these fixes exposed
+
+* **Fuel double-count avoided.** The same 2 vehicles appear in both `fuel_logs`
+  and `expenses(category='fuel')`. Summing both would have inflated cost and
+  understated profit, so expenses is used as the single source.
+* **`avgTripsPerDay` was hardcoded to `/7`** — understating the average ~4x on
+  a month and ~52x on a year.
+* **Chart bucketing was day-only** — a year would have drawn 365 bars with each
+  weekday name repeating 52 times. Now days/weeks/months by period.
+* **PDF export was hardcoded "Weekly"** in title, subtitle, column header and
+  filename.
+* **Fleet Intelligence finance panel counted draft invoices** as revenue and
+  used VAT-inclusive totals.
+
+### Remaining — not fixable in code
+
+Everything left is blocked on data capture, and now displays "Not tracked"
+rather than a misleading 0:
+
+* MTTR / TTR / PM compliance / downtime / driver safety — `vehicle_maintenance_records`,
+  `vehicle_repairs`, `vehicle_incidents` all 0 rows (Philbert)
+* Real OTD — 0 of 82 dispatches carry `scheduled_delivery` (Ops)
+* Truck KM — only 4 of 10 owned trucks have `lifetime_km > 0` (Ops)
+* Reconciliation rate — `finance_reconciliation` 0 rows (Finance)
+* Avg wait days — `truck_wait_tracking` empty; needs the end-of-day operator
+  prompt, pending a decision on who receives it and whether it blocks anything
