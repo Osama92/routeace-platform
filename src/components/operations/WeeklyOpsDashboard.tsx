@@ -33,7 +33,9 @@ import {
   AlertTriangle,
   Download
 } from "lucide-react";
-import { format, startOfWeek, endOfWeek, subWeeks, eachDayOfInterval } from "date-fns";
+import { format, startOfWeek, endOfWeek, subWeeks, eachDayOfInterval,
+  startOfMonth, endOfMonth, subMonths, startOfYear, endOfYear, subYears,
+  eachWeekOfInterval, eachMonthOfInterval } from "date-fns";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -56,17 +58,27 @@ interface DailyData {
 }
 
 const WeeklyOpsDashboard = () => {
+  // Period granularity. The panel was week-only, so month-on-month and
+  // year-on-year comparison were not expressible.
+  const [periodType, setPeriodType] = useState<"week" | "month" | "year">("week");
   const [weekOffset, setWeekOffset] = useState(0);
   const [metrics, setMetrics] = useState<WeeklyMetrics | null>(null);
   const [dailyData, setDailyData] = useState<DailyData[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const currentWeekStart = startOfWeek(subWeeks(new Date(), weekOffset), { weekStartsOn: 1 });
-  const currentWeekEnd = endOfWeek(subWeeks(new Date(), weekOffset), { weekStartsOn: 1 });
+  const now = new Date();
+  const currentWeekStart =
+    periodType === "week"  ? startOfWeek(subWeeks(now, weekOffset), { weekStartsOn: 1 })
+  : periodType === "month" ? startOfMonth(subMonths(now, weekOffset))
+  :                          startOfYear(subYears(now, weekOffset));
+  const currentWeekEnd =
+    periodType === "week"  ? endOfWeek(subWeeks(now, weekOffset), { weekStartsOn: 1 })
+  : periodType === "month" ? endOfMonth(subMonths(now, weekOffset))
+  :                          endOfYear(subYears(now, weekOffset));
 
   useEffect(() => {
     fetchWeeklyData();
-  }, [weekOffset]);
+  }, [weekOffset, periodType]);
 
   const fetchWeeklyData = async () => {
     setLoading(true);
@@ -105,7 +117,13 @@ const WeeklyOpsDashboard = () => {
       const totalDistance = dispatches.reduce((sum, d) => sum + Number(d.distance_km || 0), 0);
       const activeDrivers = new Set(dispatches.map(d => d.driver_id).filter(Boolean)).size;
       const activeVehicles = new Set(dispatches.map(d => d.vehicle_id).filter(Boolean)).size;
-      const avgTripsPerDay = totalTrips / 7;
+      // Days actually in the selected period — this was hardcoded to 7, which
+      // silently understated the average by ~4x on a month and ~52x on a year.
+      const periodDays = Math.max(
+        1,
+        Math.round((currentWeekEnd.getTime() - currentWeekStart.getTime()) / 86400000) + 1,
+      );
+      const avgTripsPerDay = totalTrips / periodDays;
       const issues = blockedOrders?.length || 0;
 
       setMetrics({
@@ -119,23 +137,38 @@ const WeeklyOpsDashboard = () => {
         issues,
       });
 
-      // Build daily breakdown
-      const days = eachDayOfInterval({ start: currentWeekStart, end: currentWeekEnd });
-      const dailyBreakdown: DailyData[] = days.map((day) => {
-        const dayStart = new Date(day);
-        const dayEnd = new Date(day);
-        dayEnd.setHours(23, 59, 59, 999);
+      // Bucket the breakdown to suit the period. Charting a year by day would
+      // render 365 bars all labelled Mon/Tue/..., which is unreadable and
+      // repeats each weekday name 52 times.
+      const buckets =
+        periodType === "week"
+          ? eachDayOfInterval({ start: currentWeekStart, end: currentWeekEnd })
+              .map((d) => ({ start: d, label: format(d, "EEE") }))
+          : periodType === "month"
+          ? eachWeekOfInterval(
+              { start: currentWeekStart, end: currentWeekEnd },
+              { weekStartsOn: 1 },
+            ).map((d) => ({ start: d, label: format(d, "d MMM") }))
+          : eachMonthOfInterval({ start: currentWeekStart, end: currentWeekEnd })
+              .map((d) => ({ start: d, label: format(d, "MMM") }));
 
-        const dayDispatches = dispatches.filter(d => {
+      const dailyBreakdown: DailyData[] = buckets.map(({ start, label }, i) => {
+        const bucketStart = new Date(start);
+        // Each bucket runs up to the next one, or to the end of the period.
+        const bucketEnd =
+          i + 1 < buckets.length ? new Date(buckets[i + 1].start) : new Date(currentWeekEnd);
+        if (i + 1 < buckets.length) bucketEnd.setMilliseconds(bucketEnd.getMilliseconds() - 1);
+
+        const bucketDispatches = dispatches.filter((d) => {
           const created = new Date(d.created_at);
-          return created >= dayStart && created <= dayEnd;
+          return created >= bucketStart && created <= bucketEnd;
         });
 
         return {
-          day: format(day, "EEE"),
-          trips: dayDispatches.length,
-          completed: dayDispatches.filter(d => d.status === "delivered").length,
-          distance: dayDispatches.reduce((sum, d) => sum + Number(d.distance_km || 0), 0),
+          day: label,
+          trips: bucketDispatches.length,
+          completed: bucketDispatches.filter((d) => d.status === "delivered").length,
+          distance: bucketDispatches.reduce((sum, d) => sum + Number(d.distance_km || 0), 0),
         };
       });
 
@@ -157,11 +190,18 @@ const WeeklyOpsDashboard = () => {
     const pageWidth = doc.internal.pageSize.getWidth();
 
     doc.setFontSize(18);
-    doc.text("Weekly Operations Report", pageWidth / 2, 20, { align: "center" });
+    // Title, subtitle, column header and filename all follow the selected
+    // period — they previously said "Weekly" regardless of what was exported.
+    const periodWord = periodType === "week" ? "Weekly" : periodType === "month" ? "Monthly" : "Yearly";
+    doc.text(`${periodWord} Operations Report`, pageWidth / 2, 20, { align: "center" });
 
     doc.setFontSize(10);
     doc.text(
-      `Week of ${format(currentWeekStart, "MMM d")} - ${format(currentWeekEnd, "MMM d, yyyy")}`,
+      periodType === "year"
+        ? format(currentWeekStart, "yyyy")
+        : periodType === "month"
+        ? format(currentWeekStart, "MMMM yyyy")
+        : `Week of ${format(currentWeekStart, "MMM d")} - ${format(currentWeekEnd, "MMM d, yyyy")}`,
       pageWidth / 2,
       28,
       { align: "center" }
@@ -188,13 +228,16 @@ const WeeklyOpsDashboard = () => {
 
     autoTable(doc, {
       startY: 100,
-      head: [["Day", "Trips", "Completed", "Distance"]],
+      head: [[
+        periodType === "week" ? "Day" : periodType === "month" ? "Week" : "Month",
+        "Trips", "Completed", "Distance",
+      ]],
       body: tableData,
       styles: { fontSize: 9 },
       headStyles: { fillColor: [59, 130, 246] },
     });
 
-    doc.save(`weekly-ops-report-${format(currentWeekStart, "yyyy-MM-dd")}.pdf`);
+    doc.save(`${periodWord.toLowerCase()}-ops-report-${format(currentWeekStart, "yyyy-MM-dd")}.pdf`);
   };
 
   if (loading) {
@@ -217,20 +260,45 @@ const WeeklyOpsDashboard = () => {
             Operations Dashboard
           </h3>
           <p className="text-sm text-muted-foreground">
-            {format(currentWeekStart, "MMMM d")} - {format(currentWeekEnd, "MMMM d, yyyy")}
+            {periodType === "year"
+              ? format(currentWeekStart, "yyyy")
+              : periodType === "month"
+              ? format(currentWeekStart, "MMMM yyyy")
+              : `${format(currentWeekStart, "MMMM d")} - ${format(currentWeekEnd, "MMMM d, yyyy")}`}
           </p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Granularity: enables week-on-week, month-on-month and
+              year-on-year comparison. Changing it resets the offset so the
+              view always lands on the current period. */}
+          <Select
+            value={periodType}
+            onValueChange={(v) => { setPeriodType(v as any); setWeekOffset(0); }}
+          >
+            <SelectTrigger className="w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="week">Weekly</SelectItem>
+              <SelectItem value="month">Monthly</SelectItem>
+              <SelectItem value="year">Yearly</SelectItem>
+            </SelectContent>
+          </Select>
+
           <Select value={weekOffset.toString()} onValueChange={(v) => setWeekOffset(parseInt(v))}>
             <SelectTrigger className="w-48">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="0">This Week</SelectItem>
-              <SelectItem value="1">Last Week</SelectItem>
-              <SelectItem value="2">2 Weeks Ago</SelectItem>
-              <SelectItem value="3">3 Weeks Ago</SelectItem>
-              <SelectItem value="4">4 Weeks Ago</SelectItem>
+              {[0, 1, 2, 3, 4].map((n) => (
+                <SelectItem key={n} value={n.toString()}>
+                  {n === 0
+                    ? `This ${periodType === "week" ? "Week" : periodType === "month" ? "Month" : "Year"}`
+                    : n === 1
+                    ? `Last ${periodType === "week" ? "Week" : periodType === "month" ? "Month" : "Year"}`
+                    : `${n} ${periodType === "week" ? "Weeks" : periodType === "month" ? "Months" : "Years"} Ago`}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <Button variant="outline" onClick={handleExportPDF}>
