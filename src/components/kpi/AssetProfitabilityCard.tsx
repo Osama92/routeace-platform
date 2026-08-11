@@ -3,6 +3,7 @@
  import { Badge } from "@/components/ui/badge";
  import { Progress } from "@/components/ui/progress";
  import { supabase } from "@/integrations/supabase/client";
+ import { useAuth } from "@/contexts/AuthContext";
  import { 
  DollarSign, 
  TrendingUp, 
@@ -32,19 +33,113 @@
   * Shows average profit margin per asset
   */
  const AssetProfitabilityCard = () => {
+ const { organizationId } = useAuth();
+
+ // Derived from live data rather than the asset_profitability table, which
+ // is empty and has no writer anywhere. It also carries no organization_id,
+ // so it could not have been tenant-scoped even once populated.
+ //
+ // Revenue and vendor cost come from dispatch_financials, attributed to a
+ // vehicle through the dispatch. Running costs come from vehicle-tagged
+ // approved expenses.
+ //
+ // fuel_logs is deliberately NOT added as a cost source: the same 2 vehicles
+ // appear in both fuel_logs and expenses(category='fuel'), so summing both
+ // would double-count fuel and understate profit. Expenses is the broader,
+ // approval-gated record, so it is the single source used here.
  const { data: profitData, isLoading } = useQuery({
-   queryKey: ["asset-profitability-kpi"],
+   queryKey: ["asset-profitability-kpi", organizationId],
+   enabled: !!organizationId,
    queryFn: async () => {
-     const threeMonthsAgo = subMonths(new Date(), 3).toISOString().split("T")[0];
-     
-     const { data, error } = await supabase
-       .from("asset_profitability")
-       .select("*")
-       .gte("period_start", threeMonthsAgo)
-       .order("period_end", { ascending: false });
- 
-     if (error) throw error;
-     return data as AssetProfitability[];
+     const since = subMonths(new Date(), 3);
+     const sinceISO = since.toISOString();
+     const sinceDate = sinceISO.split("T")[0];
+
+     const [vehRes, dispRes, expRes] = await Promise.all([
+       supabase
+         .from("vehicles")
+         .select("id, registration_number")
+         .eq("organization_id", organizationId),
+       supabase
+         .from("dispatches")
+         .select("id, vehicle_id")
+         .eq("organization_id", organizationId)
+         .not("vehicle_id", "is", null)
+         .gte("created_at", sinceISO),
+       supabase
+         .from("expenses")
+         .select("vehicle_id, amount")
+         .eq("organization_id", organizationId)
+         .eq("approval_status", "approved")
+         .not("vehicle_id", "is", null)
+         .gte("expense_date", sinceDate),
+     ]);
+
+     const dispatches = dispRes.data || [];
+     const dispatchIds = dispatches.map((d: any) => d.id);
+
+     const { data: financials } = dispatchIds.length
+       ? await supabase
+           .from("dispatch_financials")
+           .select("dispatch_id, client_revenue, vendor_cost, finance_status")
+           .eq("organization_id", organizationId)
+           .in("dispatch_id", dispatchIds)
+       : { data: [] as any[] };
+
+     // One finance entry per dispatch; a 'complete' record wins.
+     const finByDispatch = new Map<string, { revenue: number; cost: number }>();
+     (financials || []).forEach((f: any) => {
+       const prev = finByDispatch.get(f.dispatch_id);
+       if (!prev || f.finance_status === "complete") {
+         finByDispatch.set(f.dispatch_id, {
+           revenue: Number(f.client_revenue) || 0,
+           cost: Number(f.vendor_cost) || 0,
+         });
+       }
+     });
+
+     const byVehicle = new Map<string, { revenue: number; cost: number }>();
+     dispatches.forEach((d: any) => {
+       const fin = finByDispatch.get(d.id);
+       if (!fin) return;
+       const cur = byVehicle.get(d.vehicle_id) || { revenue: 0, cost: 0 };
+       cur.revenue += fin.revenue;
+       cur.cost += fin.cost;
+       byVehicle.set(d.vehicle_id, cur);
+     });
+
+     (expRes.data || []).forEach((e: any) => {
+       const cur = byVehicle.get(e.vehicle_id) || { revenue: 0, cost: 0 };
+       cur.cost += Number(e.amount) || 0;
+       byVehicle.set(e.vehicle_id, cur);
+     });
+
+     const regByVehicle = new Map<string, string>();
+     (vehRes.data || []).forEach((v: any) => regByVehicle.set(v.id, v.registration_number));
+
+     const periodStart = format(since, "yyyy-MM-dd");
+     const periodEnd = format(new Date(), "yyyy-MM-dd");
+
+     // Only vehicles with recorded economics. A vehicle with neither revenue
+     // nor cost is unmeasured, not unprofitable, and including it at 0%
+     // would drag the fleet average toward a number that means nothing.
+     return Array.from(byVehicle.entries())
+       .filter(([, v]) => v.revenue > 0 || v.cost > 0)
+       .map(([vehicleId, v]) => {
+         const netProfit = v.revenue - v.cost;
+         return {
+           id: vehicleId,
+           asset_type: regByVehicle.get(vehicleId) || "Vehicle",
+           asset_id: vehicleId,
+           period_start: periodStart,
+           period_end: periodEnd,
+           total_revenue: v.revenue,
+           total_cost: v.cost,
+           net_profit: netProfit,
+           profit_margin_percent: v.revenue > 0 ? (netProfit / v.revenue) * 100 : -100,
+         } as AssetProfitability;
+       })
+       .sort((a, b) => b.profit_margin_percent - a.profit_margin_percent);
    },
  });
  
