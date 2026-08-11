@@ -259,8 +259,13 @@ const FleetIntelligenceEngine = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("vehicles")
-        .select("id, vehicle_type, truck_type, status")
+        .select("id, vehicle_type, truck_type, status, ownership_type")
         .eq("organization_id", organizationId!)
+        // Fleet KPIs cover business-owned trucks only. Utilisation, downtime,
+        // MTTR and maintenance compliance describe assets the business is
+        // responsible for; a hired/3PL truck's condition is the vendor's
+        // concern and mixing them distorts every figure here.
+        .eq("ownership_type", "owned")
         .limit(500);
       return data || [];
     },
@@ -274,18 +279,22 @@ const FleetIntelligenceEngine = () => {
       const today = new Date();
       const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString();
       const [inv, exp] = await Promise.all([
-        supabase.from("invoices").select("total_amount, status, paid_at, due_date")
-          .eq("organization_id", organizationId!).gte("created_at", startOfMonth),
+        // Draft and cancelled invoices are not revenue.
+        supabase.from("invoices").select("subtotal, total_amount, status, paid_at, due_date")
+          .eq("organization_id", organizationId!)
+          .not("status", "in", '("cancelled","draft")')
+          .gte("created_at", startOfMonth),
         supabase.from("expenses").select("amount, approval_status")
           .eq("organization_id", organizationId!).gte("created_at", startOfMonth),
       ]);
-      const revenue = inv.data?.reduce((s, i: any) => s + Number(i.total_amount || 0), 0) || 0;
+      // Revenue ex-VAT: output VAT is owed to FIRS, not company income.
+      const revenue = inv.data?.reduce((s, i: any) => s + Number(i.subtotal ?? i.total_amount ?? 0), 0) || 0;
       const expenses = exp.data?.filter((e: any) => e.approval_status === "approved")
         .reduce((s, e: any) => s + Number(e.amount || 0), 0) || 0;
       const outstanding = inv.data?.filter((i: any) => i.status !== "paid")
-        .reduce((s, i: any) => s + Number(i.total_amount || 0), 0) || 0;
+        .reduce((s, i: any) => s + Number(i.subtotal ?? i.total_amount ?? 0), 0) || 0;
       const collected = inv.data?.filter((i: any) => i.status === "paid")
-        .reduce((s, i: any) => s + Number(i.total_amount || 0), 0) || 0;
+        .reduce((s, i: any) => s + Number(i.subtotal ?? i.total_amount ?? 0), 0) || 0;
       const instantPct = revenue > 0 ? Math.round((collected / revenue) * 100) : 0;
       return { revenue, expenses, outstanding, collected, instantPct };
     },
