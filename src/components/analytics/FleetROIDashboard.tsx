@@ -42,7 +42,11 @@ interface AssetROI {
   paybackMonths: number;
 }
 
-type TimePeriod = "monthly" | "quarterly" | "annual";
+type TimePeriod = "all" | "monthly" | "quarterly" | "annual";
+
+// Lower bound for "All time" — every real record falls inside it, so
+// inception-to-date needs no prior lookup against the database.
+const INCEPTION = new Date("2020-01-01T00:00:00Z");
 
 /**
  * Fleet ROI Dashboard - Section D
@@ -50,13 +54,18 @@ type TimePeriod = "monthly" | "quarterly" | "annual";
  */
 const FleetROIDashboard = () => {
   const { organizationId } = useAuth();
-  const [timePeriod, setTimePeriod] = useState<TimePeriod>("monthly");
+  // Defaults to all time: ROI and payback are cumulative measures, and a
+  // single month of revenue against an asset's whole purchase price makes
+  // every truck look unprofitable.
+  const [timePeriod, setTimePeriod] = useState<TimePeriod>("all");
   const [selectedYear] = useState(new Date().getFullYear());
 
   // Calculate date range based on period
   const getDateRange = () => {
     const now = new Date();
     switch (timePeriod) {
+      case "all":
+        return { start: INCEPTION, end: now };
       case "monthly":
         return { start: startOfMonth(now), end: endOfMonth(now) };
       case "quarterly":
@@ -246,6 +255,7 @@ const FleetROIDashboard = () => {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="all">All time</SelectItem>
               <SelectItem value="monthly">Monthly</SelectItem>
               <SelectItem value="quarterly">Quarterly</SelectItem>
               <SelectItem value="annual">Annual</SelectItem>
@@ -367,7 +377,9 @@ const FleetROIDashboard = () => {
         <CardHeader>
           <CardTitle className="text-base">Asset Performance Details</CardTitle>
           <CardDescription>
-            {timePeriod.charAt(0).toUpperCase() + timePeriod.slice(1)} view - {format(dateRange.start, "MMM d")} to {format(dateRange.end, "MMM d, yyyy")}
+            {timePeriod === "all"
+              ? `Inception to date - through ${format(dateRange.end, "MMM d, yyyy")}`
+              : `${timePeriod.charAt(0).toUpperCase() + timePeriod.slice(1)} view - ${format(dateRange.start, "MMM d")} to ${format(dateRange.end, "MMM d, yyyy")}`}
           </CardDescription>
         </CardHeader>
         <CardContent>
