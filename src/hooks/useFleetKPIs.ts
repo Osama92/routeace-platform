@@ -52,7 +52,13 @@ export interface FleetKPIs {
 /**
  * Tenant-scoped Fleet KPIs.
  *
- * Reads from canonical tables (RLS auto-filters by organization_id):
+ * IMPORTANT: RLS alone is NOT sufficient here. tenant_isolation_gate
+ * deliberately grants platform owners visibility across every organisation,
+ * and the Relma super admin is a platform owner — so these queries returned
+ * all 50 vehicles across 6 organisations instead of Relma's 30. Every query
+ * below must therefore filter on organization_id explicitly.
+ *
+ * Reads from canonical tables:
  *  - vehicles                 → fleet roster, fuel, health, weekly/monthly km
  *  - fleet_availability_log   → daily availability snapshots
  *  - fleet_maintenance_orders → repairs / PM / costs / repair hours
@@ -63,12 +69,12 @@ export interface FleetKPIs {
  * Callers must check `kpis.totalFleet === 0` to render an empty state.
  */
 export const useFleetKPIs = () => {
-  const { user } = useAuth();
+  const { user, organizationId } = useAuth();
   const [kpis, setKpis] = useState<FleetKPIs | null>(null);
   const [loading, setLoading] = useState(true);
 
   const calculate = useCallback(async () => {
-    if (!user) return;
+    if (!user || !organizationId) { setLoading(false); return; }
     setLoading(true);
 
     const now = new Date();
@@ -76,34 +82,85 @@ export const useFleetKPIs = () => {
     const monthStartTs = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 
-    const [fleetRes, maintRes, availRes, driverRes, dispRes] = await Promise.all([
+    const [fleetRes, maintRes, availRes, driverRes, dispRes, eventsRes] = await Promise.all([
       supabase
         .from("vehicles")
-        .select("id, registration_number, status, current_fuel_level, health_score, weekly_km, monthly_km, last_maintenance, next_maintenance"),
+        .select("id, registration_number, status, current_fuel_level, health_score, weekly_km, monthly_km, last_maintenance, next_maintenance")
+        .eq("organization_id", organizationId),
       supabase
         .from("fleet_maintenance_orders")
         .select("id, vehicle_id, order_type, status, downtime_hours, repair_hours, parts_cost, labor_cost, created_at, completed_at, started_at")
+        .eq("organization_id", organizationId)
         .gte("created_at", monthStartTs)
         .order("created_at", { ascending: false })
         .limit(500),
       supabase
         .from("fleet_availability_log")
         .select("log_date, total_vehicles, available_count, on_trip_count, maintenance_count, availability_pct")
+        .eq("organization_id", organizationId)
         .gte("log_date", monthStart)
         .order("log_date", { ascending: false }),
       supabase
         .from("fleet_driver_scores")
         .select("driver_name, overall_score, deliveries_completed, deliveries_on_time, first_attempt_success, dvir_completed")
+        .eq("organization_id", organizationId)
         .gte("score_date", monthStart),
       supabase
         .from("dispatches")
         .select("id, status, on_time_flag, total_distance_km, cost")
+        .eq("organization_id", organizationId)
         .gte("created_at", monthStartTs)
+        .limit(500),
+      // The maintenance entry form writes here, NOT to fleet_maintenance_orders,
+      // which is why MTTR/PM compliance read zero even after Philbert entered
+      // records. Not date-filtered: with only a handful of events, restricting
+      // to the current month would hide most of them and MTTR would flip back
+      // to zero on the 1st of each month.
+      supabase
+        .from("asset_maintenance_events")
+        .select("id, vehicle_id, maintenance_type, start_date, end_date, description")
+        .eq("organization_id", organizationId)
+        .order("start_date", { ascending: false })
         .limit(500),
     ]);
 
     const fleet = fleetRes.data || [];
-    const maint = maintRes.data || [];
+    // Maintenance comes from two places. fleet_maintenance_orders is the
+    // original schema (empty in production); asset_maintenance_events is what
+    // the entry form actually writes to. Normalise the events into the order
+    // shape so every calculation below works unchanged:
+    //   maintenance_type -> order_type   (breakdown/repair map to corrective,
+    //                                     so scheduled-vs-unscheduled is right)
+    //   start_date/end_date -> repair_hours + downtime_hours
+    //   an event with an end_date is complete
+    const normalisedEvents = (eventsRes.data || []).map((e: any) => {
+      const start = e.start_date ? new Date(e.start_date) : null;
+      const end = e.end_date ? new Date(e.end_date) : null;
+      const hours = start && end
+        ? Math.max(0, (end.getTime() - start.getTime()) / 3_600_000)
+        : 0;
+      const t = String(e.maintenance_type || "").toLowerCase();
+      const orderType =
+        t === "preventive" ? "preventive"
+        : t === "inspection" ? "inspection"
+        : t === "breakdown" ? "emergency"
+        : "corrective";
+      return {
+        id: e.id,
+        vehicle_id: e.vehicle_id,
+        order_type: orderType,
+        status: end ? "completed" : "in_progress",
+        repair_hours: hours,
+        downtime_hours: hours,
+        parts_cost: 0,
+        labor_cost: 0,
+        created_at: e.start_date,
+        started_at: e.start_date,
+        completed_at: e.end_date,
+      };
+    });
+
+    const maint = [...(maintRes.data || []), ...normalisedEvents];
     const availability = availRes.data || [];
     const drivers = driverRes.data || [];
     const dispatches = dispRes.data || [];
@@ -238,7 +295,9 @@ export const useFleetKPIs = () => {
       dispatches,
     });
     setLoading(false);
-  }, [user]);
+    // organizationId must be a dependency: without it the memoised callback
+    // keeps the previous tenant's id after an org switch.
+  }, [user, organizationId]);
 
   useEffect(() => { calculate(); }, [calculate]);
 
