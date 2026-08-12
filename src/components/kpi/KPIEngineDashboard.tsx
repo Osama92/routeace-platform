@@ -154,7 +154,7 @@ const KPIEngineDashboard = () => {
       ] = await Promise.all([
         supabase
           .from("dispatches")
-          .select("id, status, created_at, actual_pickup, actual_delivery, scheduled_pickup, scheduled_delivery, driver_id, customer_id")
+          .select("id, status, created_at, actual_pickup, actual_delivery, scheduled_pickup, scheduled_delivery, driver_id, customer_id, vehicle_id")
           .eq("organization_id", organizationId)
           .gte("created_at", monthStart.toISOString())
           .lte("created_at", monthEnd.toISOString()),
@@ -170,13 +170,15 @@ const KPIEngineDashboard = () => {
           .eq("organization_id", organizationId),
         supabase
           .from("invoices")
-          .select("id, total_amount, status, created_at, paid_date")
+          .select("id, subtotal, total_amount, status, created_at, paid_date")
           .eq("organization_id", organizationId)
+          .not("status", "in", '("cancelled","draft")')
           .gte("created_at", monthStart.toISOString()),
         supabase
           .from("invoices")
-          .select("id, total_amount, status")
+          .select("id, subtotal, total_amount, status")
           .eq("organization_id", organizationId)
+          .not("status", "in", '("cancelled","draft")')
           .gte("created_at", prevMonthStart.toISOString())
           .lte("created_at", prevMonthEnd.toISOString()),
         supabase
@@ -245,15 +247,28 @@ const KPIEngineDashboard = () => {
       const totalVehicles = vehicles.length;
       const availableVehicles = vehicles.filter(v => v.status === "available").length;
       const inUseVehicles = vehicles.filter(v => v.status === "in_use" || v.status === "dispatched").length;
-      const fleetUtilization = safePct(inUseVehicles, totalVehicles);
+      // Utilisation measures vehicles that actually ran a trip this period, not
+      // the `status` flag. Nothing in the dispatch flow ever sets a vehicle to
+      // "in_use" — all 30 of Relma's vehicles sit at "available" — so the old
+      // status-based count was structurally always 0%.
+      const vehiclesWithDispatches = new Set(
+        dispatches.map((d: any) => d.vehicle_id).filter(Boolean),
+      ).size;
+      const fleetUtilization = safePct(vehiclesWithDispatches, totalVehicles);
       const fleetReadiness = totalVehicles > 0 ? safePct(availableVehicles + inUseVehicles, totalVehicles) : 0;
       const avgHealthScore = vehicles.length > 0
         ? Math.round(vehicles.reduce((acc, v) => acc + (v.health_score || 0), 0) / vehicles.length)
         : 0;
 
       // Invoice metrics
-      const totalRevenue = invoices.reduce((acc, i) => acc + (Number(i.total_amount) || 0), 0);
-      const prevRevenue = prevInvoices.reduce((acc, i) => acc + (Number(i.total_amount) || 0), 0);
+      // Revenue ex-VAT and excluding drafts, consistent with Profit & Loss,
+      // Financial Statements and every other finance surface. This previously
+      // summed VAT-inclusive totals including drafts, reporting NGN9.26m
+      // against a true NGN3.67m for the month.
+      const totalRevenue = invoices.reduce((acc, i: any) => acc + (Number(i.subtotal ?? i.total_amount) || 0), 0);
+      // Same basis as totalRevenue — comparing ex-VAT against VAT-inclusive
+      // would make the month-on-month trend meaningless.
+      const prevRevenue = prevInvoices.reduce((acc, i: any) => acc + (Number(i.subtotal ?? i.total_amount) || 0), 0);
       const paidInvoices = invoices.filter(i => i.status === "paid").length;
       const collectionRate = safePct(paidInvoices, invoices.length);
       const invoiceProcessingHours = (() => {
