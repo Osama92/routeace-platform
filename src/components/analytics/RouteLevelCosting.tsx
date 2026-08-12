@@ -76,7 +76,7 @@ const RouteLevelCosting = () => {
       const { data: financials } = dispatchIds.length
         ? await supabase
             .from("dispatch_financials")
-            .select("dispatch_id, client_revenue, finance_status")
+            .select("dispatch_id, client_revenue, vendor_cost, finance_status")
             .eq("organization_id", organizationId)
             .in("dispatch_id", dispatchIds)
         : { data: [] as any[] };
@@ -121,11 +121,24 @@ const RouteLevelCosting = () => {
         revenueMap.set(inv.dispatch_id, Number(inv.subtotal ?? inv.total_amount ?? 0));
       });
 
+      // COGS per dispatch. expenses.dispatch_id is never populated in
+      // practice — 51 COGS expenses exist for this org and NONE carry one —
+      // so this map was always empty, every route reported 100% margin and
+      // the loss detector could never find a loss.
+      // dispatch_financials.vendor_cost is the trip's actual cost of sale and
+      // is populated on 61 dispatches, so it is the primary source; expenses
+      // remain a fallback for any trip without a finance entry.
       const expenseMap = new Map<string, number>();
-      expenses?.forEach((exp) => {
-        if (exp.dispatch_id) {
-          expenseMap.set(exp.dispatch_id, (expenseMap.get(exp.dispatch_id) || 0) + Number(exp.amount || 0));
+      financials?.forEach((f: any) => {
+        if (!f.dispatch_id) return;
+        const val = Number(f.vendor_cost) || 0;
+        if (!expenseMap.has(f.dispatch_id) || f.finance_status === "complete") {
+          expenseMap.set(f.dispatch_id, val);
         }
+      });
+      expenses?.forEach((exp) => {
+        if (!exp.dispatch_id || expenseMap.has(exp.dispatch_id)) return;
+        expenseMap.set(exp.dispatch_id, Number(exp.amount || 0));
       });
 
       // Group by route (simplified origin → destination)
