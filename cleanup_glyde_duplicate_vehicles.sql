@@ -1,0 +1,31 @@
+-- ============================================================
+-- Duplicate vehicle cleanup — executed 12 Aug 2026
+-- ============================================================
+-- 15 trucks existed twice under different plate spacing:
+--   "AKD 730 YK" (Glyde Systems, 0 km)  vs  "AKD730 YK" (Relma, 1,193 km)
+-- The Glyde copies carried no odometer, no fuel logs, no inspections,
+-- no maintenance events and no expenses — only 20 dispatches, all of
+-- which were unstarted (0 delivered, 0 revenue, 0 financials, 0 invoices,
+-- 0 waybills), i.e. test data.
+--
+-- Removed on the owner's instruction. Rows were snapshotted first into
+-- _backup_glyde_dupe_vehicles / _backup_glyde_dupe_dispatches so the
+-- deletion is reversible.
+--
+-- NOT removed: Happinex Foam's "NSH766YG". It is a different tenant and
+-- carries a real dispatch, so it is not the same test-data pattern and
+-- deleting another org's live record was not authorised.
+--
+-- Result: vehicles 50 -> 36. Relma unchanged at 30.
+-- ============================================================
+
+-- Snapshot (already created):
+-- CREATE TABLE public._backup_glyde_dupe_vehicles  AS SELECT ...;
+-- CREATE TABLE public._backup_glyde_dupe_dispatches AS SELECT ...;
+
+-- DELETE FROM dispatches WHERE vehicle_id IN (SELECT id FROM public._backup_glyde_dupe_vehicles);
+-- DELETE FROM vehicles   WHERE id         IN (SELECT id FROM public._backup_glyde_dupe_vehicles);
+
+-- To reverse:
+--   INSERT INTO vehicles   SELECT * FROM public._backup_glyde_dupe_vehicles;
+--   INSERT INTO dispatches SELECT * FROM public._backup_glyde_dupe_dispatches;
