@@ -3,6 +3,7 @@
  import { Badge } from "@/components/ui/badge";
  import { Progress } from "@/components/ui/progress";
  import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
  import { Clock, TrendingDown, TrendingUp, MapPin, AlertTriangle, ArrowDown, ArrowUp } from "lucide-react";
  import { format, differenceInHours, startOfWeek, startOfMonth } from "date-fns";
  
@@ -25,12 +26,15 @@
   * Shows average wait time for trucks on-site but not loaded
   */
  const WaitDaysKPICard = () => {
+ const { organizationId } = useAuth();
  const { data: waitData, isLoading } = useQuery({
-   queryKey: ["truck-wait-kpi"],
+   queryKey: ["truck-wait-kpi", organizationId],
+   enabled: !!organizationId,
    queryFn: async () => {
      const { data, error } = await supabase
        .from("truck_wait_tracking")
        .select("*")
+       .eq("organization_id", organizationId)
        .order("arrival_timestamp", { ascending: false })
        .limit(100);
  
