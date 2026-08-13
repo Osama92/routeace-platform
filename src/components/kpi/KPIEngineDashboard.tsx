@@ -151,6 +151,7 @@ const KPIEngineDashboard = () => {
         prevCustomersResult,
         partnersResult,
         incidentsResult,
+        maintEventsResult,
       ] = await Promise.all([
         supabase
           .from("dispatches")
@@ -203,6 +204,16 @@ const KPIEngineDashboard = () => {
           .select("id, incident_date, closed_at, status")
           .eq("organization_id", organizationId)
           .gte("incident_date", monthStart.toISOString().slice(0, 10)),
+        // Downtime also comes from maintenance events — this is where the
+        // maintenance form actually writes. vehicle_incidents is empty in
+        // production, so downtime read 0 despite real maintenance records
+        // existing. Not month-filtered: with only a handful of events a month
+        // window would hide most of them.
+        supabase
+          .from("asset_maintenance_events")
+          .select("id, vehicle_id, start_date, end_date, maintenance_type")
+          .eq("organization_id", organizationId)
+          .limit(500),
       ]);
 
       const dispatches = dispatchesResult.data || [];
@@ -215,6 +226,17 @@ const KPIEngineDashboard = () => {
       const prevCustomers = prevCustomersResult.data || [];
       const partners = partnersResult.data || [];
       const incidents = incidentsResult.data || [];
+      const maintEvents = maintEventsResult.data || [];
+
+      // Cost of sale for this month's dispatches, used for profit margin.
+      const monthDispatchIds = dispatches.map((d: any) => d.id).filter(Boolean);
+      const { data: periodFinancials } = monthDispatchIds.length
+        ? await supabase
+            .from("dispatch_financials")
+            .select("dispatch_id, vendor_cost")
+            .eq("organization_id", organizationId)
+            .in("dispatch_id", monthDispatchIds)
+        : { data: [] as any[] };
 
       // Returns null — not 0 — when the denominator is empty. There is a real
       // difference between "0% of 40 deliveries were on time" and "no
@@ -310,14 +332,27 @@ const KPIEngineDashboard = () => {
 
       // Incidents and downtime
       const incidentCount = incidents.length;
-      const downtimeHours = incidents.reduce((acc, i) => {
+      // Downtime from incidents PLUS maintenance events. vehicle_incidents is
+      // empty in production while asset_maintenance_events holds real records,
+      // so reading incidents alone reported 0 hours of downtime.
+      const incidentDowntime = incidents.reduce((acc, i) => {
         if (!i.closed_at || !i.incident_date) return acc;
         const hrs = (new Date(i.closed_at as string).getTime() - new Date(i.incident_date as string).getTime()) / 3600000;
         return acc + Math.max(0, hrs);
       }, 0);
+      const maintenanceDowntime = maintEvents.reduce((acc: number, m: any) => {
+        if (!m.end_date || !m.start_date) return acc;
+        const hrs = (new Date(m.end_date).getTime() - new Date(m.start_date).getTime()) / 3600000;
+        return acc + Math.max(0, hrs);
+      }, 0);
+      const downtimeHours = Math.round(incidentDowntime + maintenanceDowntime);
 
       // Profit margin proxy: (revenue - actual repair cost) / revenue
-      const repairCost = 0; // not fetched; defaults to 0 → margin = 100% when no costs known
+      // Cost of sale for the period. Previously hardcoded to 0, which forced
+      // profit margin to a flat 100% — the figure shown on the Org Admin tab.
+      // vendor_cost is the trip's actual cost and is populated on real data.
+      const repairCost = (periodFinancials || []).reduce(
+        (acc: number, f: any) => acc + (Number(f.vendor_cost) || 0), 0);
       const profitMargin = totalRevenue > 0 ? round1(((totalRevenue - repairCost) / totalRevenue) * 100) : 0;
 
       // Driver job acceptance: dispatches with assigned driver / total
