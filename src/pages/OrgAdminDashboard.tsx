@@ -135,6 +135,9 @@ const OrgAdminDashboardInner = () => {
         .select("organization_id")
         .eq("user_id", user.id)
         .eq("is_active", true)
+        // limit(1) is required: platform owners can see every org's members,
+        // so without it maybeSingle() errors on multiple rows and yields null.
+        .limit(1)
         .maybeSingle();
 
       if (!membership?.organization_id) return [];

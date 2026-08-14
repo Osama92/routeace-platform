@@ -193,14 +193,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const fetchOrganizationId = async (userId: string): Promise<string | null> => {
     try {
-      // Primary: organization_members (invite-flow users)
-      const { data: memberData } = await supabase
+      // Primary: organization_members (invite-flow users).
+      //
+      // MUST filter on user_id AND take the first row rather than using
+      // .maybeSingle(). tenant_isolation_gate grants platform owners
+      // visibility of EVERY organisation's members, so for those users this
+      // query returns all 28 platform-wide memberships. .maybeSingle() errors
+      // on multiple rows and yields null, which left organizationId null and
+      // made every org-scoped page render empty — while a non-platform-owner
+      // in the same organisation saw everything correctly.
+      const { data: memberRows } = await supabase
         .from("organization_members")
-        .select("organization_id")
+        .select("organization_id, created_at")
         .eq("user_id", userId)
         .eq("is_active", true)
-        .maybeSingle();
-      if (memberData?.organization_id) return memberData.organization_id;
+        .order("created_at", { ascending: true })
+        .limit(1);
+      const memberOrgId = memberRows?.[0]?.organization_id;
+      if (memberOrgId) return memberOrgId;
 
       // Fallback: profiles.organization_id (users created outside the invite flow,
       // e.g. assigned roles directly via user_roles — covers 'operations' and other roles)

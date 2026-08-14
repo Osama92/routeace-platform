@@ -81,7 +81,7 @@ export default function MyLeave() {
       supabase.from("leave_requests").select("*").eq("user_id", user.id)
         .order("created_at", { ascending: false }).limit(20),
       supabase.from("organization_members").select("organization_id")
-        .eq("user_id", user.id).maybeSingle(),
+        .eq("user_id", user.id).limit(1).maybeSingle(),
     ]);
     setBalances((bData ?? []) as any);
     setRequests((rData ?? []) as any);

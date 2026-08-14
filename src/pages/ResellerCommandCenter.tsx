@@ -75,6 +75,7 @@ export default function ResellerCommandCenter() {
         .select("organization_id")
         .eq("user_id", user.id)
         .eq("is_active", true)
+        .limit(1)
         .maybeSingle();
       if (!membership?.organization_id) return [];
       const { data } = await supabase

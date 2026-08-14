@@ -48,6 +48,7 @@ export function useResellerGuard(): ResellerGuardState {
         .select("organization_id, is_owner")
         .eq("user_id", user.id)
         .eq("is_active", true)
+        .limit(1)
         .maybeSingle();
 
       if (!membership) return null;

@@ -33,7 +33,7 @@ const AccountProvisioningScreen = () => {
     if (!user) return;
     const [{ data: roleRow }, { data: memberRow }, { data: profileRow }] = await Promise.all([
       supabase.from("user_roles").select("role").eq("user_id", user.id).maybeSingle(),
-      supabase.from("organization_members").select("organization_id, role").eq("user_id", user.id).eq("is_active", true).maybeSingle(),
+      supabase.from("organization_members").select("organization_id, role").eq("user_id", user.id).eq("is_active", true).limit(1).maybeSingle(),
       supabase.from("profiles").select("approval_status, suspension_reason").eq("user_id", user.id).maybeSingle(),
     ]);
 

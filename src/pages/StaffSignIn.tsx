@@ -142,6 +142,7 @@ export default function StaffSignIn() {
         .from("organization_members")
         .select("organization_id")
         .eq("user_id", user.id)
+        .limit(1)
         .maybeSingle(),
     ]);
     if (mem?.organization_id) setOrgId(mem.organization_id);

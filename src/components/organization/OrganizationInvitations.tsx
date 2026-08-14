@@ -59,6 +59,7 @@ const OrganizationInvitations = () => {
         .select("organization_id, is_owner, organizations:organization_id(id, name)")
         .eq("user_id", user.id)
         .eq("is_active", true)
+        .limit(1)
         .single();
       
       if (error) return null;

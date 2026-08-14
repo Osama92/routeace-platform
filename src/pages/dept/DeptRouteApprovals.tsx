@@ -31,7 +31,7 @@ export default function DeptRouteApprovals() {
   const submit = async () => {
     const { data: u } = await supabase.auth.getUser();
     const { data: mem } = await (supabase as any)
-      .from("organization_members").select("organization_id").eq("user_id", u.user?.id).maybeSingle();
+      .from("organization_members").select("organization_id").eq("user_id", u.user?.id).limit(1).maybeSingle();
     if (!mem?.organization_id) { toast.error("No organization"); return; }
     const { error } = await (supabase as any).from("dept_route_approvals").insert({
       organization_id: mem.organization_id,
