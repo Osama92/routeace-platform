@@ -163,6 +163,39 @@ export const InvoicePreviewDialog = ({ invoice, open, onClose, onStatusUpdate }:
     ? lineItems
     : [{ id: "1", description: "Logistics / Delivery Service", tonnage: "-", quantity: 1, unit_price: invoice.amount, rate: invoice.amount, vat_rate: 0, vat_amount: 0, line_total: invoice.amount, amount: invoice.amount }];
 
+  /**
+   * The VAT rate to display beside the tax total.
+   *
+   * This was previously derived as taxAmount / subtotal, which is wrong
+   * whenever VAT applies to only some lines. On a real invoice with three
+   * zero-rated delivery lines and one NGN10,000 service charge, NGN750 of VAT
+   * against a NGN1,389,683 subtotal rendered as "VAT (0.1%)" — an arithmetically
+   * true average, but not the rate actually charged, and it looks like a bug to
+   * anyone reading the invoice.
+   *
+   * The rate now comes from the line items themselves: the distinct non-zero
+   * vat_rate values. A single rate renders as "7.5%"; genuinely mixed rates
+   * render as "Mixed" rather than a misleading blended figure.
+   */
+  const vatRateLabel = (() => {
+    const rates = Array.from(
+      new Set(
+        displayItems
+          .map((li) => Number(li.vat_rate) || 0)
+          .filter((r) => r > 0)
+          .map((r) => Number(r.toFixed(2))),
+      ),
+    );
+    if (rates.length === 1) {
+      // Trim a trailing .0 so 7.50 reads as "7.5" and 20.00 as "20".
+      return `${parseFloat(rates[0].toFixed(2))}%`;
+    }
+    if (rates.length > 1) return "Mixed";
+    // No per-line rate recorded (legacy invoices): fall back to the blended
+    // rate rather than asserting a rate that was never stored.
+    return subtotal > 0 ? `${((taxAmount / subtotal) * 100).toFixed(1)}%` : "7.5%";
+  })();
+
   // ── Helper: load image URL → base64 dataURL via canvas ──────────────────────
   // Tries the public URL first; if CORS blocks it, falls back to a signed URL
   const loadImageAsDataUrl = async (url: string): Promise<string> => {
@@ -354,8 +387,7 @@ export const InvoicePreviewDialog = ({ invoice, open, onClose, onStatusUpdate }:
       ["Sub Total", `${fmtCur(subtotal)}`],
     ];
     if (taxAmount > 0) {
-      const vatPct = subtotal > 0 ? ((taxAmount / subtotal) * 100).toFixed(1) : "7.5";
-      totRows.push([`VAT (${vatPct}%)`, `${fmtCur(taxAmount)}`]);
+      totRows.push([`VAT (${vatRateLabel})`, `${fmtCur(taxAmount)}`]);
     }
     if (shippingCharge > 0) totRows.push(["Shipping", `${fmtCur(shippingCharge)}`]);
     if (shippingVatAmount > 0) totRows.push([`Shipping VAT (${invoice.shipping_vat_rate}%)`, `${fmtCur(shippingVatAmount)}`]);
@@ -647,7 +679,7 @@ export const InvoicePreviewDialog = ({ invoice, open, onClose, onStatusUpdate }:
                 </div>
                 {taxAmount > 0 && (
                   <div className="flex justify-between text-gray-500">
-                    <span>VAT ({subtotal > 0 ? ((taxAmount / subtotal) * 100).toFixed(1) : "7.5"}%)</span>
+                    <span>VAT ({vatRateLabel})</span>
                     <span className="tabular-nums">{fmtCur(taxAmount)}</span>
                   </div>
                 )}
