@@ -204,10 +204,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       // in the same organisation saw everything correctly.
       const { data: memberRows } = await supabase
         .from("organization_members")
-        .select("organization_id, created_at")
+        .select("organization_id, joined_at")
         .eq("user_id", userId)
         .eq("is_active", true)
-        .order("created_at", { ascending: true })
+        // joined_at, NOT created_at — organization_members has no created_at
+        // column, and selecting a non-existent column makes the whole query
+        // error, which returned null for EVERY user and put them on the
+        // "Company setup incomplete" screen.
+        .order("joined_at", { ascending: true, nullsFirst: false })
         .limit(1);
       const memberOrgId = memberRows?.[0]?.organization_id;
       if (memberOrgId) return memberOrgId;
