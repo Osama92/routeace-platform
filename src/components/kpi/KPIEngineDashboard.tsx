@@ -124,20 +124,103 @@ interface KPIMetric {
   periodLabel: string;
 }
 
+type PeriodKey = "this_month" | "last_month" | "last_3_months" | "all_time";
+
+const PERIOD_OPTIONS: { key: PeriodKey; label: string }[] = [
+  { key: "this_month", label: "This month" },
+  { key: "last_month", label: "Last month" },
+  { key: "last_3_months", label: "Last 3 months" },
+  { key: "all_time", label: "All time" },
+];
+
+/**
+ * Resolves a period key into the reporting window and the window immediately
+ * before it, which is what every month-on-month trend is measured against.
+ *
+ * Dispatches are filtered on created_at — the cohort RAISED in the period,
+ * not delivered in it. That keeps On-Time Delivery consistent with the Total
+ * Dispatches count shown beside it; scoring deliveries that arrived in the
+ * window would mix in trips raised in an earlier one and the two cards would
+ * stop agreeing.
+ *
+ * "All time" has no meaningful prior window, so comparison is disabled rather
+ * than invented.
+ */
+const resolvePeriod = (key: PeriodKey, now: Date) => {
+  switch (key) {
+    case "last_month": {
+      const start = startOfMonth(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+      return {
+        start,
+        end: endOfMonth(start),
+        prevStart: startOfMonth(new Date(now.getFullYear(), now.getMonth() - 2, 1)),
+        prevEnd: endOfMonth(new Date(now.getFullYear(), now.getMonth() - 2, 1)),
+        label: format(start, "MMM yyyy"),
+        prevLabel: format(new Date(now.getFullYear(), now.getMonth() - 2, 1), "MMM yyyy"),
+        isPartial: false,
+      };
+    }
+    case "last_3_months": {
+      const start = startOfMonth(new Date(now.getFullYear(), now.getMonth() - 2, 1));
+      return {
+        start,
+        end: endOfMonth(now),
+        prevStart: startOfMonth(new Date(now.getFullYear(), now.getMonth() - 5, 1)),
+        prevEnd: endOfMonth(new Date(now.getFullYear(), now.getMonth() - 3, 1)),
+        label: `${format(start, "MMM")}–${format(now, "MMM yyyy")}`,
+        prevLabel: "prior 3 months",
+        isPartial: true,
+      };
+    }
+    case "all_time": {
+      return {
+        start: new Date(2000, 0, 1),
+        end: endOfMonth(now),
+        prevStart: null,
+        prevEnd: null,
+        label: "All time",
+        prevLabel: null,
+        isPartial: false,
+      };
+    }
+    case "this_month":
+    default: {
+      return {
+        start: startOfMonth(now),
+        end: endOfMonth(now),
+        prevStart: startOfMonth(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
+        prevEnd: endOfMonth(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
+        label: format(now, "MMM yyyy"),
+        prevLabel: format(new Date(now.getFullYear(), now.getMonth() - 1, 1), "MMM yyyy"),
+        // The current month is still running, so it is being compared against
+        // a complete one. Surfaced in the UI rather than left for the reader
+        // to spot.
+        isPartial: true,
+      };
+    }
+  }
+};
+
 const KPIEngineDashboard = () => {
   const { organizationId } = useAuth();
   const [selectedRole, setSelectedRole] = useState("overview");
+  const [periodKey, setPeriodKey] = useState<PeriodKey>("this_month");
 
   // Calculate KPIs from actual data
   const { data: kpiData, isLoading } = useQuery({
-    queryKey: ["kpi-engine-data", organizationId],
+    queryKey: ["kpi-engine-data", organizationId, periodKey],
     enabled: !!organizationId,
     queryFn: async () => {
       const now = new Date();
-      const monthStart = startOfMonth(now);
-      const monthEnd = endOfMonth(now);
-      const prevMonthStart = startOfMonth(new Date(now.getFullYear(), now.getMonth() - 1, 1));
-      const prevMonthEnd = endOfMonth(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+      const win = resolvePeriod(periodKey, now);
+      const monthStart = win.start;
+      const monthEnd = win.end;
+      // Fall back to the reporting window itself when there is no prior period
+      // (All time). The comparison is suppressed downstream via hasPrevPeriod,
+      // so these values are never actually used as a baseline.
+      const prevMonthStart = win.prevStart ?? win.start;
+      const prevMonthEnd = win.prevEnd ?? win.start;
+      const hasPrevPeriod = win.prevStart !== null;
 
       // Fetch all required data in parallel — RLS scopes results to the current tenant
       const [
@@ -162,9 +245,12 @@ const KPIEngineDashboard = () => {
           .eq("organization_id", organizationId)
           .gte("created_at", monthStart.toISOString())
           .lte("created_at", monthEnd.toISOString()),
+        // Same columns as the current-period query. This previously fetched
+        // only id/status/customer_id, which is why 19 of 22 metrics had no
+        // prior value to compare against and fell back to a hardcoded 0.
         supabase
           .from("dispatches")
-          .select("id, status, customer_id")
+          .select("id, status, created_at, actual_pickup, actual_delivery, scheduled_pickup, scheduled_delivery, sla_deadline, route_id, driver_id, customer_id, vehicle_id, routes(estimated_duration_hours)")
           .eq("organization_id", organizationId)
           .gte("created_at", prevMonthStart.toISOString())
           .lte("created_at", prevMonthEnd.toISOString()),
@@ -247,7 +333,23 @@ const KPIEngineDashboard = () => {
       const safePct = (n: number, d: number): number | null =>
         d > 0 ? Math.round((n / d) * 100) : null;
       const round1 = (n: number) => Math.round(n * 10) / 10;
-      const trendOf = (curr: number, prev: number, lowerBetter = false): "up" | "down" | "stable" => {
+      /**
+       * Direction of travel against the prior period.
+       *
+       * Callers used to pass a hardcoded 0 as `prev` on 19 of 22 metrics, so
+       * the arrow only ever said "this number is above zero" while looking
+       * exactly like a month-on-month comparison. `prev` is now nullable and
+       * returns "stable" (rendered without an arrow) when there is nothing
+       * genuine to compare against — an unmeasurable period, or "All time",
+       * which has no period before it.
+       */
+      const trendOf = (
+        curr: number | null,
+        prev: number | null,
+        lowerBetter = false,
+      ): "up" | "down" | "stable" => {
+        if (!hasPrevPeriod) return "stable";
+        if (curr === null || prev === null) return "stable";
         if (curr === prev) return "stable";
         const up = curr > prev;
         return up === !lowerBetter ? "up" : "down";
@@ -285,12 +387,18 @@ const KPIEngineDashboard = () => {
         return null;
       };
 
-      const otdScoreable = dispatches.filter(
-        (d: any) => d.actual_delivery && promisedDeliveryAt(d) !== null,
-      );
-      const onTimeDeliveries = otdScoreable.filter(
-        (d: any) => new Date(d.actual_delivery) <= (promisedDeliveryAt(d) as Date),
-      ).length;
+      // Applied identically to the current and prior windows so the trend
+      // compares like with like.
+      const scoreOtd = (rows: any[]) => {
+        const scoreable = rows.filter((d) => d.actual_delivery && promisedDeliveryAt(d) !== null);
+        const onTime = scoreable.filter(
+          (d) => new Date(d.actual_delivery) <= (promisedDeliveryAt(d) as Date),
+        ).length;
+        return { scoreable, onTime };
+      };
+
+      const { scoreable: otdScoreable, onTime: onTimeDeliveries } = scoreOtd(dispatches);
+      const { scoreable: prevOtdScoreable, onTime: prevOnTime } = scoreOtd(prevDispatches);
       const dispatchSpeedMins = (() => {
         const samples = dispatches
           .filter(d => d.actual_pickup && d.created_at)
@@ -341,6 +449,32 @@ const KPIEngineDashboard = () => {
       // included in-flight trips that cannot be late yet and would drag the
       // rate down purely because the month is still running.
       const onTimeDeliveryRate = safePct(onTimeDeliveries, otdScoreable.length);
+      const prevOnTimeDeliveryRate = safePct(prevOnTime, prevOtdScoreable.length);
+
+      // Prior-period equivalents, computed on exactly the same basis as the
+      // current period so each trend arrow reflects real movement. Metrics
+      // whose inputs are not period-scoped (vehicles, drivers, incidents are
+      // fetched for the current window only) keep a null prior value, which
+      // trendOf renders as no arrow rather than a false one.
+      const prevDeliveredDispatches = prevDispatches.filter((d: any) => d.status === "delivered").length;
+      const prevDeliveryCompletionRate = safePct(prevDeliveredDispatches, prevDispatches.length);
+      const prevRouteAdherence = safePct(prevOnTime, prevOtdScoreable.length);
+      const prevDispatchSpeedMins = (() => {
+        const samples = prevDispatches
+          .filter((d: any) => d.actual_pickup && d.created_at)
+          .map((d: any) => (new Date(d.actual_pickup).getTime() - new Date(d.created_at).getTime()) / 60000);
+        if (samples.length === 0) return null;
+        return Math.round(samples.reduce((a: number, b: number) => a + b, 0) / samples.length);
+      })();
+      const prevFleetUtilization = (() => {
+        if (totalVehicles === 0) return null;
+        const used = new Set(prevDispatches.map((d: any) => d.vehicle_id).filter(Boolean)).size;
+        return safePct(used, totalVehicles);
+      })();
+      const prevCollectionRate = safePct(
+        prevInvoices.filter((i: any) => i.status === "paid").length,
+        prevInvoices.length,
+      );
       const deliveryCompletionRate = safePct(deliveredDispatches, totalDispatches);
 
       const activeOrganizations = partners.filter(p => p.approval_status === "approved").length;
@@ -415,50 +549,51 @@ const KPIEngineDashboard = () => {
       // Response time: avg minutes from created → first assignment (proxy actual_pickup)
       const responseTime = dispatchSpeedMins;
 
-      const period = format(now, "MMM yyyy");
+      // Reflects the selected window rather than always saying "this month".
+      const period = win.label;
 
       const metrics: KPIMetric[] = [
         // Super Admin
         { role: "super_admin", metricName: "Platform Uptime", metricType: "leading", value: platformUptime, target: 99.5, unit: "%", trend: "stable", periodLabel: period },
         { role: "super_admin", metricName: "API Health", metricType: "leading", value: apiHealth, target: 95, unit: "%", trend: "stable", periodLabel: period },
-        { role: "super_admin", metricName: "Active Organizations", metricType: "leading", value: activeOrganizations, target: null, unit: "count", trend: trendOf(activeOrganizations, 0), periodLabel: period },
+        { role: "super_admin", metricName: "Active Organizations", metricType: "leading", value: activeOrganizations, target: null, unit: "count", trend: trendOf(activeOrganizations, null), periodLabel: period },
         { role: "super_admin", metricName: "Monthly Revenue", metricType: "lagging", value: totalRevenue, target: null, unit: "currency", trend: trendOf(totalRevenue, prevRevenue), periodLabel: period },
-        { role: "super_admin", metricName: "Growth Rate", metricType: "lagging", value: growthRate, target: 10, unit: "%", trend: trendOf(growthRate, 0), periodLabel: period },
-        { role: "super_admin", metricName: "Churn Rate", metricType: "lagging", value: churnRate, target: 5, unit: "%", trend: trendOf(churnRate, 0, true), periodLabel: period },
+        { role: "super_admin", metricName: "Growth Rate", metricType: "lagging", value: growthRate, target: 10, unit: "%", trend: trendOf(growthRate, null), periodLabel: period },
+        { role: "super_admin", metricName: "Churn Rate", metricType: "lagging", value: churnRate, target: 5, unit: "%", trend: trendOf(churnRate, null, true), periodLabel: period },
 
         // Org Admin
-        { role: "org_admin", metricName: "Fleet Utilization", metricType: "leading", value: fleetUtilization, target: 75, unit: "%", trend: trendOf(fleetUtilization, 0), periodLabel: period },
+        { role: "org_admin", metricName: "Fleet Utilization", metricType: "leading", value: fleetUtilization, target: 75, unit: "%", trend: trendOf(fleetUtilization, prevFleetUtilization), periodLabel: period },
         { role: "org_admin", metricName: "Order Pipeline", metricType: "leading", value: dispatches.filter(d => d.status === "pending").length, target: null, unit: "count", trend: "stable", periodLabel: period },
         { role: "org_admin", metricName: "Profit Margin", metricType: "lagging", value: profitMargin, target: 20, unit: "%", trend: "stable", periodLabel: period },
         { role: "org_admin", metricName: "Revenue Per Vehicle", metricType: "lagging", value: totalVehicles > 0 ? Math.round(totalRevenue / totalVehicles) : 0, target: null, unit: "currency", trend: trendOf(totalRevenue, prevRevenue), periodLabel: period },
 
         // Ops Manager
-        { role: "ops_manager", metricName: "Dispatch Speed", metricType: "leading", value: dispatchSpeedMins, target: 20, unit: "minutes", trend: trendOf(dispatchSpeedMins, 0, true), periodLabel: period },
-        { role: "ops_manager", metricName: "Fleet Readiness", metricType: "leading", value: fleetReadiness, target: 80, unit: "%", trend: trendOf(fleetReadiness, 0), periodLabel: period },
-        { role: "ops_manager", metricName: "On-Time Delivery", metricType: "lagging", value: onTimeDeliveryRate, target: 95, unit: "%", trend: trendOf(onTimeDeliveryRate, 0), periodLabel: period },
-        { role: "ops_manager", metricName: "Downtime Hours", metricType: "lagging", value: Math.round(downtimeHours), target: 20, unit: "hours", trend: trendOf(downtimeHours, 0, true), periodLabel: period },
+        { role: "ops_manager", metricName: "Dispatch Speed", metricType: "leading", value: dispatchSpeedMins, target: 20, unit: "minutes", trend: trendOf(dispatchSpeedMins, prevDispatchSpeedMins, true), periodLabel: period },
+        { role: "ops_manager", metricName: "Fleet Readiness", metricType: "leading", value: fleetReadiness, target: 80, unit: "%", trend: trendOf(fleetReadiness, null), periodLabel: period },
+        { role: "ops_manager", metricName: "On-Time Delivery", metricType: "lagging", value: onTimeDeliveryRate, target: 95, unit: "%", trend: trendOf(onTimeDeliveryRate, prevOnTimeDeliveryRate), periodLabel: period },
+        { role: "ops_manager", metricName: "Downtime Hours", metricType: "lagging", value: Math.round(downtimeHours), target: 20, unit: "hours", trend: trendOf(downtimeHours, null, true), periodLabel: period },
 
         // Finance Manager
-        { role: "finance_manager", metricName: "Invoice Processing Time", metricType: "leading", value: invoiceProcessingHours, target: 4, unit: "hours", trend: trendOf(invoiceProcessingHours, 0, true), periodLabel: period },
-        { role: "finance_manager", metricName: "Reconciliation Rate", metricType: "leading", value: reconciliationRate, target: 90, unit: "%", trend: trendOf(reconciliationRate, 0), periodLabel: period },
+        { role: "finance_manager", metricName: "Invoice Processing Time", metricType: "leading", value: invoiceProcessingHours, target: 4, unit: "hours", trend: trendOf(invoiceProcessingHours, null, true), periodLabel: period },
+        { role: "finance_manager", metricName: "Reconciliation Rate", metricType: "leading", value: reconciliationRate, target: 90, unit: "%", trend: trendOf(reconciliationRate, null), periodLabel: period },
         { role: "finance_manager", metricName: "Cash Flow", metricType: "lagging", value: invoices.filter(i => i.status === "paid").reduce((a, i) => a + (Number(i.total_amount) || 0), 0), target: null, unit: "currency", trend: trendOf(totalRevenue, prevRevenue), periodLabel: period },
-        { role: "finance_manager", metricName: "Collection Rate", metricType: "lagging", value: collectionRate, target: 85, unit: "%", trend: trendOf(collectionRate, 0), periodLabel: period },
+        { role: "finance_manager", metricName: "Collection Rate", metricType: "lagging", value: collectionRate, target: 85, unit: "%", trend: trendOf(collectionRate, prevCollectionRate), periodLabel: period },
 
         // Dispatcher
         { role: "dispatcher", metricName: "Orders Assigned/Day", metricType: "leading", value: Math.round(totalDispatches / Math.max(1, now.getDate())), target: null, unit: "count", trend: "stable", periodLabel: period },
-        { role: "dispatcher", metricName: "Response Time", metricType: "leading", value: responseTime, target: 10, unit: "minutes", trend: trendOf(responseTime, 0, true), periodLabel: period },
-        { role: "dispatcher", metricName: "SLA Compliance", metricType: "lagging", value: onTimeDeliveryRate, target: 95, unit: "%", trend: trendOf(onTimeDeliveryRate, 0), periodLabel: period },
+        { role: "dispatcher", metricName: "Response Time", metricType: "leading", value: responseTime, target: 10, unit: "minutes", trend: trendOf(responseTime, null, true), periodLabel: period },
+        { role: "dispatcher", metricName: "SLA Compliance", metricType: "lagging", value: onTimeDeliveryRate, target: 95, unit: "%", trend: trendOf(onTimeDeliveryRate, prevOnTimeDeliveryRate), periodLabel: period },
 
         // Driver
-        { role: "driver", metricName: "Job Acceptance Rate", metricType: "leading", value: jobAcceptanceRate, target: 90, unit: "%", trend: trendOf(jobAcceptanceRate, 0), periodLabel: period },
-        { role: "driver", metricName: "Route Adherence", metricType: "leading", value: routeAdherence, target: 85, unit: "%", trend: trendOf(routeAdherence, 0), periodLabel: period },
-        { role: "driver", metricName: "Delivery Completion", metricType: "lagging", value: deliveryCompletionRate, target: 98, unit: "%", trend: trendOf(deliveryCompletionRate, 0), periodLabel: period },
-        { role: "driver", metricName: "Incident Count", metricType: "lagging", value: incidentCount, target: 0, unit: "count", trend: trendOf(incidentCount, 0, true), periodLabel: period },
+        { role: "driver", metricName: "Job Acceptance Rate", metricType: "leading", value: jobAcceptanceRate, target: 90, unit: "%", trend: trendOf(jobAcceptanceRate, null), periodLabel: period },
+        { role: "driver", metricName: "Route Adherence", metricType: "leading", value: routeAdherence, target: 85, unit: "%", trend: trendOf(routeAdherence, prevRouteAdherence), periodLabel: period },
+        { role: "driver", metricName: "Delivery Completion", metricType: "lagging", value: deliveryCompletionRate, target: 98, unit: "%", trend: trendOf(deliveryCompletionRate, prevDeliveryCompletionRate), periodLabel: period },
+        { role: "driver", metricName: "Incident Count", metricType: "lagging", value: incidentCount, target: 0, unit: "count", trend: trendOf(incidentCount, null, true), periodLabel: period },
 
         // Customer
         { role: "customer", metricName: "Order Frequency", metricType: "leading", value: customers.length > 0 ? round1(totalDispatches / customers.length) : 0, target: null, unit: "orders/month", trend: "stable", periodLabel: period },
-        { role: "customer", metricName: "Payment Timeliness", metricType: "lagging", value: paymentTimelinessDays, target: 7, unit: "days", trend: trendOf(paymentTimelinessDays, 0, true), periodLabel: period },
-        { role: "customer", metricName: "Repeat Usage", metricType: "lagging", value: repeatUsagePct, target: 70, unit: "%", trend: trendOf(repeatUsagePct, 0), periodLabel: period },
+        { role: "customer", metricName: "Payment Timeliness", metricType: "lagging", value: paymentTimelinessDays, target: 7, unit: "days", trend: trendOf(paymentTimelinessDays, null, true), periodLabel: period },
+        { role: "customer", metricName: "Repeat Usage", metricType: "lagging", value: repeatUsagePct, target: 70, unit: "%", trend: trendOf(repeatUsagePct, null), periodLabel: period },
       ];
 
       return {
@@ -473,6 +608,12 @@ const KPIEngineDashboard = () => {
           // judged". These read identically otherwise.
           otdScoreableCount: otdScoreable.length,
           deliveredCount: deliveredDispatches,
+          prevOnTimeDeliveryRate,
+          periodLabel: win.label,
+          prevPeriodLabel: win.prevLabel,
+          // True when the window is still running, so the reader knows the
+          // figure is being compared against a complete period.
+          isPartial: win.isPartial,
         },
       };
     },
@@ -540,6 +681,33 @@ const KPIEngineDashboard = () => {
 
   return (
     <div className="space-y-6">
+      {/* Period selector — every figure below is scoped to this window */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium">{kpiData?.summary.periodLabel}</p>
+          <p className="text-xs text-muted-foreground">
+            Dispatches raised in this period
+            {kpiData?.summary.isPartial ? " — period still in progress" : ""}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-1 rounded-lg bg-muted/50 p-1">
+          {PERIOD_OPTIONS.map((opt) => (
+            <button
+              key={opt.key}
+              type="button"
+              onClick={() => setPeriodKey(opt.key)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                periodKey === opt.key
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
@@ -606,6 +774,14 @@ const KPIEngineDashboard = () => {
                     <p className="text-xs text-muted-foreground">
                       of {kpiData.summary.otdScoreableCount} measurable{" "}
                       {kpiData.summary.otdScoreableCount === 1 ? "trip" : "trips"}
+                      {kpiData.summary.prevOnTimeDeliveryRate !== null &&
+                      kpiData.summary.prevPeriodLabel ? (
+                        <>
+                          {" · "}
+                          {kpiData.summary.prevOnTimeDeliveryRate}% in{" "}
+                          {kpiData.summary.prevPeriodLabel}
+                        </>
+                      ) : null}
                     </p>
                   </>
                 )}
