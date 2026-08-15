@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { scoreOtd, OTD_SELECT } from "@/lib/otd";
 
 export interface FleetKPIs {
   // Downtime & Availability
@@ -82,7 +83,7 @@ export const useFleetKPIs = () => {
     const monthStartTs = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 
-    const [fleetRes, maintRes, availRes, driverRes, dispRes, eventsRes] = await Promise.all([
+    const [fleetRes, maintRes, availRes, driverRes, dispRes, eventsRes, maintExpRes] = await Promise.all([
       supabase
         .from("vehicles")
         .select("id, registration_number, status, current_fuel_level, health_score, weekly_km, monthly_km, last_maintenance, next_maintenance")
@@ -100,14 +101,20 @@ export const useFleetKPIs = () => {
         .eq("organization_id", organizationId)
         .gte("log_date", monthStart)
         .order("log_date", { ascending: false }),
+      // NOTE: fleet_driver_scores has NO organization_id column, so it cannot
+      // be filtered by tenant here — adding .eq("organization_id", ...) makes
+      // PostgREST reject the entire query, returning an error rather than
+      // rows. It is empty in production (0 rows platform-wide) and is scoped
+      // only by RLS, so it must not be used for any figure that could leak
+      // another tenant's numbers. Driver-behaviour scores below are read from
+      // it defensively; on-time delivery no longer depends on it.
       supabase
         .from("fleet_driver_scores")
-        .select("driver_name, overall_score, deliveries_completed, deliveries_on_time, first_attempt_success, dvir_completed")
-        .eq("organization_id", organizationId)
+        .select("driver_name, vehicle_id, overall_score, deliveries_completed, deliveries_on_time, first_attempt_success, dvir_completed")
         .gte("score_date", monthStart),
       supabase
         .from("dispatches")
-        .select("id, status, on_time_flag, total_distance_km, cost")
+        .select(`id, status, vehicle_id, on_time_flag, total_distance_km, cost, ${OTD_SELECT}`)
         .eq("organization_id", organizationId)
         .gte("created_at", monthStartTs)
         .limit(500),
@@ -122,6 +129,15 @@ export const useFleetKPIs = () => {
         .eq("organization_id", organizationId)
         .order("start_date", { ascending: false })
         .limit(500),
+      // asset_maintenance_events records WHEN work happened but carries no cost
+      // column, so every cost KPI read zero. The spend is booked as expenses
+      // against the vehicle, which is where it comes from.
+      supabase
+        .from("expenses")
+        .select("id, vehicle_id, amount, category, expense_date")
+        .eq("organization_id", organizationId)
+        .in("category", ["maintenance", "repairs", "parts"])
+        .limit(1000),
     ]);
 
     const fleet = fleetRes.data || [];
@@ -133,6 +149,26 @@ export const useFleetKPIs = () => {
     //                                     so scheduled-vs-unscheduled is right)
     //   start_date/end_date -> repair_hours + downtime_hours
     //   an event with an end_date is complete
+    // Maintenance spend per vehicle, so cost KPIs reflect real money.
+    const spendByVehicle = new Map<string, number>();
+    let unassignedMaintSpend = 0;
+    for (const x of (maintExpRes.data || []) as any[]) {
+      const amt = Number(x.amount) || 0;
+      if (x.vehicle_id) {
+        spendByVehicle.set(x.vehicle_id, (spendByVehicle.get(x.vehicle_id) || 0) + amt);
+      } else {
+        // Still real spend — counted in the fleet total even though it cannot
+        // be attributed to one vehicle.
+        unassignedMaintSpend += amt;
+      }
+    }
+    // An event carries its vehicle's share of that vehicle's spend, so summing
+    // parts_cost across events reproduces the total without double-counting.
+    const eventsPerVehicle = new Map<string, number>();
+    for (const e of (eventsRes.data || []) as any[]) {
+      if (e.vehicle_id) eventsPerVehicle.set(e.vehicle_id, (eventsPerVehicle.get(e.vehicle_id) || 0) + 1);
+    }
+
     const normalisedEvents = (eventsRes.data || []).map((e: any) => {
       const start = e.start_date ? new Date(e.start_date) : null;
       const end = e.end_date ? new Date(e.end_date) : null;
@@ -152,7 +188,9 @@ export const useFleetKPIs = () => {
         status: end ? "completed" : "in_progress",
         repair_hours: hours,
         downtime_hours: hours,
-        parts_cost: 0,
+        parts_cost: e.vehicle_id
+          ? (spendByVehicle.get(e.vehicle_id) || 0) / (eventsPerVehicle.get(e.vehicle_id) || 1)
+          : 0,
         labor_cost: 0,
         created_at: e.start_date,
         started_at: e.start_date,
@@ -162,7 +200,14 @@ export const useFleetKPIs = () => {
 
     const maint = [...(maintRes.data || []), ...normalisedEvents];
     const availability = availRes.data || [];
-    const drivers = driverRes.data || [];
+    // fleet_driver_scores cannot be tenant-filtered in the query (no
+    // organization_id column), so it is scoped here against this org's own
+    // vehicles. Without this, a platform owner would blend other tenants'
+    // driver scores into these averages.
+    const fleetVehicleIds = new Set(fleet.map((v: any) => v.id));
+    const drivers = (driverRes.data || []).filter(
+      (d: any) => !d.vehicle_id || fleetVehicleIds.has(d.vehicle_id),
+    );
     const dispatches = dispRes.data || [];
 
     const totalFleet = fleet.length;
@@ -217,19 +262,32 @@ export const useFleetKPIs = () => {
     // === Cost ===
     const totalMaintenanceCost = maint.reduce(
       (s: number, m: any) => s + Number(m.parts_cost || 0) + Number(m.labor_cost || 0), 0,
-    );
+    ) + unassignedMaintSpend;
     const avgCostPerVehicle = totalFleet > 0 ? Math.round(totalMaintenanceCost / totalFleet) : 0;
 
-    const totalKm = fleet.reduce((s: number, f: any) => s + Number(f.monthly_km || 0), 0);
+    // monthly_km is not maintained on the vehicle record, so fall back to the
+    // distance actually driven on this month's dispatches. Without this,
+    // cost/km divided by zero and rendered NGN0 despite real spend.
+    const fleetKm = fleet.reduce((s: number, f: any) => s + Number(f.monthly_km || 0), 0);
+    const dispatchKm = dispatches.reduce(
+      (s: number, d: any) => s + Number(d.total_distance_km || 0), 0,
+    );
+    const totalKm = fleetKm > 0 ? fleetKm : dispatchKm;
     const totalDeliveries = dispatches.filter((d: any) => d.status === "completed" || d.status === "delivered").length;
     const avgCostPerKm = totalKm > 0 ? Math.round((totalMaintenanceCost / totalKm) * 100) / 100 : 0;
     const avgCostPerDelivery = totalDeliveries > 0 ? Math.round(totalMaintenanceCost / totalDeliveries) : 0;
 
     // === Operational ===
-    const inUseVehicles = fleet.filter((v: any) => v.status === "in_use").length;
-    const utilizationRate = totalFleet > 0 ? Math.round((inUseVehicles / totalFleet) * 100) : 0;
-    const idleVehicles = fleet.filter((v: any) => v.status === "available").length;
-    const idleTimePct = totalFleet > 0 ? Math.round((idleVehicles / totalFleet) * 100) : 0;
+    // Utilisation counts vehicles that actually ran a dispatch this month, not
+    // the `status` flag. Nothing in the dispatch flow ever sets a vehicle to
+    // "in_use" — all 30 of Relma's vehicles sit at "available" — so the old
+    // status-based count was structurally always 0%.
+    const vehiclesWithTrips = new Set(
+      dispatches.map((d: any) => d.vehicle_id).filter(Boolean),
+    ).size;
+    const inUseVehicles = vehiclesWithTrips;
+    const utilizationRate = totalFleet > 0 ? Math.round((vehiclesWithTrips / totalFleet) * 100) : 0;
+    const idleTimePct = totalFleet > 0 ? Math.max(0, 100 - utilizationRate) : 0;
     const avgFuelLevel = totalFleet > 0
       ? Math.round(fleet.reduce((s: number, f: any) => s + Number(f.current_fuel_level || 0), 0) / totalFleet)
       : 0;
@@ -258,7 +316,14 @@ export const useFleetKPIs = () => {
     const totalDriverDeliveries = drivers.reduce((s: number, d: any) => s + Number(d.deliveries_completed || 0), 0);
     const totalOnTime = drivers.reduce((s: number, d: any) => s + Number(d.deliveries_on_time || 0), 0);
     const totalFirstAttempt = drivers.reduce((s: number, d: any) => s + Number(d.first_attempt_success || 0), 0);
-    const onTimeDeliveryPct = totalDriverDeliveries > 0 ? Math.round((totalOnTime / totalDriverDeliveries) * 100) : 0;
+    // fleet_driver_scores is empty in production (0 rows, and it has no
+    // organization_id column at all), so deliveries_on_time summed to 0 and
+    // this always read 0%. Score the dispatches directly via the shared
+    // helper instead — same calculation as every other OTD figure.
+    const fleetOtd = scoreOtd(dispatches as any);
+    const onTimeDeliveryPct = fleetOtd.rate ?? (
+      totalDriverDeliveries > 0 ? Math.round((totalOnTime / totalDriverDeliveries) * 100) : 0
+    );
     const firstAttemptPct = totalDriverDeliveries > 0 ? Math.round((totalFirstAttempt / totalDriverDeliveries) * 100) : 0;
 
     setKpis({
