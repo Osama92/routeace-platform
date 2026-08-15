@@ -98,7 +98,7 @@ const MAINTENANCE_TYPES = [
 
 const FleetMaintenancePanel = () => {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, organizationId } = useAuth();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<string>("");
@@ -114,11 +114,13 @@ const FleetMaintenancePanel = () => {
 
   // Fetch vehicles with extended data
   const { data: vehicles, isLoading: vehiclesLoading } = useQuery({
-    queryKey: ["fleet-vehicles-extended"],
+    queryKey: ["fleet-vehicles-extended", organizationId],
+    enabled: !!organizationId,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("vehicles")
         .select("id, registration_number, make, model, status, current_odometer, lifetime_km, weekly_km, monthly_km, health_score, last_service_km")
+        .eq("organization_id", organizationId!)
         .order("registration_number");
       
       if (error) throw error;
@@ -127,17 +129,68 @@ const FleetMaintenancePanel = () => {
   });
 
   // Fetch maintenance records
+  // Maintenance history comes from two tables. vehicle_maintenance_records is
+  // the original schema and is empty in production (0 rows platform-wide);
+  // asset_maintenance_events is where the Asset Operations Control form
+  // actually writes, and holds the real entries. Both are read and merged so
+  // this panel shows the work that was actually logged.
   const { data: maintenanceRecords, isLoading: recordsLoading } = useQuery({
-    queryKey: ["fleet-maintenance-records"],
+    // Depends on `vehicles` for tenant scoping of the legacy table, so it is
+    // keyed on the roster and waits for it.
+    queryKey: ["fleet-maintenance-records", organizationId, (vehicles ?? []).length],
+    enabled: !!organizationId && !!vehicles,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("vehicle_maintenance_records")
-        .select(`*, vehicles(registration_number, make, model)`)
-        .order("performed_at", { ascending: false })
-        .limit(50);
-      
-      if (error) throw error;
-      return data as MaintenanceRecord[];
+      const [legacy, events] = await Promise.all([
+        // vehicle_maintenance_records has NO organization_id column, so it
+        // cannot be filtered here — adding .eq("organization_id", ...) makes
+        // PostgREST reject the whole query and return an error rather than
+        // rows. It is scoped in code below against this org's own vehicles.
+        supabase
+          .from("vehicle_maintenance_records")
+          .select(`*, vehicles(registration_number, make, model)`)
+          .order("performed_at", { ascending: false })
+          .limit(50),
+        supabase
+          .from("asset_maintenance_events")
+          .select(`id, vehicle_id, maintenance_type, description, start_date, end_date, created_at, vehicles(registration_number, make, model)`)
+          .eq("organization_id", organizationId!)
+          .order("start_date", { ascending: false })
+          .limit(50),
+      ]);
+
+      if (legacy.error) throw legacy.error;
+      if (events.error) throw events.error;
+
+      // Events carry no cost or odometer column — those stay null rather than
+      // being shown as 0, which would read as "this repair was free".
+      const mapped: MaintenanceRecord[] = ((events.data ?? []) as any[]).map((e) => ({
+        id: e.id,
+        vehicle_id: e.vehicle_id,
+        maintenance_type: e.maintenance_type,
+        description: e.description ?? "",
+        cost: null as any,
+        odometer_reading: null as any,
+        performed_by: null,
+        performed_at: e.end_date ?? e.start_date,
+        next_maintenance_km: null,
+        next_maintenance_date: null,
+        parts_replaced: null,
+        notes: e.end_date ? null : "In progress",
+        created_at: e.created_at,
+        vehicles: e.vehicles,
+      }));
+
+      // Scope the legacy rows to this org's vehicles, since the table itself
+      // carries no tenant column and RLS grants platform owners cross-org
+      // visibility.
+      const ownVehicleIds = new Set((vehicles ?? []).map((v) => v.id));
+      const legacyScoped = ((legacy.data ?? []) as MaintenanceRecord[]).filter(
+        (r) => ownVehicleIds.size === 0 || ownVehicleIds.has(r.vehicle_id),
+      );
+
+      return [...legacyScoped, ...mapped]
+        .sort((a, b) => new Date(b.performed_at).getTime() - new Date(a.performed_at).getTime())
+        .slice(0, 50);
     },
   });
 
@@ -546,7 +599,14 @@ const FleetMaintenancePanel = () => {
                     </TableCell>
                     <TableCell className="max-w-[200px] truncate">{record.description}</TableCell>
                     <TableCell>{record.odometer_reading?.toLocaleString() || 0} km</TableCell>
-                    <TableCell>{formatCurrency(record.cost || 0)}</TableCell>
+                    {/* Events logged via Asset Operations Control carry no
+                        cost. Showing NGN0 would read as "this repair was
+                        free" rather than "cost not recorded". */}
+                    <TableCell>
+                      {record.cost === null || record.cost === undefined
+                        ? <span className="text-muted-foreground">—</span>
+                        : formatCurrency(record.cost)}
+                    </TableCell>
                     <TableCell>{format(new Date(record.performed_at), "MMM d, yyyy")}</TableCell>
                   </TableRow>
                 ))}
