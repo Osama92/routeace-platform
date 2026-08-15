@@ -155,7 +155,10 @@ const KPIEngineDashboard = () => {
       ] = await Promise.all([
         supabase
           .from("dispatches")
-          .select("id, status, created_at, actual_pickup, actual_delivery, scheduled_pickup, scheduled_delivery, driver_id, customer_id, vehicle_id")
+          // routes(estimated_duration_hours) is joined because the delivery
+          // promise lives on the route, not the dispatch — see the OTD block
+          // below. sla_deadline is the explicit per-dispatch override.
+          .select("id, status, created_at, actual_pickup, actual_delivery, scheduled_pickup, scheduled_delivery, sla_deadline, route_id, driver_id, customer_id, vehicle_id, routes(estimated_duration_hours)")
           .eq("organization_id", organizationId)
           .gte("created_at", monthStart.toISOString())
           .lte("created_at", monthEnd.toISOString()),
@@ -253,10 +256,41 @@ const KPIEngineDashboard = () => {
       // Dispatch metrics
       const totalDispatches = dispatches.length;
       const deliveredDispatches = dispatches.filter(d => d.status === "delivered").length;
-      const onTimeDeliveries = dispatches.filter(d => {
-        if (!d.actual_delivery || !d.scheduled_delivery) return false;
-        return new Date(d.actual_delivery) <= new Date(d.scheduled_delivery);
-      }).length;
+      // ── On-Time Delivery ────────────────────────────────────────────────
+      // This required both actual_delivery AND scheduled_delivery. Deliveries
+      // are recorded (78 of 86 carry actual_delivery) but scheduled_delivery is
+      // NULL on every row in production and nothing in the codebase ever writes
+      // it — so the numerator was structurally always 0 and OTD always read 0%.
+      //
+      // The promised time does exist, just not on that column. It is resolved
+      // here in order of directness:
+      //
+      //   1. scheduled_delivery  — an explicit promised delivery timestamp.
+      //   2. sla_deadline        — the contractual deadline (5 of 78 carry it).
+      //   3. scheduled_pickup + the route's estimated_duration_hours —
+      //      77 of 78 delivered dispatches link to a route carrying a duration,
+      //      so this is what makes the metric computable at all today.
+      //
+      // Dispatches with no resolvable promise are excluded from BOTH sides of
+      // the ratio rather than counted as late. Counting an unmeasurable trip as
+      // a failure would invent a number; excluding it reports OTD over the
+      // trips that can actually be judged, and coverage is surfaced separately.
+      const promisedDeliveryAt = (d: any): Date | null => {
+        if (d.scheduled_delivery) return new Date(d.scheduled_delivery);
+        if (d.sla_deadline) return new Date(d.sla_deadline);
+        const hours = Number(d.routes?.estimated_duration_hours) || 0;
+        if (d.scheduled_pickup && hours > 0) {
+          return new Date(new Date(d.scheduled_pickup).getTime() + hours * 3600000);
+        }
+        return null;
+      };
+
+      const otdScoreable = dispatches.filter(
+        (d: any) => d.actual_delivery && promisedDeliveryAt(d) !== null,
+      );
+      const onTimeDeliveries = otdScoreable.filter(
+        (d: any) => new Date(d.actual_delivery) <= (promisedDeliveryAt(d) as Date),
+      ).length;
       const dispatchSpeedMins = (() => {
         const samples = dispatches
           .filter(d => d.actual_pickup && d.created_at)
@@ -302,7 +336,11 @@ const KPIEngineDashboard = () => {
       })();
       const paymentTimelinessDays = invoiceProcessingHours > 0 ? round1(invoiceProcessingHours / 24) : 0;
 
-      const onTimeDeliveryRate = safePct(onTimeDeliveries, totalDispatches);
+      // Measured over dispatches that were actually delivered AND have a
+      // promise to judge them against — not over totalDispatches, which
+      // included in-flight trips that cannot be late yet and would drag the
+      // rate down purely because the month is still running.
+      const onTimeDeliveryRate = safePct(onTimeDeliveries, otdScoreable.length);
       const deliveryCompletionRate = safePct(deliveredDispatches, totalDispatches);
 
       const activeOrganizations = partners.filter(p => p.approval_status === "approved").length;
@@ -359,7 +397,10 @@ const KPIEngineDashboard = () => {
       const assignedDispatches = dispatches.filter(d => d.driver_id).length;
       const jobAcceptanceRate = safePct(assignedDispatches, totalDispatches);
       // Route adherence proxy: on-time deliveries among delivered
-      const routeAdherence = safePct(onTimeDeliveries, deliveredDispatches);
+      // Same scoreable base as OTD. Dividing the on-time count by every
+      // delivered dispatch would understate adherence by treating trips with no
+      // promised time as though they had missed one.
+      const routeAdherence = safePct(onTimeDeliveries, otdScoreable.length);
 
       // Platform uptime / API health derived from operational success rates (live, no mock)
       const platformUptime = totalDispatches > 0
@@ -420,7 +461,20 @@ const KPIEngineDashboard = () => {
         { role: "customer", metricName: "Repeat Usage", metricType: "lagging", value: repeatUsagePct, target: 70, unit: "%", trend: trendOf(repeatUsagePct, 0), periodLabel: period },
       ];
 
-      return { metrics, summary: { totalDispatches, totalRevenue, fleetUtilization, onTimeDeliveryRate } };
+      return {
+        metrics,
+        summary: {
+          totalDispatches,
+          totalRevenue,
+          fleetUtilization,
+          onTimeDeliveryRate,
+          // How many trips the OTD figure is actually based on, so the card can
+          // distinguish "0% — everything was late" from "no trip could be
+          // judged". These read identically otherwise.
+          otdScoreableCount: otdScoreable.length,
+          deliveredCount: deliveredDispatches,
+        },
+      };
     },
     refetchInterval: 60000, // Refresh every minute
   });
@@ -540,7 +594,21 @@ const KPIEngineDashboard = () => {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">On-Time Delivery</p>
-                <p className="text-2xl font-bold">{kpiData?.summary.onTimeDeliveryRate || 0}%</p>
+                {kpiData?.summary.onTimeDeliveryRate === null ||
+                kpiData?.summary.onTimeDeliveryRate === undefined ? (
+                  <>
+                    <p className="text-2xl font-bold text-muted-foreground">—</p>
+                    <p className="text-xs text-muted-foreground">No promised times set</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-2xl font-bold">{kpiData.summary.onTimeDeliveryRate}%</p>
+                    <p className="text-xs text-muted-foreground">
+                      of {kpiData.summary.otdScoreableCount} measurable{" "}
+                      {kpiData.summary.otdScoreableCount === 1 ? "trip" : "trips"}
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           </CardContent>
