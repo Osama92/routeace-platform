@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { isOnTime, OTD_SELECT } from "@/lib/otd";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -81,7 +82,7 @@ const ProductMetricsPage = () => {
       // Fetch dispatches
       const { data: dispatches } = await supabase
         .from("dispatches")
-        .select("id, status, created_at, scheduled_delivery, actual_delivery")
+        .select(`id, status, created_at, ${OTD_SELECT}`)
         .gte("created_at", rangeStart).lte("created_at", rangeEnd);
 
       // Fetch invoices
@@ -105,10 +106,10 @@ const ProductMetricsPage = () => {
 
       // Calculate on-time rate
       const deliveredWithTimes = (dispatches || []).filter(
-        d => d.status === "delivered" && d.scheduled_delivery && d.actual_delivery
+        d => d.status === "delivered" && isOnTime(d as any) !== null
       );
       const onTime = deliveredWithTimes.filter(
-        d => new Date(d.actual_delivery!) <= new Date(d.scheduled_delivery!)
+        d => isOnTime(d as any) === true
       ).length;
       const onTimeRate = deliveredWithTimes.length > 0 ? (onTime / deliveredWithTimes.length) * 100 : 0;
 

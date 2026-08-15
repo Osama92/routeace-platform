@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import { scoreOtd, OTD_SELECT } from "@/lib/otd";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -42,7 +44,8 @@ import autoTable from "jspdf-autotable";
 interface WeeklyMetrics {
   totalTrips: number;
   completedTrips: number;
-  onTimeRate: number;
+  /** null when no trip in the period could be scored — rendered as "—". */
+  onTimeRate: number | null;
   totalDistance: number;
   activeDrivers: number;
   activeVehicles: number;
@@ -60,6 +63,7 @@ interface DailyData {
 const WeeklyOpsDashboard = () => {
   // Period granularity. The panel was week-only, so month-on-month and
   // year-on-year comparison were not expressible.
+  const { organizationId } = useAuth();
   const [periodType, setPeriodType] = useState<"week" | "month" | "year">("week");
   const [weekOffset, setWeekOffset] = useState(0);
   const [metrics, setMetrics] = useState<WeeklyMetrics | null>(null);
@@ -77,8 +81,9 @@ const WeeklyOpsDashboard = () => {
   :                          endOfYear(subYears(now, weekOffset));
 
   useEffect(() => {
+    if (!organizationId) return;
     fetchWeeklyData();
-  }, [weekOffset, periodType]);
+  }, [weekOffset, periodType, organizationId]);
 
   const fetchWeeklyData = async () => {
     setLoading(true);
@@ -89,7 +94,8 @@ const WeeklyOpsDashboard = () => {
       // Fetch dispatches for the week
       const { data: dispatches } = await supabase
         .from("dispatches")
-        .select("id, status, distance_km, scheduled_delivery, actual_delivery, driver_id, vehicle_id, created_at")
+        .select(`id, status, distance_km, driver_id, vehicle_id, created_at, ${OTD_SELECT}`)
+        .eq("organization_id", organizationId!)
         .gte("created_at", startISO)
         .lte("created_at", endISO);
 
@@ -97,6 +103,7 @@ const WeeklyOpsDashboard = () => {
       const { data: blockedOrders } = await supabase
         .from("blocked_orders")
         .select("id")
+        .eq("organization_id", organizationId!)
         .gte("created_at", startISO)
         .lte("created_at", endISO);
 
@@ -107,13 +114,11 @@ const WeeklyOpsDashboard = () => {
 
       const totalTrips = dispatches.length;
       const completedTrips = dispatches.filter(d => d.status === "delivered").length;
-      const onTimeDeliveries = dispatches.filter(d =>
-        d.status === "delivered" &&
-        d.scheduled_delivery &&
-        d.actual_delivery &&
-        new Date(d.actual_delivery) <= new Date(d.scheduled_delivery)
-      ).length;
-      const onTimeRate = completedTrips > 0 ? (onTimeDeliveries / completedTrips) * 100 : 0;
+      // Scored via the shared helper. This compared actual_delivery against
+      // scheduled_delivery, which is NULL on every dispatch in production, so
+      // the rate was structurally always 0%. See src/lib/otd.ts.
+      const otd = scoreOtd(dispatches as any);
+      const onTimeRate = otd.rate;
       const totalDistance = dispatches.reduce((sum, d) => sum + Number(d.distance_km || 0), 0);
       const activeDrivers = new Set(dispatches.map(d => d.driver_id).filter(Boolean)).size;
       const activeVehicles = new Set(dispatches.map(d => d.vehicle_id).filter(Boolean)).size;
@@ -213,7 +218,7 @@ const WeeklyOpsDashboard = () => {
       doc.setFontSize(10);
       doc.text(`Total Trips: ${metrics.totalTrips}`, 14, 55);
       doc.text(`Completed: ${metrics.completedTrips}`, 14, 62);
-      doc.text(`On-Time Rate: ${metrics.onTimeRate.toFixed(1)}%`, 14, 69);
+      doc.text(`On-Time Rate: ${metrics.onTimeRate === null ? "Not tracked" : `${metrics.onTimeRate.toFixed(1)}%`}`, 14, 69);
       doc.text(`Total Distance: ${formatNumber(metrics.totalDistance)} km`, 14, 76);
       doc.text(`Active Drivers: ${metrics.activeDrivers}`, 14, 83);
       doc.text(`Active Vehicles: ${metrics.activeVehicles}`, 14, 90);
@@ -343,11 +348,11 @@ const WeeklyOpsDashboard = () => {
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg ${metrics.onTimeRate >= 90 ? 'bg-success/10' : 'bg-warning/10'}`}>
-                  <Clock className={`w-5 h-5 ${metrics.onTimeRate >= 90 ? 'text-success' : 'text-warning'}`} />
+                <div className={`p-2 rounded-lg ${(metrics.onTimeRate ?? 0) >= 90 ? 'bg-success/10' : 'bg-warning/10'}`}>
+                  <Clock className={`w-5 h-5 ${(metrics.onTimeRate ?? 0) >= 90 ? 'text-success' : 'text-warning'}`} />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold">{metrics.onTimeRate.toFixed(0)}%</p>
+                  <p className="text-2xl font-bold">{metrics.onTimeRate === null ? "—" : `${metrics.onTimeRate.toFixed(0)}%`}</p>
                   <p className="text-xs text-muted-foreground">On-Time Rate</p>
                 </div>
               </div>

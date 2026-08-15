@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { isOnTime, OTD_SELECT } from "@/lib/otd";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -67,8 +68,8 @@ const KPIDashboard = () => {
       const [curInv, prvInv, curDisp, prvDisp, curExp, prvExp, curFuel, prvFuel, vehicles, drivers, curWB, prvWB, curVP, prvVP, ar, ap, curMaint, prvMaint] = await Promise.all([
         orgEq(supabase.from("invoices").select("total_amount, tax_amount, amount, status").not("status", "in", '("cancelled","draft")').gte("created_at", cI).lte("created_at", eI)),
         orgEq(supabase.from("invoices").select("total_amount, tax_amount, amount, status").not("status", "in", '("cancelled","draft")').gte("created_at", pI).lte("created_at", peI)),
-        orgEq(supabase.from("dispatches").select("id, distance_km, cost, status, actual_delivery, scheduled_delivery, on_time_flag, pod_confirmed, cargo_weight_kg, load_capacity_pct, created_at").gte("created_at", cI).lte("created_at", eI)),
-        orgEq(supabase.from("dispatches").select("id, distance_km, cost, status, actual_delivery, scheduled_delivery, on_time_flag, pod_confirmed, cargo_weight_kg, load_capacity_pct, created_at").gte("created_at", pI).lte("created_at", peI)),
+        orgEq(supabase.from("dispatches").select(`id, distance_km, cost, status, on_time_flag, pod_confirmed, cargo_weight_kg, load_capacity_pct, created_at, ${OTD_SELECT}`).gte("created_at", cI).lte("created_at", eI)),
+        orgEq(supabase.from("dispatches").select(`id, distance_km, cost, status, on_time_flag, pod_confirmed, cargo_weight_kg, load_capacity_pct, created_at, ${OTD_SELECT}`).gte("created_at", pI).lte("created_at", peI)),
         orgEq(supabase.from("expenses").select("amount").gte("created_at", cI).lte("created_at", eI)),
         orgEq(supabase.from("expenses").select("amount").gte("created_at", pI).lte("created_at", peI)),
         orgEq(supabase.from("fuel_logs").select("total_cost, litres_dispensed, km_per_litre").gte("log_date", cs.toISOString().split("T")[0]).lte("log_date", ce.toISOString().split("T")[0])),
@@ -113,8 +114,8 @@ const KPIDashboard = () => {
       const prvD = prvDisp.data || [];
       const curDel = curD.filter((d: any) => ["delivered", "closed"].includes(d.status));
       const prvDel = prvD.filter((d: any) => ["delivered", "closed"].includes(d.status));
-      const curOnTime = curDel.filter((d: any) => d.on_time_flag === true || (d.actual_delivery && d.scheduled_delivery && new Date(d.actual_delivery) <= new Date(d.scheduled_delivery)));
-      const prvOnTime = prvDel.filter((d: any) => d.on_time_flag === true || (d.actual_delivery && d.scheduled_delivery && new Date(d.actual_delivery) <= new Date(d.scheduled_delivery)));
+      const curOnTime = curDel.filter((d: any) => isOnTime(d as any) === true);
+      const prvOnTime = prvDel.filter((d: any) => isOnTime(d as any) === true);
       const curOTR = curDel.length ? (curOnTime.length / curDel.length) * 100 : 0;
       const prvOTR = prvDel.length ? (prvOnTime.length / prvDel.length) * 100 : 0;
       const curInFull = curDel.filter((d: any) => d.pod_confirmed === true);

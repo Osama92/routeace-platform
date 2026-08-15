@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { isOnTime, OTD_SELECT } from "@/lib/otd";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -130,7 +131,7 @@ const AnalyticsPage = () => {
         { data: drivers },
       ] = await Promise.all([
         supabase.from("dispatches")
-          .select("id, status, distance_km, scheduled_delivery, actual_delivery, pickup_address, delivery_address, created_at")
+          .select(`id, status, distance_km, pickup_address, delivery_address, created_at, ${OTD_SELECT}`)
           .eq("organization_id", organizationId)
           .gte("created_at", startISO).lte("created_at", endISO),
         supabase.from("invoices")
@@ -138,7 +139,7 @@ const AnalyticsPage = () => {
           .eq("organization_id", organizationId).not("status", "in", '("cancelled","draft")')
           .gte("created_at", startISO).lte("created_at", endISO),
         supabase.from("dispatches")
-          .select("id, status, distance_km, scheduled_delivery, actual_delivery, created_at")
+          .select(`id, status, distance_km, created_at, ${OTD_SELECT}`)
           .eq("organization_id", organizationId)
           .gte("created_at", prevStartISO).lte("created_at", prevEndISO),
         supabase.from("invoices")
@@ -157,8 +158,7 @@ const AnalyticsPage = () => {
       const deliveredCurrent = dispatches?.filter(d => d.status === "delivered") || [];
       const totalDeliveries = deliveredCurrent.length;
       const onTimeCurrent = deliveredCurrent.filter(d =>
-        d.scheduled_delivery && d.actual_delivery &&
-        new Date(d.actual_delivery) <= new Date(d.scheduled_delivery)
+        isOnTime(d as any) === true
       ).length;
       const onTimeRate = totalDeliveries > 0 ? (onTimeCurrent / totalDeliveries) * 100 : 0;
       const revenue = invoices?.reduce((s, i) => s + Number(i.total_amount || 0), 0) || 0;
@@ -169,8 +169,7 @@ const AnalyticsPage = () => {
       const deliveredPrev = prevDispatches?.filter(d => d.status === "delivered") || [];
       const prevDeliveries = deliveredPrev.length;
       const onTimePrev = deliveredPrev.filter(d =>
-        d.scheduled_delivery && d.actual_delivery &&
-        new Date(d.actual_delivery) <= new Date(d.scheduled_delivery)
+        isOnTime(d as any) === true
       ).length;
       const prevOnTimeRate = prevDeliveries > 0 ? (onTimePrev / prevDeliveries) * 100 : 0;
       const prevRevenue = prevInvoices?.reduce((s, i) => s + Number(i.total_amount || 0), 0) || 0;
@@ -211,7 +210,7 @@ const AnalyticsPage = () => {
 
         const delivered = periodDispatches.filter(d => d.status === "delivered").length;
         const delayed = periodDispatches.filter(d =>
-          d.status === "delivered" && d.scheduled_delivery && d.actual_delivery &&
+          d.status === "delivered" && isOnTime(d as any) !== null &&
           new Date(d.actual_delivery) > new Date(d.scheduled_delivery)
         ).length;
 
@@ -272,8 +271,7 @@ const AnalyticsPage = () => {
             const mRev = mInvoices.reduce((s, inv) => s + Number(inv.total_amount || 0), 0);
             const mDelivered = mDispatches.filter(d => d.status === "delivered").length;
             const mOnTime = mDispatches.filter(d =>
-              d.status === "delivered" && d.scheduled_delivery && d.actual_delivery &&
-              new Date(d.actual_delivery) <= new Date(d.scheduled_delivery)
+              d.status === "delivered" && isOnTime(d as any) === true
             ).length;
             return {
               period: periodType === "year"

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { isOnTime, OTD_SELECT } from "@/lib/otd";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,7 +44,7 @@ export default function AfricanCommerceDataCloud() {
   const fetchRealMetrics = async () => {
     setLoading(true);
     const [dispatches, invoices, customers, drivers, supplyListings, vehicles] = await Promise.all([
-      supabase.from("dispatches").select("id, status, created_at, actual_delivery, scheduled_delivery, total_drops", { count: "exact" }),
+      supabase.from("dispatches").select(`id, status, created_at, total_drops, ${OTD_SELECT}`, { count: "exact" }),
       supabase.from("invoices").select("id, total_amount, status, created_at", { count: "exact" }),
       supabase.from("customers").select("id", { count: "exact", head: true }),
       supabase.from("drivers").select("id, status", { count: "exact" }),
@@ -58,8 +59,7 @@ export default function AfricanCommerceDataCloud() {
 
     const deliveredDispatches = dispatchData.filter(d => d.status === 'delivered' || d.status === 'closed');
     const onTimeDeliveries = deliveredDispatches.filter(d => {
-      if (!d.actual_delivery || !d.scheduled_delivery) return false;
-      return new Date(d.actual_delivery) <= new Date(d.scheduled_delivery);
+      return isOnTime(d as any) === true;
     });
     const deliverySuccessRate = deliveredDispatches.length > 0
       ? Math.round((onTimeDeliveries.length / deliveredDispatches.length) * 100) : 85;

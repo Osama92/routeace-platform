@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { isOnTime, OTD_SELECT } from "@/lib/otd";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,7 +25,7 @@ function useKPITrends(period: TrendPeriod) {
 
         const [deliveriesRes, invoicesRes] = await Promise.all([
           supabase.from("dispatches")
-            .select("id, status, scheduled_delivery, actual_delivery")
+            .select(`id, status, ${OTD_SELECT}`)
             .eq("status", "delivered")
             .gte("created_at", pStart.toISOString())
             .lte("created_at", pEnd.toISOString()),
@@ -37,8 +38,7 @@ function useKPITrends(period: TrendPeriod) {
 
         const total = deliveriesRes.data?.length || 0;
         const onTime = (deliveriesRes.data || []).filter(d =>
-          d.scheduled_delivery && d.actual_delivery &&
-          new Date(d.actual_delivery) <= new Date(d.scheduled_delivery)
+          isOnTime(d as any) === true
         ).length;
         const otdRate = total > 0 ? Math.round((onTime / total) * 100) : 0;
         const revenue = (invoicesRes.data || []).reduce((s, inv) => s + Number(inv.total_amount || 0), 0);

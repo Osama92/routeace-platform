@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { isOnTime, OTD_SELECT } from "@/lib/otd";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -92,7 +93,7 @@ const SalesDeptPortal = () => {
     supabase
       .from("dispatches")
       .select(
-        "id, dispatch_number, pickup_address, delivery_address, status, sla_status, scheduled_pickup, scheduled_delivery, actual_pickup, actual_delivery, estimated_arrival, created_at, notes"
+        `id, dispatch_number, pickup_address, delivery_address, status, sla_status, actual_pickup, estimated_arrival, created_at, notes, ${OTD_SELECT}`
       )
       .eq("organization_id", organizationId)
       .gte("created_at", since.toISOString())
@@ -110,9 +111,7 @@ const SalesDeptPortal = () => {
     const onTime = dispatches.filter(
       (d) =>
         d.status === "delivered" &&
-        d.actual_delivery &&
-        d.scheduled_delivery &&
-        new Date(d.actual_delivery) <= new Date(d.scheduled_delivery)
+        isOnTime(d as any) === true
     ).length;
     const otd = delivered > 0 ? Math.round((onTime / delivered) * 100) : 0;
     const active = dispatches.filter((d) =>
@@ -141,10 +140,7 @@ const SalesDeptPortal = () => {
       const key = new Date(d.actual_delivery).toISOString().slice(0, 10);
       const b = buckets.get(key) || { delivered: 0, onTime: 0 };
       b.delivered += 1;
-      if (
-        d.scheduled_delivery &&
-        new Date(d.actual_delivery) <= new Date(d.scheduled_delivery)
-      ) {
+      if (isOnTime(d as any) === true) {
         b.onTime += 1;
       }
       buckets.set(key, b);

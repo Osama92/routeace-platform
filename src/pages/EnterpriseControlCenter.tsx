@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
+import { isOnTime, OTD_SELECT } from "@/lib/otd";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -318,8 +319,8 @@ const EnterpriseControlCenter = () => {
         withCustomerScope(orgEq(supabase.from("invoices").select("total_amount"))).gte("created_at", yesterdayISO).lt("created_at", todayISO),
         orgEq(supabase.from("expenses").select("amount")).gte("created_at", fromDate.toISOString()).lte("created_at", toDate.toISOString()),
         orgEq(supabase.from("expenses").select("amount")).gte("created_at", prevFromDate.toISOString()).lt("created_at", prevToDate.toISOString()),
-        withContract(orgEq(supabase.from("dispatches").select("scheduled_delivery, actual_delivery, status, sla_status"))).eq("status", "delivered").gte("created_at", fromDate.toISOString()).lte("created_at", toDate.toISOString()),
-        withContract(orgEq(supabase.from("dispatches").select("scheduled_delivery, actual_delivery, status, sla_status"))).eq("status", "delivered").gte("created_at", prevFromDate.toISOString()).lt("created_at", prevToDate.toISOString()),
+        withContract(orgEq(supabase.from("dispatches").select(`status, sla_status, ${OTD_SELECT}`))).eq("status", "delivered").gte("created_at", fromDate.toISOString()).lte("created_at", toDate.toISOString()),
+        withContract(orgEq(supabase.from("dispatches").select(`status, sla_status, ${OTD_SELECT}`))).eq("status", "delivered").gte("created_at", prevFromDate.toISOString()).lt("created_at", prevToDate.toISOString()),
         withContract(orgEq(supabase.from("dispatches").select("id, vehicle_id", { count: "exact" }))).not("status", "in", '("delivered","cancelled","completed","settled")'),
         orgEq(supabase.from("vehicles").select("id, status")),
         withCustomerScope(orgEq(supabase.from("accounts_receivable").select("balance, due_date, status, customer_id"))).neq("status", "paid"),
@@ -345,7 +346,7 @@ const EnterpriseControlCenter = () => {
         const list = rows || [];
         if (list.length === 0) return null;
         const onTime = list.filter((r) => {
-          if (r.actual_delivery && r.scheduled_delivery) return new Date(r.actual_delivery) <= new Date(r.scheduled_delivery);
+          if (isOnTime(r as any) !== null) return isOnTime(r as any) === true;
           return r.sla_status === "met" || r.sla_status === "on_track";
         }).length;
         return (onTime / list.length) * 100;

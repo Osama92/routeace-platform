@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { isOnTime, OTD_SELECT } from "@/lib/otd";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -99,7 +100,7 @@ export default function VendorYearlyTargets() {
 
       const { data: disp } = await supabase
         .from("dispatches")
-        .select("id, status, scheduled_delivery, actual_delivery, cost, vehicle_id, drivers!inner(partner_id)")
+        .select(`id, status, cost, vehicle_id, drivers!inner(partner_id), ${OTD_SELECT}`)
         .eq("organization_id", organizationId)
         .gte("created_at", start).lt("created_at", end);
 
@@ -111,8 +112,7 @@ export default function VendorYearlyTargets() {
         const m = map[pid];
         if (d.status === "delivered") {
           m.total_trips++;
-          if (d.scheduled_delivery && d.actual_delivery &&
-              new Date(d.actual_delivery) <= new Date(d.scheduled_delivery)) m.otd_actual++;
+          if (isOnTime(d as any) === true) m.otd_actual++;
         }
       });
       // Convert otd to %, sum trucks etc.

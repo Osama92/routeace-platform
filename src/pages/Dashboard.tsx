@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { scoreOtd, OTD_SELECT } from "@/lib/otd";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import DashboardLayout from "@/components/layout/DashboardLayout";
@@ -81,19 +82,22 @@ const Dashboard = () => {
       const totalCost = (delivered || []).reduce((sum, r: any) => sum + Number(r.cost || 0), 0);
       const avgCostPerKm = totalDistanceKm > 0 ? totalCost / totalDistanceKm : 0;
 
-      // On-time rate (scheduled vs actual delivery; only where both present)
+      // On-time rate — scored against the promised time via src/lib/otd.ts.
+      // The `.not("scheduled_delivery", "is", null)` filter that used to be
+      // here guaranteed an empty result: that column is NULL on every dispatch
+      // in production, so the query returned no rows and the rate was always 0.
       const { data: deliveredTimes } = await supabase
         .from("dispatches")
-        .select("scheduled_delivery,actual_delivery")
+        .select(OTD_SELECT)
         .eq("organization_id", organizationId)
         .eq("status", "delivered")
         .gte("created_at", start)
-        .not("scheduled_delivery", "is", null)
         .not("actual_delivery", "is", null);
 
-      const onTime = (deliveredTimes || []).filter((r: any) => new Date(r.actual_delivery) <= new Date(r.scheduled_delivery)).length;
-      const totalTimed = (deliveredTimes || []).length;
-      const onTimeRate = totalTimed > 0 ? (onTime / totalTimed) * 100 : 0;
+      const otd = scoreOtd(deliveredTimes as any);
+      const onTime = otd.onTime;
+      const totalTimed = otd.scoreable;
+      const onTimeRate = otd.rate ?? 0;
 
       setKpis({
         activeShipments: activeCount || 0,
