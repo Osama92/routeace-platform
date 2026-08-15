@@ -241,7 +241,7 @@ const KPIEngineDashboard = () => {
           // routes(estimated_duration_hours) is joined because the delivery
           // promise lives on the route, not the dispatch — see the OTD block
           // below. sla_deadline is the explicit per-dispatch override.
-          .select("id, status, created_at, actual_pickup, actual_delivery, scheduled_pickup, scheduled_delivery, sla_deadline, route_id, driver_id, customer_id, vehicle_id, routes(estimated_duration_hours)")
+          .select("id, status, created_at, actual_pickup, actual_delivery, scheduled_pickup, scheduled_delivery, sla_deadline, route_id, driver_id, customer_id, vehicle_id, routes(sla_hours, estimated_duration_hours)")
           .eq("organization_id", organizationId)
           .gte("created_at", monthStart.toISOString())
           .lte("created_at", monthEnd.toISOString()),
@@ -250,7 +250,7 @@ const KPIEngineDashboard = () => {
         // prior value to compare against and fell back to a hardcoded 0.
         supabase
           .from("dispatches")
-          .select("id, status, created_at, actual_pickup, actual_delivery, scheduled_pickup, scheduled_delivery, sla_deadline, route_id, driver_id, customer_id, vehicle_id, routes(estimated_duration_hours)")
+          .select("id, status, created_at, actual_pickup, actual_delivery, scheduled_pickup, scheduled_delivery, sla_deadline, route_id, driver_id, customer_id, vehicle_id, routes(sla_hours, estimated_duration_hours)")
           .eq("organization_id", organizationId)
           .gte("created_at", prevMonthStart.toISOString())
           .lte("created_at", prevMonthEnd.toISOString()),
@@ -367,22 +367,37 @@ const KPIEngineDashboard = () => {
       // The promised time does exist, just not on that column. It is resolved
       // here in order of directness:
       //
-      //   1. scheduled_delivery  — an explicit promised delivery timestamp.
-      //   2. sla_deadline        — the contractual deadline (5 of 78 carry it).
-      //   3. scheduled_pickup + the route's estimated_duration_hours —
-      //      77 of 78 delivered dispatches link to a route carrying a duration,
-      //      so this is what makes the metric computable at all today.
+      //   1. sla_deadline        — the deadline committed on this dispatch.
+      //   2. scheduled_pickup + the route's sla_hours — the agreed service
+      //      level for that lane (19 of 23 routes carry it, typically 96–120h).
+      //   3. scheduled_delivery  — an explicit promised delivery timestamp.
+      //   4. scheduled_pickup + estimated_duration_hours — last resort only.
+      //
+      // Order matters, and an earlier version of this had it wrong. It fell
+      // through to estimated_duration_hours, which is DRIVING TIME (~15-30h per
+      // lane) — not a delivery commitment. Scored against it, OTD read 5-8%,
+      // because no trip beat pure driving time once loading, waiting and
+      // mandatory rest were included. Scored against the SLA the business
+      // actually agreed, the same trips read 56% for July. The metric now
+      // reports performance against the promise made to the customer, which is
+      // what an on-time figure means; estimated_duration_hours survives only as
+      // a fallback for lanes with no SLA set, and is a planning aid, not a
+      // commitment.
       //
       // Dispatches with no resolvable promise are excluded from BOTH sides of
       // the ratio rather than counted as late. Counting an unmeasurable trip as
       // a failure would invent a number; excluding it reports OTD over the
       // trips that can actually be judged, and coverage is surfaced separately.
       const promisedDeliveryAt = (d: any): Date | null => {
-        if (d.scheduled_delivery) return new Date(d.scheduled_delivery);
         if (d.sla_deadline) return new Date(d.sla_deadline);
-        const hours = Number(d.routes?.estimated_duration_hours) || 0;
-        if (d.scheduled_pickup && hours > 0) {
-          return new Date(new Date(d.scheduled_pickup).getTime() + hours * 3600000);
+        const slaHours = Number(d.routes?.sla_hours) || 0;
+        if (d.scheduled_pickup && slaHours > 0) {
+          return new Date(new Date(d.scheduled_pickup).getTime() + slaHours * 3600000);
+        }
+        if (d.scheduled_delivery) return new Date(d.scheduled_delivery);
+        const estHours = Number(d.routes?.estimated_duration_hours) || 0;
+        if (d.scheduled_pickup && estHours > 0) {
+          return new Date(new Date(d.scheduled_pickup).getTime() + estHours * 3600000);
         }
         return null;
       };
@@ -399,6 +414,13 @@ const KPIEngineDashboard = () => {
 
       const { scoreable: otdScoreable, onTime: onTimeDeliveries } = scoreOtd(dispatches);
       const { scoreable: prevOtdScoreable, onTime: prevOnTime } = scoreOtd(prevDispatches);
+
+      // How many of the scored trips were judged against a real service level
+      // rather than the driving-time fallback, so the card can say what the
+      // percentage is measured against.
+      const otdOnSlaBasis = otdScoreable.filter(
+        (d: any) => d.sla_deadline || (Number(d.routes?.sla_hours) || 0) > 0,
+      ).length;
       const dispatchSpeedMins = (() => {
         const samples = dispatches
           .filter(d => d.actual_pickup && d.created_at)
@@ -607,6 +629,7 @@ const KPIEngineDashboard = () => {
           // distinguish "0% — everything was late" from "no trip could be
           // judged". These read identically otherwise.
           otdScoreableCount: otdScoreable.length,
+          otdOnSlaBasis,
           deliveredCount: deliveredDispatches,
           prevOnTimeDeliveryRate,
           periodLabel: win.label,
@@ -772,6 +795,9 @@ const KPIEngineDashboard = () => {
                   <>
                     <p className="text-2xl font-bold">{kpiData.summary.onTimeDeliveryRate}%</p>
                     <p className="text-xs text-muted-foreground">
+                      {kpiData.summary.otdOnSlaBasis === kpiData.summary.otdScoreableCount
+                        ? "vs SLA"
+                        : `vs SLA on ${kpiData.summary.otdOnSlaBasis}`}{" "}
                       of {kpiData.summary.otdScoreableCount} measurable{" "}
                       {kpiData.summary.otdScoreableCount === 1 ? "trip" : "trips"}
                       {kpiData.summary.prevOnTimeDeliveryRate !== null &&
