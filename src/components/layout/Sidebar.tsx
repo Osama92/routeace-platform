@@ -73,7 +73,7 @@ const dashboardSection: NavSection = {
   defaultOpen: true,
   items: [
     { name: "Super Admin Console", href: "/super-admin", icon: Crown, roles: ["super_admin"] },
-    { name: "My Savings & ROI", href: "/my-savings", icon: TrendingUp, roles: ["super_admin", "admin", "org_admin", "finance_manager"] },
+    { name: "My Business Impact", href: "/my-savings", icon: TrendingUp, roles: ["super_admin", "admin", "org_admin", "finance_manager"] },
     { name: "COO Command", href: "/org-admin", icon: Building2, roles: ["org_admin"] },
     { name: "Ops Manager", href: "/ops-manager", icon: ClipboardList, roles: ["ops_manager"] },
     { name: "Finance Manager", href: "/finance-manager", icon: CreditCard, roles: ["finance_manager"] },

@@ -8,7 +8,7 @@ import type { ZazaNavItem } from "./ldNavigationCatalog";
 const LC_NAV: ZazaNavItem[] = [
   // Dashboard
   { name: "Super Admin Console", path: "/super-admin", description: "Top-level admin console.", roles: ["super_admin"] },
-  { name: "My Savings & ROI", path: "/my-savings", description: "Personal ROI summary.", roles: ["super_admin", "admin", "org_admin", "finance_manager"] },
+  { name: "My Business Impact", path: "/my-savings", description: "Personal ROI summary.", roles: ["super_admin", "admin", "org_admin", "finance_manager"] },
   { name: "COO Command", path: "/org-admin", description: "COO / org admin command center.", roles: ["org_admin"] },
   { name: "Approval Queue", path: "/org-admin?tab=approvals", description: "Pending approvals.", roles: ["org_admin"] },
   { name: "COO KPI Board", path: "/org-admin?tab=kpis", description: "Org KPI board.", roles: ["org_admin"] },
