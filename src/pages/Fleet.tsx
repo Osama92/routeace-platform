@@ -114,6 +114,10 @@ const documentTypes = [
 
 const FleetPage = () => {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  // Vendors this organisation has registered. A vendor-owned truck must name
+  // one of these so its rate card can be resolved at dispatch time.
+  const [partners, setPartners] = useState<{ id: string; company_name: string }[]>([]);
+  const [showOnlyUnassigned, setShowOnlyUnassigned] = useState(false);
   const { data: onboardingCounts } = useOpsOnboardingCounts();
   const [documents, setDocuments] = useState<VehicleDocument[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -145,6 +149,7 @@ const FleetPage = () => {
     capacity_kg: "",
     fuel_type: "diesel",
     ownership_type: "owned",
+    partner_id: "",
     image_url: "",
     initial_odometer: "",
   });
@@ -174,6 +179,7 @@ const FleetPage = () => {
       capacity_kg: "",
       fuel_type: "diesel",
       ownership_type: "owned",
+      partner_id: "",
       image_url: "",
       initial_odometer: "",
     });
@@ -192,6 +198,7 @@ const FleetPage = () => {
       capacity_kg: v.capacity_kg ? String(v.capacity_kg) : "",
       fuel_type: (v as any).fuel_type || "diesel",
       ownership_type: (v as any).ownership_type || "owned",
+      partner_id: v.partner_id || "",
       image_url: v.image_url || "",
       initial_odometer: (v as any).initial_odometer ? String((v as any).initial_odometer) : "",
     });
@@ -222,6 +229,13 @@ const FleetPage = () => {
         .order("created_at", { ascending: false });
       if (error) throw error;
       setVehicles(data || []);
+
+      const { data: partnerRows } = await supabase
+        .from("partners")
+        .select("id, company_name")
+        .eq("organization_id", orgFilter)
+        .order("company_name");
+      setPartners(partnerRows ?? []);
     } catch (error: any) {
       toast({
         title: "Error",
@@ -270,6 +284,18 @@ const FleetPage = () => {
       return;
     }
 
+    // A vendor or leased truck must name the vendor it belongs to. Without it
+    // the truck cannot resolve a vendor rate at dispatch time, so the trip
+    // would silently book no cost and overstate margin.
+    if (formData.ownership_type !== "owned" && !formData.partner_id) {
+      toast({
+        title: "Vendor required",
+        description: "Select which vendor owns this truck so its rate can be applied to dispatches.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSaving(true);
     try {
       const initialOdo = formData.initial_odometer ? parseFloat(formData.initial_odometer) : 0;
@@ -284,6 +310,9 @@ const FleetPage = () => {
         capacity_kg: formData.capacity_kg ? parseFloat(formData.capacity_kg) : null,
         fuel_type: formData.fuel_type,
         ownership_type: formData.ownership_type,
+        // Cleared on owned trucks so a vehicle switched from vendor to owned
+        // does not keep a stale vendor and keep resolving a cost.
+        partner_id: formData.ownership_type === "owned" ? null : (formData.partner_id || null),
         image_url: formData.image_url || null,
         initial_odometer: initialOdo,
         // On new vehicle: seed current_odometer with the initial reading
@@ -400,8 +429,38 @@ const FleetPage = () => {
       (vehicle.model?.toLowerCase().includes(searchQuery.toLowerCase()) || false);
     const matchesStatus =
       statusFilter === "all" || vehicle.status === statusFilter;
-    return matchesSearch && matchesStatus;
+    const matchesUnassigned =
+      !showOnlyUnassigned ||
+      ((vehicle as any).ownership_type !== "owned" && !vehicle.partner_id);
+    return matchesSearch && matchesStatus && matchesUnassigned;
   });
+
+  // Vendor-owned trucks with no vendor named. Each one silently books zero
+  // cost on its dispatches, which overstates margin — so it is surfaced
+  // rather than left to be discovered in a report.
+  const unassignedVendorVehicles = vehicles.filter(
+    (v) => (v as any).ownership_type !== "owned" && !v.partner_id,
+  );
+
+  // Assign a vendor straight from the list, so backfilling a fleet does not
+  // mean opening and saving each vehicle's full edit form.
+  const assignVendor = async (vehicleId: string, partnerId: string) => {
+    const { error } = await supabase
+      .from("vehicles")
+      .update({ partner_id: partnerId })
+      .eq("id", vehicleId);
+    if (error) {
+      toast({ title: "Could not assign vendor", description: error.message, variant: "destructive" });
+      return;
+    }
+    setVehicles((prev) =>
+      prev.map((v) => (v.id === vehicleId ? { ...v, partner_id: partnerId } : v)),
+    );
+    toast({
+      title: "Vendor assigned",
+      description: `${partners.find((p) => p.id === partnerId)?.company_name ?? "Vendor"} now owns this truck.`,
+    });
+  };
 
   const expiringDocs = documents.filter(doc => {
     if (!doc.expiry_date) return false;
@@ -632,6 +691,35 @@ const FleetPage = () => {
                         </SelectContent>
                       </Select>
                     </div>
+
+                    {/* Only a vendor/leased truck has a vendor to pay, so the
+                        field appears only then — and is required, because
+                        without it the truck cannot resolve a vendor rate. */}
+                    {formData.ownership_type !== "owned" && (
+                      <div className="space-y-2">
+                        <Label htmlFor="partner_id">
+                          Vendor <span className="text-destructive">*</span>
+                        </Label>
+                        <Select
+                          value={formData.partner_id}
+                          onValueChange={(value) => setFormData(prev => ({ ...prev, partner_id: value }))}
+                        >
+                          <SelectTrigger className="bg-secondary/50">
+                            <SelectValue placeholder={partners.length ? "Select vendor" : "No vendors registered yet"} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {partners.map((p) => (
+                              <SelectItem key={p.id} value={p.id}>{p.company_name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {partners.length === 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            Add the vendor under Partners first, then assign it here.
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -750,6 +838,38 @@ const FleetPage = () => {
         )}
       </div>
 
+      {/* Vendor assignment prompt. A vendor truck with no vendor named cannot
+          resolve a vendor rate, so its dispatches book no cost and margin
+          reads too high. Surfaced here with an inline fix rather than a
+          report someone has to go looking for. */}
+      {!loading && unassignedVendorVehicles.length > 0 && (
+        <div className="mb-6 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-yellow-500 mt-0.5 shrink-0" />
+              <div>
+                <p className="font-medium text-yellow-600">
+                  {unassignedVendorVehicles.length}{" "}
+                  {unassignedVendorVehicles.length === 1 ? "vehicle needs" : "vehicles need"} a vendor assigned
+                </p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Vendor-owned trucks must name their vendor before their rate can be
+                  applied to a dispatch. Until then those trips record no vendor cost.
+                </p>
+              </div>
+            </div>
+            <Button
+              variant={showOnlyUnassigned ? "default" : "outline"}
+              size="sm"
+              onClick={() => setShowOnlyUnassigned((v) => !v)}
+              className="shrink-0"
+            >
+              {showOnlyUnassigned ? "Show all vehicles" : "Show these vehicles"}
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Vehicle Grid */}
       {loading ? (
         <div className="flex items-center justify-center py-12">
@@ -809,6 +929,24 @@ const FleetPage = () => {
                     <AlertTriangle className="w-5 h-5 text-warning" />
                   )}
                 </div>
+
+                {/* Inline vendor assignment — avoids opening the full edit
+                    form for each truck when backfilling a whole fleet. */}
+                {(vehicle as any).ownership_type !== "owned" && !vehicle.partner_id && (
+                  <div className="mb-4 rounded-md border border-yellow-500/30 bg-yellow-500/5 p-2">
+                    <p className="text-xs text-yellow-600 mb-2 font-medium">Vendor not set</p>
+                    <Select onValueChange={(value) => assignVendor(vehicle.id, value)}>
+                      <SelectTrigger className="h-8 text-xs bg-secondary/50">
+                        <SelectValue placeholder={partners.length ? "Assign vendor" : "No vendors registered"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {partners.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>{p.company_name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
                 {/* Status & Type */}
                 <div className="flex items-center gap-2 mb-4">
