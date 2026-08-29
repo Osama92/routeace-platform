@@ -40,6 +40,7 @@ import FleetKPIPanel from "@/components/fleet/FleetKPIPanel";
 import TopDelayReasonsCard from "@/components/analytics/TopDelayReasonsCard";
 import { AnalyticsPeriodSelector, getDefaultPeriodRange, type PeriodType, type PeriodRange } from "@/components/analytics/AnalyticsPeriodSelector";
 import CustomerVendorApprovalQueue from "@/components/approvals/CustomerVendorApprovalQueue";
+import RateCardApprovalQueue from "@/components/approvals/RateCardApprovalQueue";
 import {
   Shield,
   CreditCard, 
@@ -510,7 +511,10 @@ const SuperAdminDashboardInner = () => {
 
         <TabsContent value="approvals" className="space-y-4">
           {organizationId && (
-            <CustomerVendorApprovalQueue level="sa" organizationId={organizationId} />
+            <>
+              <CustomerVendorApprovalQueue level="sa" organizationId={organizationId} />
+              <RateCardApprovalQueue organizationId={organizationId} />
+            </>
           )}
           <DemoPreviewToggleCard />
         </TabsContent>

@@ -80,6 +80,15 @@ interface TripRateConfig {
   description: string | null;
   created_at: string;
   updated_at: string;
+  // Approval workflow. Only 'approved' rates are usable by dispatch;
+  // 'superseded' rows are retained so past dispatches remain auditable.
+  status: 'pending' | 'approved' | 'rejected' | 'superseded';
+  version: number;
+  supersedes_id: string | null;
+  submitted_by: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  review_note: string | null;
 }
 
 interface RateHistory {
@@ -489,6 +498,30 @@ const TripRateConfigPage = () => {
 
     setSaving(true);
     try {
+      // An APPROVED rate is never edited in place — that would silently change
+      // what past dispatches were priced at. propose_trip_rate_change() clones
+      // it into a new pending version and leaves the live rate serving dispatch
+      // until a super admin approves the replacement.
+      // Pending and rejected rates are still edited directly, since nothing is
+      // relying on them yet.
+      if ((selectedRate as any).status === "approved") {
+        const { error: rpcError } = await (supabase.rpc as any)("propose_trip_rate_change", {
+          p_rate_id: selectedRate.id,
+          p_new_amount: newRate,
+          p_note: formData.description || null,
+        });
+        if (rpcError) throw rpcError;
+
+        toast({
+          title: "Change submitted for approval",
+          description: `${formatCurrency(oldRate)} → ${formatCurrency(newRate)} is awaiting super admin approval. The current rate stays live until then.`,
+        });
+        setEditDialogOpen(false);
+        setSelectedRate(null);
+        await fetchRates();
+        return;
+      }
+
       const { error } = await (supabase
         .from("trip_rate_config" as any)
         .update({
@@ -807,7 +840,7 @@ const TripRateConfigPage = () => {
 
   return (
     <DashboardLayout
-      title="Trip Rate Configuration"
+      title="Rate Card"
       subtitle="Configure zone-based rates for different truck types and driver categories"
     >
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
@@ -1181,7 +1214,7 @@ const TripRateConfigPage = () => {
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>Edit Trip Rate</DialogTitle>
+            <DialogTitle>Edit Rate</DialogTitle>
             <DialogDescription>
               Update the rate for {formData.truck_type.toUpperCase()} in {formData.zone.replace("_", " ")}
             </DialogDescription>
@@ -1284,7 +1317,7 @@ const TripRateConfigPage = () => {
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>Add New Trip Rate</DialogTitle>
+            <DialogTitle>Add New Rate</DialogTitle>
             <DialogDescription>Configure a new rate for a truck type and zone combination</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
