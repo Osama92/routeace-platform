@@ -182,6 +182,13 @@ const DispatchPage = () => {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [savedRoutes, setSavedRoutes] = useState<any[]>([]);
   const [returnTrip, setReturnTrip] = useState(false);
+  // Approved client lanes for the selected customer. Empty until a customer
+  // is chosen, because client rates are per-customer.
+  const [lanes, setLanes] = useState<any[]>([]);
+  const [lanesLoading, setLanesLoading] = useState(false);
+  // Escape hatch: a genuinely new route can still be entered by hand. The
+  // trip records no rate in that case, which finance sees on the dispatch.
+  const [manualRoute, setManualRoute] = useState(false);
   const [routeComboOpen, setRouteComboOpen] = useState(false);
   const [customerComboOpen, setCustomerComboOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -311,7 +318,7 @@ const DispatchPage = () => {
 
       const vehiclesQ = supabase
         .from("vehicles")
-        .select("id, registration_number, vehicle_type, ownership_type, capacity_kg, status")
+        .select("id, registration_number, vehicle_type, truck_type, ownership_type, partner_id, capacity_kg, status")
         .eq("status", "available")
         .eq("organization_id", orgFilter);
 
@@ -446,6 +453,40 @@ const DispatchPage = () => {
       supabase.removeChannel(channel);
     };
   }, [organizationId]);
+
+  // Load the customer's approved lanes. get_dispatch_lanes() returns only
+  // APPROVED client rates and deliberately omits rate_amount, so the picker
+  // cannot expose commercial values to operations staff.
+  useEffect(() => {
+    if (!organizationId || !formData.customer_id) {
+      setLanes([]);
+      return;
+    }
+    let cancelled = false;
+    setLanesLoading(true);
+    (async () => {
+      const { data, error } = await (supabase.rpc as any)("get_dispatch_lanes", {
+        p_organization_id: organizationId,
+        p_customer_id: formData.customer_id,
+      });
+      if (cancelled) return;
+      if (error) {
+        console.error("Failed to load routes", error);
+        setLanes([]);
+      } else {
+        setLanes(data ?? []);
+      }
+      setLanesLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [organizationId, formData.customer_id]);
+
+  // Changing customer invalidates the chosen route: lanes are per-customer,
+  // so the previous pick may not exist on the new customer's rate card.
+  useEffect(() => {
+    setFormData((prev) => ({ ...prev, pickup_address: "", delivery_address: "" }));
+    setManualRoute(false);
+  }, [formData.customer_id]);
 
   // Auto-update matched diesel rate when form changes
   useEffect(() => {
@@ -728,6 +769,61 @@ const DispatchPage = () => {
       const { data, error } = await supabase.from("dispatches").insert([insertData]).select().single();
 
       if (error) throw error;
+
+      // ── Attach the money ──────────────────────────────────────────────
+      // Resolve the rate cards for this trip and write them to
+      // dispatch_financials. Owned truck -> client revenue only. Vendor truck
+      // -> client revenue AND the vendor cost we owe, so margin is real.
+      //
+      // Deliberately non-blocking: a dispatch must never fail to create
+      // because a rate is missing. When nothing resolves, the row is left for
+      // finance to complete and the operation still goes ahead.
+      if (data && formData.vehicle_id && formData.customer_id) {
+        try {
+          const selected = vehicles.find((v) => v.id === formData.vehicle_id);
+          // vehicles.truck_type holds exactly the values the Rate Card uses
+          // ("15T", "20T", "30T"). normalizeTruckType() is NOT used here: it
+          // reads vehicle_type, which holds "heavy_truck"/"medium_truck" and
+          // would collapse every vehicle to "10t" — silently matching no rate.
+          const truckType = (selected as any)?.truck_type ?? null;
+          if (!truckType) {
+            console.warn("Vehicle has no truck_type; cannot resolve a rate", formData.vehicle_id);
+          }
+          const { data: resolved } = truckType ? await (supabase.rpc as any)("resolve_dispatch_rates", {
+            p_organization_id: organizationId,
+            p_customer_id: formData.customer_id,
+            p_vehicle_id: formData.vehicle_id,
+            p_pickup: formData.pickup_address,
+            p_destination: formData.delivery_address,
+            p_truck_type: truckType,
+          }) : { data: null };
+
+          const clientRevenue = resolved?.client_revenue ?? null;
+          const vendorCost = resolved?.vendor_cost ?? null;
+
+          if (clientRevenue !== null || vendorCost !== null) {
+            await (supabase.from("dispatch_financials") as any).upsert(
+              {
+                dispatch_id: data.id,
+                organization_id: organizationId,
+                client_revenue: clientRevenue,
+                vendor_cost: vendorCost,
+                gross_profit:
+                  clientRevenue !== null && vendorCost !== null
+                    ? Number(clientRevenue) - Number(vendorCost)
+                    : clientRevenue,
+                finance_status: vendorCost === null && resolved?.missing_vendor_rate
+                  ? "pending"
+                  : "complete",
+              },
+              { onConflict: "dispatch_id" },
+            );
+          }
+        } catch (rateErr) {
+          // Logged, not surfaced: the dispatch itself succeeded.
+          console.error("Could not attach rates to dispatch", rateErr);
+        }
+      }
 
       // Insert dropoffs if any
       if (data && dropoffs.length > 0) {
@@ -1303,30 +1399,111 @@ const DispatchPage = () => {
                   </Popover>
                 </div>
 
-                {/* ── Addresses ────────────────────────────────────────── */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="pickup_address">Pickup Address *</Label>
-                    <Input
-                      id="pickup_address"
-                      name="pickup_address"
-                      value={formData.pickup_address}
-                      onChange={handleInputChange}
-                      placeholder="Pickup location"
-                      className="bg-secondary/50"
-                    />
+                {/* ── Route ────────────────────────────────────────────
+                    Lanes come from the customer's APPROVED client rate cards.
+                    Picking a lane rather than typing an address is what lets
+                    the trip resolve a rate afterwards — a hand-typed address
+                    would not match any rate card.
+
+                    Deliberately NO amounts here: dispatchers pick the route,
+                    they do not see what it is worth. get_dispatch_lanes()
+                    does not even return the rate, so there is nothing to
+                    leak. */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <Label htmlFor="lane">Route *</Label>
+                    {formData.customer_id && lanes.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setManualRoute((v) => !v)}
+                        className="text-xs text-muted-foreground hover:text-foreground underline"
+                      >
+                        {manualRoute ? "Pick from rate card" : "Enter address manually"}
+                      </button>
+                    )}
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="delivery_address">Delivery Address *</Label>
-                    <Input
-                      id="delivery_address"
-                      name="delivery_address"
-                      value={formData.delivery_address}
-                      onChange={handleInputChange}
-                      placeholder="Delivery location"
-                      className="bg-secondary/50"
-                    />
-                  </div>
+
+                  {!formData.customer_id ? (
+                    <p className="text-sm text-muted-foreground rounded-md border border-dashed p-3">
+                      Select a customer first to see their agreed routes.
+                    </p>
+                  ) : lanesLoading ? (
+                    <p className="text-sm text-muted-foreground">Loading routes...</p>
+                  ) : !manualRoute && lanes.length === 0 ? (
+                    <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3 space-y-2">
+                      <p className="text-sm text-yellow-600 font-medium">
+                        No approved routes for this customer yet
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Finance needs to add a rate for this customer under Rate Cards, and a
+                        super admin must approve it. You can still enter the route manually —
+                        the trip will simply record no rate.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setManualRoute(true)}
+                        className="text-xs underline text-foreground"
+                      >
+                        Enter address manually
+                      </button>
+                    </div>
+                  ) : !manualRoute ? (
+                    <Select
+                      value={
+                        formData.pickup_address && formData.delivery_address
+                          ? `${formData.pickup_address}|||${formData.delivery_address}`
+                          : ""
+                      }
+                      onValueChange={(v) => {
+                        const [pickup, destination] = v.split("|||");
+                        setFormData((prev) => ({
+                          ...prev,
+                          pickup_address: pickup,
+                          delivery_address: destination,
+                        }));
+                      }}
+                    >
+                      <SelectTrigger className="bg-secondary/50">
+                        <SelectValue placeholder="Select a route" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Array.from(
+                          new Map(
+                            lanes.map((l: any) => [
+                              `${l.pickup_address}|||${l.destination_address}`,
+                              l,
+                            ]),
+                          ).values(),
+                        ).map((l: any) => (
+                          <SelectItem
+                            key={`${l.pickup_address}|||${l.destination_address}`}
+                            value={`${l.pickup_address}|||${l.destination_address}`}
+                          >
+                            {l.pickup_address} &rarr; {l.destination_address}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="pickup_address">Pickup Address *</Label>
+                        <AddressAutocomplete
+                          value={formData.pickup_address}
+                          onChange={(v) => setFormData((prev) => ({ ...prev, pickup_address: v }))}
+                          placeholder="Pickup location"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="delivery_address">Delivery Address *</Label>
+                        <AddressAutocomplete
+                          value={formData.delivery_address}
+                          onChange={(v) => setFormData((prev) => ({ ...prev, delivery_address: v }))}
+                          placeholder="Delivery location"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                  {/* Pricing Recommendation */}
