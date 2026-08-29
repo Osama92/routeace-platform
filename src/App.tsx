@@ -80,6 +80,7 @@ import ProfitLoss from "./pages/ProfitLoss";
 import TaxFilingReport from "./pages/TaxFilingReport";
 import DriverBonuses from "./pages/DriverBonuses";
 import TripRateConfig from "./pages/TripRateConfig";
+import RateCards from "./pages/RateCards";
 import VendorRateCards from "./pages/dept/VendorRateCards";
 import DeptDynamicPricing from "./pages/dept/DeptDynamicPricing";
 import ErpIntegrations from "./pages/dept/ErpIntegrations";
@@ -1131,6 +1132,14 @@ const App = () => (
                 element={
                   <ProtectedRoute allowedRoles={[...ADMIN_ROLES]}>
                     <EmailTemplates />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/rate-cards"
+                element={
+                  <ProtectedRoute allowedRoles={["admin", "super_admin", "org_admin", "finance_manager"]}>
+                    <RateCards />
                   </ProtectedRoute>
                 }
               />

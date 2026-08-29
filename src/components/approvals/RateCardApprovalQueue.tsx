@@ -10,10 +10,10 @@ import { format } from "date-fns";
 
 interface PendingRate {
   id: string;
-  zone: string;
-  pickup_location: string | null;
+  card_type: "client" | "vendor";
+  pickup_address: string;
+  destination_address: string;
   truck_type: string;
-  driver_type: string;
   rate_amount: number;
   is_net: boolean;
   version: number;
@@ -28,9 +28,6 @@ const fmt = (n: number) =>
     currency: "NGN",
     maximumFractionDigits: 0,
   }).format(n);
-
-const prettyZone = (z: string) =>
-  z.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
 /**
  * Rate Card approval queue.
@@ -52,8 +49,8 @@ const RateCardApprovalQueue = ({ organizationId }: { organizationId?: string | n
     queryKey: ["rate-card-pending", organizationId],
     enabled: !!organizationId,
     queryFn: async () => {
-      const { data, error } = await (supabase.from("trip_rate_config") as any)
-        .select("id, zone, pickup_location, truck_type, driver_type, rate_amount, is_net, version, supersedes_id, submitted_at, review_note")
+      const { data, error } = await (supabase.from("rate_cards") as any)
+        .select("id, card_type, pickup_address, destination_address, truck_type, rate_amount, is_net, version, supersedes_id, submitted_at, review_note")
         .eq("organization_id", organizationId!)
         .eq("status", "pending")
         .order("submitted_at", { ascending: true });
@@ -68,7 +65,7 @@ const RateCardApprovalQueue = ({ organizationId }: { organizationId?: string | n
     queryKey: ["rate-card-superseded", supersededIds.join(",")],
     enabled: supersededIds.length > 0,
     queryFn: async () => {
-      const { data, error } = await (supabase.from("trip_rate_config") as any)
+      const { data, error } = await (supabase.from("rate_cards") as any)
         .select("id, rate_amount")
         .in("id", supersededIds);
       if (error) throw error;
@@ -79,7 +76,7 @@ const RateCardApprovalQueue = ({ organizationId }: { organizationId?: string | n
 
   const decide = useMutation({
     mutationFn: async ({ id, action }: { id: string; action: "approve" | "reject" }) => {
-      const fn = action === "approve" ? "approve_trip_rate" : "reject_trip_rate";
+      const fn = action === "approve" ? "approve_rate_card" : "reject_rate_card";
       const { error } = await (supabase.rpc as any)(fn, { p_rate_id: id, p_note: null });
       if (error) throw error;
     },
@@ -93,6 +90,7 @@ const RateCardApprovalQueue = ({ organizationId }: { organizationId?: string | n
       });
       qc.invalidateQueries({ queryKey: ["rate-card-pending"] });
       qc.invalidateQueries({ queryKey: ["rate-card-superseded"] });
+      qc.invalidateQueries({ queryKey: ["rate-cards"] });
     },
     onError: (e: any) => {
       toast({
@@ -150,11 +148,21 @@ const RateCardApprovalQueue = ({ organizationId }: { organizationId?: string | n
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-medium">
-                      {prettyZone(r.zone)} · {r.truck_type}
-                      <span className="text-muted-foreground font-normal">
-                        {" "}· {r.driver_type}
-                      </span>
+                      {r.pickup_address} → {r.destination_address}
+                      <span className="text-muted-foreground font-normal"> · {r.truck_type}</span>
                     </p>
+                    {/* Which side of the money this is: charging a client, or
+                        paying a vendor. Approving the wrong one is expensive. */}
+                    <Badge
+                      variant="outline"
+                      className={
+                        r.card_type === "client"
+                          ? "text-green-600 border-green-500/40 text-[10px] mt-1"
+                          : "text-blue-600 border-blue-500/40 text-[10px] mt-1"
+                      }
+                    >
+                      {r.card_type === "client" ? "Client — revenue" : "Vendor — cost"}
+                    </Badge>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
                       {isChange ? (
                         <>
