@@ -161,6 +161,7 @@ const FleetPage = () => {
 
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
   const [detailsVehicle, setDetailsVehicle] = useState<Vehicle | null>(null);
+  const [detailsTab, setDetailsTab] = useState<"overview" | "documents" | "repairs">("overview");
 
   const TRUCK_TYPES = ["3T", "5T", "10T", "15T", "20T", "30T", "45T", "60T"];
 
@@ -1024,11 +1025,32 @@ const FleetPage = () => {
                     className="flex-1 min-w-[88px]"
                     onClick={() => {
                       setDetailsVehicle(vehicle);
+                      setDetailsTab("overview");
                       setIsDetailsDialogOpen(true);
                     }}
                   >
                     Details
                   </Button>
+
+                  {/* Repairs were only reachable by opening Details and then
+                      finding the tab — nothing on the card said the repair log
+                      existed. Owned trucks only: a vendor maintains their own
+                      truck, so the button would lead to a dead end. */}
+                  {(vehicle.ownership_type ?? "owned") === "owned" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 min-w-[88px]"
+                      onClick={() => {
+                        setDetailsVehicle(vehicle);
+                        setDetailsTab("repairs");
+                        setIsDetailsDialogOpen(true);
+                      }}
+                    >
+                      <Wrench className="w-4 h-4 mr-1" />
+                      Repairs
+                    </Button>
+                  )}
                   {canManage && (
                     <>
                       <Button
@@ -1131,6 +1153,7 @@ const FleetPage = () => {
 
       <VehicleDetailsDialog
         vehicle={detailsVehicle}
+        initialTab={detailsTab}
         open={isDetailsDialogOpen}
         onOpenChange={setIsDetailsDialogOpen}
       />

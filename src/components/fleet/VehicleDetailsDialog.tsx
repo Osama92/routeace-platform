@@ -92,6 +92,10 @@ interface VehicleDetailsDialogProps {
   vehicle: Vehicle | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Which tab to land on. Lets a "Log Repair" button on the vehicle card
+   *  open straight to the repair log instead of Overview, where the user
+   *  would have to know to go looking for it. */
+  initialTab?: "overview" | "documents" | "repairs";
 }
 
 const statusConfig: Record<string, { label: string; icon: any; color: string }> = {
@@ -101,7 +105,7 @@ const statusConfig: Record<string, { label: string; icon: any; color: string }> 
   retired: { label: "Retired", icon: XCircle, color: "bg-muted text-muted-foreground" },
 };
 
-const VehicleDetailsDialog = ({ vehicle, open, onOpenChange }: VehicleDetailsDialogProps) => {
+const VehicleDetailsDialog = ({ vehicle, open, onOpenChange, initialTab = "overview" }: VehicleDetailsDialogProps) => {
   const [documents, setDocuments] = useState<VehicleDocument[]>([]);
   const [repairs, setRepairs] = useState<VehicleRepair[]>([]);
   const [loading, setLoading] = useState(false);
@@ -121,6 +125,7 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange }: VehicleDetailsDia
   const isOwned = (vehicle?.ownership_type ?? "owned") === "owned";
 
   const [insights, setInsights] = useState<RepairInsights | null>(null);
+  const [activeTab, setActiveTab] = useState<string>(initialTab);
 
   const emptyRepairForm = {
     repair_date: format(new Date(), "yyyy-MM-dd"),
@@ -139,10 +144,13 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange }: VehicleDetailsDia
 
   useEffect(() => {
     if (vehicle && open) {
+      // Re-apply on each open: the component stays mounted between vehicles,
+      // so without this the tab would stick wherever it was last left.
+      setActiveTab(initialTab);
       fetchDocuments();
       fetchRepairs();
     }
-  }, [vehicle, open]);
+  }, [vehicle, open, initialTab]);
 
   const fetchDocuments = async () => {
     if (!vehicle) return;
@@ -264,7 +272,7 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange }: VehicleDetailsDia
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="overview" className="mt-4">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="documents">Documents ({documents.length})</TabsTrigger>
