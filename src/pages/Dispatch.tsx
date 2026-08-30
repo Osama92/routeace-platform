@@ -1405,12 +1405,41 @@ const DispatchPage = () => {
                         // hours that depend on it. Without this the lane
                         // picker set addresses only, and distance, suggested
                         // fuel and the SLA deadline all came out empty.
-                        const norm = (x: string) => (x || "").trim().toLowerCase();
-                        const matched = savedRoutes.find(
-                          (r: any) =>
-                            norm(r.origin) === norm(pickup) &&
-                            norm(r.destination) === norm(destination),
+                        // Match by COORDINATES, not address text. Google
+                        // Places returns different strings for the same place
+                        // depending on what was typed -- a rate card lane
+                        // ending "Aba N Rd, Aba, 450102, Abia" and a saved
+                        // route ending "Aba Rd, Aba, Abia" are the same
+                        // destination, so exact string matching never hit and
+                        // distance stayed empty.
+                        const lane: any = lanes.find(
+                          (l: any) =>
+                            l.pickup_address === pickup &&
+                            l.destination_address === destination,
                         );
+                        // ~25 km: close enough to be the same lane on an
+                        // intercity route, tight enough not to collide with a
+                        // genuinely different destination.
+                        const TOL = 0.25;
+                        const near = (a?: number | null, b?: number | null) =>
+                          a != null && b != null && Math.abs(Number(a) - Number(b)) < TOL;
+
+                        const norm = (x: string) => (x || "").trim().toLowerCase();
+                        const matched =
+                          savedRoutes.find(
+                            (r: any) =>
+                              near(r.origin_lat, lane?.pickup_lat) &&
+                              near(r.origin_lng, lane?.pickup_lng) &&
+                              near(r.destination_lat, lane?.destination_lat) &&
+                              near(r.destination_lng, lane?.destination_lng),
+                          ) ??
+                          // Fall back to text for lanes saved before
+                          // coordinates were captured.
+                          savedRoutes.find(
+                            (r: any) =>
+                              norm(r.origin) === norm(pickup) &&
+                              norm(r.destination) === norm(destination),
+                          );
                         setFormData((prev) => ({
                           ...prev,
                           pickup_address: pickup,
