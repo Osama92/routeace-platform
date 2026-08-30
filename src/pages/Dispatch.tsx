@@ -1308,62 +1308,6 @@ const DispatchPage = () => {
               </DialogHeader>
               <div className="grid gap-4 py-4">
 
-                {/* ── Route Library Quick-fill ─────────────────────────── */}
-                <div className="rounded-lg border border-dashed border-primary/40 bg-primary/5 p-3 space-y-2">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-primary">
-                    <RouteIcon className="w-4 h-4" />
-                    Quick-fill from Route Library
-                  </div>
-                  <Popover open={routeComboOpen} onOpenChange={setRouteComboOpen}>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" role="combobox" className="w-full justify-between bg-white font-normal">
-                        {formData.route_id
-                          ? savedRoutes.find((r) => r.id === formData.route_id)?.name ?? "Select route…"
-                          : savedRoutes.length ? "Select a saved route to auto-fill addresses" : "No saved routes — add one in Routes Library"}
-                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                      <Command>
-                        <CommandInput placeholder="Search routes…" />
-                        <CommandList className="max-h-60 overflow-y-auto">
-                          <CommandEmpty>No routes found.</CommandEmpty>
-                          <CommandGroup>
-                            {savedRoutes.map((r) => (
-                              <CommandItem
-                                key={r.id}
-                                value={`${r.name} ${r.origin} ${r.destination}`}
-                                onSelect={() => {
-                                  setFormData((prev) => ({
-                                    ...prev,
-                                    route_id: r.id,
-                                    pickup_address: r.origin ?? prev.pickup_address,
-                                    delivery_address: r.destination ?? prev.delivery_address,
-                                    distance_km: r.distance_km ? String(r.distance_km) : prev.distance_km,
-                                  }));
-                                  setRouteComboOpen(false);
-                                }}
-                              >
-                                <Check className={`mr-2 h-4 w-4 ${formData.route_id === r.id ? "opacity-100" : "opacity-0"}`} />
-                                <span className="font-medium">{r.name}</span>
-                                <span className="text-muted-foreground ml-1 text-xs truncate">
-                                  {r.origin?.split(",")[0]} → {r.destination?.split(",")[0]}
-                                  {r.distance_km ? ` · ${r.distance_km} km` : ""}
-                                </span>
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
-                  {formData.route_id && (
-                    <p className="text-xs text-emerald-600 font-medium">
-                      ✓ Pickup, delivery & distance auto-filled — edit below if needed
-                    </p>
-                  )}
-                </div>
-
                 {/* ── Customer ─────────────────────────────────────────── */}
                 <div className="space-y-2">
                   <Label htmlFor="customer_id">Customer *</Label>
@@ -1456,10 +1400,25 @@ const DispatchPage = () => {
                       }
                       onValueChange={(v) => {
                         const [pickup, destination] = v.split("|||");
+                        // Match the chosen lane back to a saved route so the
+                        // dispatch still gets route_id, distance and the SLA
+                        // hours that depend on it. Without this the lane
+                        // picker set addresses only, and distance, suggested
+                        // fuel and the SLA deadline all came out empty.
+                        const norm = (x: string) => (x || "").trim().toLowerCase();
+                        const matched = savedRoutes.find(
+                          (r: any) =>
+                            norm(r.origin) === norm(pickup) &&
+                            norm(r.destination) === norm(destination),
+                        );
                         setFormData((prev) => ({
                           ...prev,
                           pickup_address: pickup,
                           delivery_address: destination,
+                          route_id: matched?.id ?? "",
+                          distance_km: matched?.distance_km
+                            ? String(matched.distance_km)
+                            : prev.distance_km,
                         }));
                       }}
                     >
