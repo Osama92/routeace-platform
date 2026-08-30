@@ -85,6 +85,10 @@ interface Vehicle {
   last_maintenance: string | null;
   next_maintenance: string | null;
   partner_id: string | null;
+  // Drives whether the Repairs tab offers logging: a vendor maintains their
+  // own truck at their own cost. Present in the row (select "*") but was
+  // missing from the type, so `vehicle.ownership_type` was an implicit any.
+  ownership_type?: string | null;
   image_url?: string | null;
 }
 
