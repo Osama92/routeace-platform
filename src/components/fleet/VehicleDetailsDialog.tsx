@@ -68,6 +68,24 @@ interface VehicleRepair {
   mileage_at_repair: number | null;
   performed_by: string | null;
   notes: string | null;
+  parts_replaced: string | null;
+  parts_cost: number | null;
+  labour_cost: number | null;
+  is_breakdown: boolean;
+  downtime_days: number | null;
+}
+
+interface RepairInsights {
+  ok: boolean;
+  total_spend: number;
+  repair_count: number;
+  breakdown_count: number;
+  planned_count: number;
+  total_downtime_days: number;
+  breakdowns_per_month: number;
+  avg_repair_cost: number;
+  last_repair: string | null;
+  repeat_faults: { repair_type: string; occurrences: number; total_cost: number }[];
 }
 
 interface VehicleDetailsDialogProps {
@@ -92,17 +110,32 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange }: VehicleDetailsDia
   const { toast } = useToast();
   const { hasAnyRole } = useAuth();
   
-  const canManage = hasAnyRole(["admin"]);
+  // Mirrors the vehicle_repairs write policy. The previous ["admin"] gate
+  // matched the old RLS rule that no Relma user could satisfy, so the Add
+  // button never appeared for anyone.
+  const canManage = hasAnyRole([
+    "ops_manager", "org_admin", "finance_manager", "admin", "super_admin",
+  ]);
+  // A vendor maintains their own truck at their own cost, so repairs are
+  // only logged against owned vehicles. The database enforces this too.
+  const isOwned = (vehicle?.ownership_type ?? "owned") === "owned";
 
-  const [repairForm, setRepairForm] = useState({
+  const [insights, setInsights] = useState<RepairInsights | null>(null);
+
+  const emptyRepairForm = {
     repair_date: format(new Date(), "yyyy-MM-dd"),
     repair_type: "",
     description: "",
-    cost: "",
+    parts_replaced: "",
+    parts_cost: "",
+    labour_cost: "",
     mileage_at_repair: "",
     performed_by: "",
+    is_breakdown: false,
+    downtime_days: "",
     notes: "",
-  });
+  };
+  const [repairForm, setRepairForm] = useState(emptyRepairForm);
 
   useEffect(() => {
     if (vehicle && open) {
@@ -130,14 +163,22 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange }: VehicleDetailsDia
       .eq("vehicle_id", vehicle.id)
       .order("repair_date", { ascending: false });
     setRepairs(data || []);
+
+    // Spend, breakdown frequency, downtime and repeat faults, computed
+    // server-side so the same numbers appear wherever they are read.
+    const { data: ins } = await (supabase.rpc as any)("get_vehicle_repair_insights", {
+      p_vehicle_id: vehicle.id,
+    });
+    setInsights(ins?.ok ? (ins as RepairInsights) : null);
+
     setLoading(false);
   };
 
   const handleAddRepair = async () => {
-    if (!vehicle || !repairForm.repair_type || !repairForm.cost) {
+    if (!vehicle || !repairForm.repair_type) {
       toast({
-        title: "Validation Error",
-        description: "Please fill in repair type and cost",
+        title: "Repair type required",
+        description: "Describe what was done, e.g. \"Brake overhaul\".",
         variant: "destructive",
       });
       return;
@@ -145,30 +186,37 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange }: VehicleDetailsDia
 
     setSaving(true);
     try {
-      const { error } = await supabase.from("vehicle_repairs").insert({
-        vehicle_id: vehicle.id,
-        repair_date: repairForm.repair_date,
-        repair_type: repairForm.repair_type,
-        description: repairForm.description || null,
-        cost: parseFloat(repairForm.cost),
-        mileage_at_repair: repairForm.mileage_at_repair ? parseInt(repairForm.mileage_at_repair) : null,
-        performed_by: repairForm.performed_by || null,
-        notes: repairForm.notes || null,
+      // log_vehicle_repair() writes the repair AND books the expense in one
+      // call, so the workshop record and the money cannot drift apart. It
+      // also rejects vendor-owned trucks.
+      const partsCost = parseFloat(repairForm.parts_cost || "0") || 0;
+      const labourCost = parseFloat(repairForm.labour_cost || "0") || 0;
+
+      const { error } = await (supabase.rpc as any)("log_vehicle_repair", {
+        p_vehicle_id: vehicle.id,
+        p_repair_date: repairForm.repair_date,
+        p_repair_type: repairForm.repair_type,
+        p_description: repairForm.description || null,
+        p_parts_replaced: repairForm.parts_replaced || null,
+        p_parts_cost: partsCost,
+        p_labour_cost: labourCost,
+        p_mileage: repairForm.mileage_at_repair ? parseInt(repairForm.mileage_at_repair) : null,
+        p_performed_by: repairForm.performed_by || null,
+        p_is_breakdown: repairForm.is_breakdown,
+        p_downtime_days: repairForm.downtime_days ? parseInt(repairForm.downtime_days) : null,
+        p_book_expense: true,
       });
 
       if (error) throw error;
 
-      toast({ title: "Repair record added" });
-      setShowRepairForm(false);
-      setRepairForm({
-        repair_date: format(new Date(), "yyyy-MM-dd"),
-        repair_type: "",
-        description: "",
-        cost: "",
-        mileage_at_repair: "",
-        performed_by: "",
-        notes: "",
+      toast({
+        title: "Repair logged",
+        description: partsCost + labourCost > 0
+          ? `${formatCurrency(partsCost + labourCost)} also booked to expenses.`
+          : "No cost recorded, so nothing was booked to expenses.",
       });
+      setShowRepairForm(false);
+      setRepairForm(emptyRepairForm);
       fetchRepairs();
     } catch (error: any) {
       toast({
@@ -376,20 +424,88 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange }: VehicleDetailsDia
           </TabsContent>
 
           <TabsContent value="repairs" className="mt-4">
-            {canManage && !showRepairForm && (
+            {/* Vendor trucks are maintained by the vendor at their own cost,
+                so there is nothing to log here. Explained rather than just
+                hiding the button, so it does not look broken. */}
+            {!isOwned && (
+              <div className="mb-4 rounded-lg border border-muted bg-muted/30 p-3">
+                <p className="text-sm text-muted-foreground">
+                  This is a vendor-owned truck. The vendor maintains it at their own
+                  cost, so repairs are not recorded against your fleet spend.
+                </p>
+              </div>
+            )}
+
+            {/* Service summary. Only shown once there is something to summarise —
+                a panel of zeros teaches the reader nothing. */}
+            {isOwned && insights && insights.repair_count > 0 && (
+              <div className="mb-4 space-y-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="rounded-lg bg-secondary/50 p-3">
+                    <p className="text-xs text-muted-foreground">Total spend</p>
+                    <p className="text-lg font-semibold">{formatCurrency(Number(insights.total_spend))}</p>
+                  </div>
+                  <div className="rounded-lg bg-secondary/50 p-3">
+                    <p className="text-xs text-muted-foreground">Repairs</p>
+                    <p className="text-lg font-semibold">
+                      {insights.repair_count}
+                      <span className="text-xs font-normal text-muted-foreground">
+                        {" "}({insights.breakdown_count} breakdown{insights.breakdown_count === 1 ? "" : "s"})
+                      </span>
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-secondary/50 p-3">
+                    <p className="text-xs text-muted-foreground">Breakdowns / month</p>
+                    <p className="text-lg font-semibold">{insights.breakdowns_per_month}</p>
+                  </div>
+                  <div className="rounded-lg bg-secondary/50 p-3">
+                    <p className="text-xs text-muted-foreground">Days off road</p>
+                    <p className="text-lg font-semibold">{insights.total_downtime_days}</p>
+                  </div>
+                </div>
+
+                {/* The same fault recurring inside 90 days is either a bad fix
+                    or a failing component — the signal worth acting on. */}
+                {insights.repeat_faults?.length > 0 && (
+                  <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-yellow-500 mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-yellow-600">Recurring faults</p>
+                        <p className="text-xs text-muted-foreground mb-2">
+                          Repeated within 90 days — likely an incomplete fix or a failing part.
+                        </p>
+                        <ul className="space-y-1">
+                          {insights.repeat_faults.map((f) => (
+                            <li key={f.repair_type} className="text-sm">
+                              <span className="font-medium">{f.repair_type}</span>
+                              <span className="text-muted-foreground">
+                                {" "}&times;{f.occurrences} · {formatCurrency(Number(f.total_cost))}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {canManage && isOwned && !showRepairForm && (
               <Button
                 onClick={() => setShowRepairForm(true)}
                 className="mb-4"
                 size="sm"
               >
                 <Plus className="w-4 h-4 mr-2" />
-                Add Repair Record
+                Log Repair
               </Button>
             )}
 
             {showRepairForm && (
               <div className="mb-6 p-4 rounded-lg bg-secondary/50 space-y-4">
-                <h4 className="font-medium">New Repair Record</h4>
+                <h4 className="font-medium">Log a repair</h4>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Date *</Label>
@@ -407,13 +523,26 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange }: VehicleDetailsDia
                       onChange={(e) => setRepairForm(p => ({ ...p, repair_type: e.target.value }))}
                     />
                   </div>
+                  {/* Split so "what did the part cost vs the mechanic" is
+                      answerable later. The total is derived from these. */}
                   <div className="space-y-2">
-                    <Label>Cost (NGN) *</Label>
+                    <Label>Parts cost (NGN)</Label>
                     <Input
                       type="number"
+                      min={0}
                       placeholder="0"
-                      value={repairForm.cost}
-                      onChange={(e) => setRepairForm(p => ({ ...p, cost: e.target.value }))}
+                      value={repairForm.parts_cost}
+                      onChange={(e) => setRepairForm(p => ({ ...p, parts_cost: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Labour cost (NGN)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      placeholder="0"
+                      value={repairForm.labour_cost}
+                      onChange={(e) => setRepairForm(p => ({ ...p, labour_cost: e.target.value }))}
                     />
                   </div>
                   <div className="space-y-2">
@@ -435,6 +564,52 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange }: VehicleDetailsDia
                   </div>
                 </div>
                 <div className="space-y-2">
+                  <Label>Parts replaced</Label>
+                  <Input
+                    placeholder="e.g., Brake pads, discs, oil filter"
+                    value={repairForm.parts_replaced}
+                    onChange={(e) => setRepairForm(p => ({ ...p, parts_replaced: e.target.value }))}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Breakdown vs planned is the reliability signal: a truck
+                      with plenty of scheduled servicing is well kept, one
+                      that keeps failing in service is not. */}
+                  <div className="space-y-2">
+                    <Label>Type of work</Label>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={!repairForm.is_breakdown ? "default" : "outline"}
+                        onClick={() => setRepairForm(p => ({ ...p, is_breakdown: false }))}
+                      >
+                        Planned
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={repairForm.is_breakdown ? "default" : "outline"}
+                        onClick={() => setRepairForm(p => ({ ...p, is_breakdown: true }))}
+                      >
+                        Breakdown
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Days off road</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      placeholder="0"
+                      value={repairForm.downtime_days}
+                      onChange={(e) => setRepairForm(p => ({ ...p, downtime_days: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
                   <Label>Description</Label>
                   <Textarea
                     placeholder="Details about the repair..."
@@ -442,9 +617,14 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange }: VehicleDetailsDia
                     onChange={(e) => setRepairForm(p => ({ ...p, description: e.target.value }))}
                   />
                 </div>
+
+                <p className="text-xs text-muted-foreground">
+                  Recording a cost also books it to expenses against this vehicle,
+                  so finance does not have to enter it again.
+                </p>
                 <div className="flex gap-2">
                   <Button onClick={handleAddRepair} disabled={saving}>
-                    {saving ? "Saving..." : "Save Repair"}
+                    {saving ? "Saving..." : "Save repair"}
                   </Button>
                   <Button variant="outline" onClick={() => setShowRepairForm(false)}>
                     Cancel
@@ -467,12 +647,31 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange }: VehicleDetailsDia
                 {repairs.map((repair) => (
                   <div key={repair.id} className="p-4 rounded-lg bg-secondary/50">
                     <div className="flex items-start justify-between">
-                      <div>
-                        <p className="font-medium">{repair.repair_type}</p>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-medium">{repair.repair_type}</p>
+                          <Badge
+                            variant="outline"
+                            className={
+                              repair.is_breakdown
+                                ? "text-red-600 border-red-500/40 text-[10px]"
+                                : "text-green-600 border-green-500/40 text-[10px]"
+                            }
+                          >
+                            {repair.is_breakdown ? "Breakdown" : "Planned"}
+                          </Badge>
+                        </div>
                         <p className="text-sm text-muted-foreground">
                           {format(new Date(repair.repair_date), "dd MMM yyyy")}
-                          {repair.mileage_at_repair && ` • ${repair.mileage_at_repair.toLocaleString()} km`}
+                          {repair.mileage_at_repair ? ` • ${repair.mileage_at_repair.toLocaleString()} km` : ""}
+                          {repair.downtime_days ? ` • ${repair.downtime_days}d off road` : ""}
                         </p>
+                        {repair.parts_replaced && (
+                          <p className="text-sm mt-1">
+                            <span className="text-muted-foreground">Parts: </span>
+                            {repair.parts_replaced}
+                          </p>
+                        )}
                         {repair.description && (
                           <p className="text-sm text-muted-foreground mt-1">{repair.description}</p>
                         )}
@@ -480,7 +679,16 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange }: VehicleDetailsDia
                           <p className="text-sm text-muted-foreground">By: {repair.performed_by}</p>
                         )}
                       </div>
-                      <p className="font-semibold text-foreground">{formatCurrency(Number(repair.cost))}</p>
+                      <div className="text-right shrink-0">
+                        <p className="font-semibold text-foreground">{formatCurrency(Number(repair.cost))}</p>
+                        {/* Only worth splitting out when both halves exist. */}
+                        {Number(repair.parts_cost) > 0 && Number(repair.labour_cost) > 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            {formatCurrency(Number(repair.parts_cost))} parts ·{" "}
+                            {formatCurrency(Number(repair.labour_cost))} labour
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}

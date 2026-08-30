@@ -69,6 +69,7 @@ import { useAuditLog } from "@/hooks/useAuditLog";
 import { useTenantConfig } from "@/hooks/useTenantConfig";
 import { format, differenceInDays } from "date-fns";
 import VehicleDetailsDialog from "@/components/fleet/VehicleDetailsDialog";
+import RepairCostLeaderboard from "@/components/fleet/RepairCostLeaderboard";
 
 interface Vehicle {
   id: string;
@@ -1115,6 +1116,15 @@ const FleetPage = () => {
       </Dialog>
 
       {/* Vehicle Details Dialog */}
+      {/* Which owned trucks are draining money on repairs. Sits below the
+          roster rather than above it: the fleet list is what people come to
+          Fleet for, and this answers a follow-up question. */}
+      {!loading && (
+        <div className="mt-8">
+          <RepairCostLeaderboard organizationId={organizationId} />
+        </div>
+      )}
+
       <VehicleDetailsDialog
         vehicle={detailsVehicle}
         open={isDetailsDialogOpen}
