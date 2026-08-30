@@ -23,6 +23,17 @@ export default function TrialBanner() {
   }, []);
 
   // Never show to super_admins
+  // Declared before every early return: the free-plan branch below also uses
+  // it, and `const` is not hoisted. Defining it further down threw
+  // "Cannot access 'handleDismiss' before initialization" for any user whose
+  // organisation had reverted to the free plan, which blocked login entirely
+  // for everyone except super admins (who return null above and never reach
+  // the free-plan branch).
+  const handleDismiss = () => {
+    localStorage.setItem(DISMISS_KEY, String(Date.now()));
+    setDismissed(true);
+  };
+
   if (isSuperAdmin) return null;
 
   // Free plan (post-trial revert): show a gentle upgrade prompt.
@@ -72,11 +83,6 @@ export default function TrialBanner() {
   if (subscriptionStatus !== "trial") return null;
   if (trialDaysRemaining === null) return null;
   if (dismissed) return null;
-
-  const handleDismiss = () => {
-    localStorage.setItem(DISMISS_KEY, String(Date.now()));
-    setDismissed(true);
-  };
 
   // ── Urgency tier ──────────────────────────────────────────────
   const isUrgent   = trialDaysRemaining <= 1;
