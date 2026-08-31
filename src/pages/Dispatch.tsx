@@ -1455,8 +1455,16 @@ const DispatchPage = () => {
                           pickup_address: pickup,
                           delivery_address: destination,
                           route_id: matched?.id ?? "",
+                          // routes.distance_km is stored as a ROUND TRIP: the
+                          // Routes form's "Return trip (to & fro)" toggle
+                          // doubles the Google distance before saving, and
+                          // routes has no column recording that it did.
+                          // Everything downstream — this form's own return-trip
+                          // toggle, the fuel card, cost per km — expects ONE
+                          // WAY, so halve it here at the single point where a
+                          // route becomes a dispatch.
                           distance_km: matched?.distance_km
-                            ? String(matched.distance_km)
+                            ? String(Number(matched.distance_km) / 2)
                             : prev.distance_km,
                         }));
                       }}

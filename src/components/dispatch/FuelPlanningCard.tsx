@@ -70,14 +70,34 @@ const getFuelFactor = (capacityKg: number | null, vehicleType: string): number =
 const FuelPlanningCard = ({ dispatchId, distanceKm, vehicleId, pickupAddress, deliveryAddress, onUpdate, onSaveComplete }: FuelPlanningCardProps) => {
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
   const [historicalSuggestion, setHistoricalSuggestion] = useState<number | null>(null);
+  // dispatches.distance_km is ONE WAY. This card previously assumed it too,
+  // but then put the same value in BOTH the outbound and return fields and
+  // totalled x2 regardless of whether the trip actually returned — so a
+  // one-way delivery was fuelled for a round trip it never made.
+  //
+  // The return leg now defaults to 0. An operator who is running to and fro
+  // types the return distance in, which is the same field they would use for
+  // a backhaul of a different length anyway.
   const [data, setData] = useState<FuelPlanData>({
     toDistance: distanceKm || 0,
-    returnDistance: distanceKm || 0,
-    totalDistance: (distanceKm || 0) * 2,
+    returnDistance: 0,
+    totalDistance: distanceKm || 0,
     suggestedFuel: 0,
     actualFuel: 0,
     variance: 0,
   });
+
+  // distanceKm is only read by useState on first mount, so selecting a
+  // different dispatch kept the previous trip's distance until the component
+  // unmounted. Re-seed whenever the dispatch changes.
+  useEffect(() => {
+    setData((prev) => ({
+      ...prev,
+      toDistance: distanceKm || 0,
+      returnDistance: 0,
+      totalDistance: distanceKm || 0,
+    }));
+  }, [dispatchId, distanceKm]);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
