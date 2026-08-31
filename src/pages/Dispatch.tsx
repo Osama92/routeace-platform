@@ -808,10 +808,11 @@ const DispatchPage = () => {
                 organization_id: organizationId,
                 client_revenue: clientRevenue,
                 vendor_cost: vendorCost,
-                gross_profit:
-                  clientRevenue !== null && vendorCost !== null
-                    ? Number(clientRevenue) - Number(vendorCost)
-                    : clientRevenue,
+                // gross_profit and roi_pct are GENERATED columns
+                // (client_revenue - vendor_cost). Postgres rejects any
+                // explicit value with "cannot insert a non-DEFAULT value into
+                // column gross_profit", which the try/catch below was
+                // swallowing -- so every rate attachment failed silently.
                 finance_status: vendorCost === null && resolved?.missing_vendor_rate
                   ? "pending"
                   : "complete",
@@ -819,9 +820,18 @@ const DispatchPage = () => {
               { onConflict: "dispatch_id" },
             );
           }
-        } catch (rateErr) {
-          // Logged, not surfaced: the dispatch itself succeeded.
+        } catch (rateErr: any) {
+          // The dispatch itself succeeded, so this never blocks the operation.
+          // But it IS surfaced: a silent catch here hid a real bug (writing to
+          // a generated column) and every trip was recording no money while
+          // appearing to work.
           console.error("Could not attach rates to dispatch", rateErr);
+          toast({
+            title: "Dispatch created, but no rate attached",
+            description:
+              "Finance will need to enter the value for this trip. " +
+              (rateErr?.message ?? ""),
+          });
         }
       }
 
