@@ -40,6 +40,8 @@ interface DispatchRow {
     id: string;
     vendor_cost: number | null;
     client_revenue: number | null;
+    revenue_source?: string | null;
+    cost_source?: string | null;
     gross_profit: number | null;
     roi_pct: number | null;
     finance_status: string;
@@ -83,6 +85,12 @@ export default function DispatchFinanceQueue() {
   const [tab, setTab] = useState<"pending" | "complete">("pending");
   const [selected, setSelected] = useState<DispatchRow | null>(null);
   const [form, setForm] = useState({ vendor_cost: "", client_revenue: "", notes: "" });
+  // Which figures came from an approved rate card. Those are not editable
+  // here: a rate a super admin signed off must not be quietly replaced by a
+  // typed number. Where no rate resolved the field stays editable, because
+  // otherwise finance would be trapped with a zero it cannot correct.
+  const [lockedRevenue, setLockedRevenue] = useState(false);
+  const [lockedCost, setLockedCost] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // Query dispatches that are approved (by ops_manager / super_admin / admin / org_admin),
@@ -103,7 +111,7 @@ export default function DispatchFinanceQueue() {
           drivers ( full_name ),
           vehicles ( registration_number ),
           dispatch_financials (
-            id, vendor_cost, client_revenue,
+            id, vendor_cost, client_revenue, revenue_source, cost_source,
             gross_profit, roi_pct,
             finance_status, notes, entered_at
           )
@@ -159,6 +167,8 @@ export default function DispatchFinanceQueue() {
       client_revenue: df?.client_revenue != null ? String(df.client_revenue) : "",
       notes: df?.notes ?? "",
     });
+    setLockedRevenue(df?.revenue_source === "rate_card");
+    setLockedCost(df?.cost_source === "rate_card");
   };
 
   const handleSave = async () => {
@@ -179,8 +189,11 @@ export default function DispatchFinanceQueue() {
       const payload = {
         dispatch_id: selected.id,
         organization_id: orgId,
-        vendor_cost: vc,
-        client_revenue: cr,
+        // A locked field keeps whatever the rate card supplied. Disabling the
+        // input is a UI courtesy; omitting it from the payload is what
+        // actually protects an approved rate from being overwritten here.
+        ...(lockedCost ? {} : { vendor_cost: vc }),
+        ...(lockedRevenue ? {} : { client_revenue: cr }),
         notes: form.notes || null,
         finance_status: "complete",
         entered_by: user?.id,
@@ -385,9 +398,15 @@ export default function DispatchFinanceQueue() {
                     step="0.01"
                     placeholder="0.00"
                     value={form.vendor_cost}
+                    disabled={lockedCost}
+                    className={lockedCost ? "bg-muted cursor-not-allowed" : undefined}
                     onChange={e => setForm(f => ({ ...f, vendor_cost: e.target.value }))}
                   />
-                  <p className="text-xs text-muted-foreground">Payout to vendor / 3PL</p>
+                  <p className="text-xs text-muted-foreground">
+                    {lockedCost
+                      ? "From the approved vendor rate card — change it on Rate Cards, not here."
+                      : "Payout to vendor / 3PL"}
+                  </p>
                 </div>
                 <div className="space-y-1.5">
                   <Label>Client Revenue (NGN) *</Label>
@@ -397,9 +416,15 @@ export default function DispatchFinanceQueue() {
                     step="0.01"
                     placeholder="0.00"
                     value={form.client_revenue}
+                    disabled={lockedRevenue}
+                    className={lockedRevenue ? "bg-muted cursor-not-allowed" : undefined}
                     onChange={e => setForm(f => ({ ...f, client_revenue: e.target.value }))}
                   />
-                  <p className="text-xs text-muted-foreground">Amount charged to client</p>
+                  <p className="text-xs text-muted-foreground">
+                    {lockedRevenue
+                      ? "From the approved client rate card — change it on Rate Cards, not here."
+                      : "Amount charged to client"}
+                  </p>
                 </div>
               </div>
 

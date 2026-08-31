@@ -808,6 +808,18 @@ const DispatchPage = () => {
                 organization_id: organizationId,
                 client_revenue: clientRevenue,
                 vendor_cost: vendorCost,
+                // Provenance, so Finance Entry knows which figures came from
+                // an approved rate card (and must not be edited there) and
+                // which are placeholders it may correct.
+                revenue_source: clientRevenue !== null ? "rate_card" : "manual",
+                cost_source:
+                  vendorCost !== null
+                    ? "rate_card"
+                    : resolved?.ownership_type === "owned"
+                      ? "owned_fleet"
+                      : "manual",
+                client_rate_card_id: resolved?.client_rate_id ?? null,
+                vendor_rate_card_id: resolved?.vendor_rate_id ?? null,
                 // gross_profit and roi_pct are GENERATED columns
                 // (client_revenue - vendor_cost). Postgres rejects any
                 // explicit value with "cannot insert a non-DEFAULT value into
