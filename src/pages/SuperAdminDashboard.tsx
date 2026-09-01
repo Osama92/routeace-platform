@@ -41,6 +41,7 @@ import TopDelayReasonsCard from "@/components/analytics/TopDelayReasonsCard";
 import { AnalyticsPeriodSelector, getDefaultPeriodRange, type PeriodType, type PeriodRange } from "@/components/analytics/AnalyticsPeriodSelector";
 import CustomerVendorApprovalQueue from "@/components/approvals/CustomerVendorApprovalQueue";
 import RateCardApprovalQueue from "@/components/approvals/RateCardApprovalQueue";
+import RepairApprovalQueue from "@/components/approvals/RepairApprovalQueue";
 import {
   Shield,
   CreditCard, 
@@ -514,6 +515,7 @@ const SuperAdminDashboardInner = () => {
             <>
               <CustomerVendorApprovalQueue level="sa" organizationId={organizationId} />
               <RateCardApprovalQueue organizationId={organizationId} />
+              <RepairApprovalQueue organizationId={organizationId} />
             </>
           )}
           <DemoPreviewToggleCard />
