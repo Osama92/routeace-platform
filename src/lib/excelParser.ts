@@ -15,6 +15,15 @@ export interface VendorRateRow {
   notes?: string;
 }
 
+export interface RateCardRow {
+  party_name: string;        // customer for a client card, vendor for a vendor card
+  pickup_address: string;
+  destination_address: string;
+  truck_type: string;
+  rate_amount: number;
+  notes?: string;
+}
+
 export interface DieselRateRow {
   route_name: string;
   origin: string;
@@ -344,6 +353,34 @@ export const vendorRateHeaderMap: Record<string, keyof VendorRateRow> = {
   'description': 'notes',
 };
 
+export const rateCardHeaderMap: Record<string, keyof RateCardRow> = {
+  'client name': 'party_name',
+  'customer name': 'party_name',
+  'customer': 'party_name',
+  'vendor name': 'party_name',
+  'vendor': 'party_name',
+  'party': 'party_name',
+  'pickup': 'pickup_address',
+  'pickup address': 'pickup_address',
+  'pickup location': 'pickup_address',
+  'origin': 'pickup_address',
+  'from': 'pickup_address',
+  'destination': 'destination_address',
+  'destination address': 'destination_address',
+  'delivery location': 'destination_address',
+  'to': 'destination_address',
+  'truck type': 'truck_type',
+  'truck': 'truck_type',
+  'tonnage': 'truck_type',
+  'rate': 'rate_amount',
+  'rate amount': 'rate_amount',
+  'amount': 'rate_amount',
+  'rate (ngn)': 'rate_amount',
+  'notes': 'notes',
+  'note': 'notes',
+  'remarks': 'notes',
+};
+
 export const dieselRateHeaderMap: Record<string, keyof DieselRateRow> = {
   'route name': 'route_name',
   'route': 'route_name',
@@ -480,6 +517,63 @@ export const generateVendorRateTemplate = (): void => {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Vendor Rates');
   XLSX.writeFile(wb, 'vendor-rates-template.xlsx');
+};
+
+/**
+ * Rate card template.
+ *
+ * The header row is what the parser matches on, so the sample rows exist to
+ * show the SHAPE of a valid value — a full Google-style address rather than
+ * "Lagos", a truck type from the fleet list, a plain number with no currency
+ * symbol or thousands separator. People copy the pattern of the example far
+ * more reliably than they read instructions.
+ *
+ * A second sheet carries the rules, because a single header row cannot say
+ * "one row per lane per truck type" or "addresses must match how you type
+ * them in dispatch".
+ */
+export const generateRateCardTemplate = (cardType: 'client' | 'vendor'): void => {
+  const partyHeader = cardType === 'client' ? 'Client Name' : 'Vendor Name';
+  const headers = [partyHeader, 'Pickup', 'Destination', 'Truck Type', 'Rate Amount', 'Notes'];
+
+  const sampleData =
+    cardType === 'client'
+      ? [
+          ['Primera Foods Nigeria Ltd', 'Agbara - Atan Rd, Ogun State, Nigeria', 'Aba Rd, Aba, Abia, Nigeria', '15T', 485000, 'Agreed Aug 2026'],
+          ['Primera Foods Nigeria Ltd', 'Agbara - Atan Rd, Ogun State, Nigeria', 'Calabar Rd, Calabar, Cross River, Nigeria', '30T', 720000, ''],
+        ]
+      : [
+          ['Bisebel International', 'Agbara - Atan Rd, Ogun State, Nigeria', 'Aba Rd, Aba, Abia, Nigeria', '15T', 320000, 'Standard vendor rate'],
+          ['Road Runner Logistics', 'Agbara - Atan Rd, Ogun State, Nigeria', 'Calabar Rd, Calabar, Cross River, Nigeria', '30T', 510000, ''],
+        ];
+
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleData]);
+  ws['!cols'] = [{ wch: 32 }, { wch: 42 }, { wch: 42 }, { wch: 12 }, { wch: 14 }, { wch: 28 }];
+
+  const guide = [
+    ['How to fill this in'],
+    [''],
+    [partyHeader, `Must match a ${cardType === 'client' ? 'customer' : 'vendor'} already on the platform, spelled the same way.`],
+    ['Pickup / Destination', 'Use the full address. It must match how the location is entered in Dispatch, otherwise the rate will not be found.'],
+    ['Truck Type', 'One of: 3T, 5T, 10T, 15T, 20T, 30T, 45T, 60T'],
+    ['Rate Amount', 'Numbers only. No currency symbol, no commas. Example: 485000'],
+    ['Notes', 'Optional. Context for whoever approves the rate.'],
+    [''],
+    ['One row per lane per truck type.'],
+    ['A 15T and a 30T on the same route are two separate rows.'],
+    [''],
+    ['Every uploaded rate arrives as PENDING and must be approved by a super admin'],
+    ['before Dispatch can use it. Uploading does not change any live rate.'],
+    [''],
+    ['Delete these example rows before uploading.'],
+  ];
+  const guideWs = XLSX.utils.aoa_to_sheet(guide);
+  guideWs['!cols'] = [{ wch: 24 }, { wch: 90 }];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, cardType === 'client' ? 'Client Rates' : 'Vendor Rates');
+  XLSX.utils.book_append_sheet(wb, guideWs, 'Instructions');
+  XLSX.writeFile(wb, `${cardType}-rate-card-template.xlsx`);
 };
 
 export const generateDieselRateTemplate = (): void => {

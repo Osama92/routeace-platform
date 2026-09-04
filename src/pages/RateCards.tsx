@@ -23,6 +23,7 @@ import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
 import { AddressAutocomplete } from "@/components/shared/AddressAutocomplete";
+import RateCardUpload from "@/components/ratecard/RateCardUpload";
 import { useToast } from "@/hooks/use-toast";
 import {
   Plus, Edit, Trash2, ArrowRight, Building2, Truck, Clock, CheckCircle2, XCircle, AlertTriangle,
@@ -298,10 +299,17 @@ export default function RateCards() {
             </TabsTrigger>
           </TabsList>
           {canEdit && (
-            <Button onClick={openNew} className="gap-2">
-              <Plus className="w-4 h-4" />
-              Add Rate
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <RateCardUpload
+                cardType={tab}
+                organizationId={organizationId}
+                parties={parties}
+              />
+              <Button onClick={openNew} className="gap-2">
+                <Plus className="w-4 h-4" />
+                Add Rate
+              </Button>
+            </div>
           )}
         </div>
 
