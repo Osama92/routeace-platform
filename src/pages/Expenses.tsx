@@ -31,7 +31,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Plus,
+  Edit,
+  Trash2,
   Search,
   Fuel,
   Wrench,
@@ -151,6 +157,12 @@ const Expenses = () => {
   const { logChange } = useAuditLog();
 
   const isAdmin = hasAnyRole(["admin"]);
+  // Editing or deleting a posted expense moves money in the ledger, so it is
+  // restricted to super admin rather than the broader finance roles that can
+  // create one.
+  const isSuperAdmin = hasAnyRole(["super_admin"]);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Expense | null>(null);
   const { canApprove: canApproveExpense } = useApprovalPolicy("expense");
 
   const [formData, setFormData] = useState({
@@ -339,6 +351,135 @@ const Expenses = () => {
         description: error.message || "Failed to add expense",
         variant: "destructive",
       });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Reuses the create form rather than a second dialog, so the fields and
+  // validation cannot drift apart.
+  const openEdit = (expense: Expense) => {
+    setEditingExpense(expense);
+    setFormData({
+      expense_date: expense.expense_date,
+      category: expense.category ?? "",
+      description: expense.description ?? "",
+      amount: String(expense.amount ?? ""),
+      vendor_id: (expense as any).vendor_id ?? "",
+      vehicle_id: (expense as any).vehicle_id ?? "",
+      driver_id: (expense as any).driver_id ?? "",
+      notes: (expense as any).notes ?? "",
+      is_recurring: (expense as any).is_recurring ?? false,
+      is_cogs: (expense as any).is_cogs ?? false,
+      cogs_vendor_id: (expense as any).cogs_vendor_id ?? "",
+      receipt_url: (expense as any).receipt_url ?? "",
+    });
+    setReceiptFile(null);
+    setReceiptPreview((expense as any).receipt_url ?? "");
+    setIsDialogOpen(true);
+  };
+
+  const handleUpdate = async () => {
+    if (!editingExpense) return;
+    if (!formData.category || !formData.description || !formData.amount) {
+      toast({
+        title: "Validation Error",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      let receiptUrl = formData.receipt_url;
+      if (receiptFile) receiptUrl = (await uploadReceipt()) || "";
+
+      // approval_status, submitted_by and created_by are deliberately NOT
+      // touched: an edit corrects a figure, it does not re-open the approval
+      // or reassign authorship. The ledger trigger reposts automatically when
+      // amount, is_cogs or expense_date change.
+      const { error } = await supabase
+        .from("expenses")
+        .update({
+          category: formData.category as any,
+          description: formData.description,
+          expense_date: formData.expense_date,
+          amount: parseFloat(formData.amount),
+          vendor_id: formData.vendor_id || null,
+          vehicle_id: formData.vehicle_id || null,
+          driver_id: formData.driver_id || null,
+          notes: formData.notes || null,
+          is_recurring: formData.is_recurring,
+          is_cogs: formData.is_cogs,
+          cogs_vendor_id: formData.is_cogs ? (formData.cogs_vendor_id || null) : null,
+          receipt_url: receiptUrl || null,
+        })
+        .eq("id", editingExpense.id);
+
+      if (error) throw error;
+
+      await logChange({
+        table_name: "expenses",
+        record_id: editingExpense.id,
+        action: "update",
+        old_data: {
+          amount: editingExpense.amount,
+          category: editingExpense.category,
+          description: editingExpense.description,
+          expense_date: editingExpense.expense_date,
+        },
+        new_data: {
+          amount: parseFloat(formData.amount),
+          category: formData.category,
+          description: formData.description,
+          expense_date: formData.expense_date,
+        },
+      });
+
+      toast({
+        title: "Expense updated",
+        description: "The accounting ledger has been updated to match.",
+      });
+      setIsDialogOpen(false);
+      setEditingExpense(null);
+      resetForm();
+      fetchData();
+    } catch (error: any) {
+      toast({ title: "Could not update", description: error.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase.from("expenses").delete().eq("id", deleteTarget.id);
+      if (error) throw error;
+
+      await logChange({
+        table_name: "expenses",
+        record_id: deleteTarget.id,
+        action: "delete",
+        old_data: {
+          amount: deleteTarget.amount,
+          category: deleteTarget.category,
+          description: deleteTarget.description,
+          expense_date: deleteTarget.expense_date,
+        },
+        new_data: null,
+      });
+
+      toast({
+        title: "Expense deleted",
+        description: "It has also been reversed out of the accounting ledger.",
+      });
+      setDeleteTarget(null);
+      fetchData();
+    } catch (error: any) {
+      toast({ title: "Could not delete", description: error.message, variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -712,7 +853,13 @@ const Expenses = () => {
             </Button>
           )}
           {canManage && (
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <Dialog
+              open={isDialogOpen}
+              onOpenChange={(open) => {
+                setIsDialogOpen(open);
+                if (!open) { setEditingExpense(null); resetForm(); }
+              }}
+            >
               <DialogTrigger asChild>
                 <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
                   <Plus className="w-4 h-4 mr-2" />
@@ -721,9 +868,11 @@ const Expenses = () => {
               </DialogTrigger>
               <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
-                  <DialogTitle className="font-heading">Add New Expense</DialogTitle>
+                  <DialogTitle className="font-heading">{editingExpense ? "Edit Expense" : "Add New Expense"}</DialogTitle>
                   <DialogDescription>
-                    Record a new business expense with category and details.
+                    {editingExpense
+                      ? "Changing the amount, date or COGS flag updates the accounting ledger to match."
+                      : "Record a new business expense with category and details."}
                   </DialogDescription>
                 </DialogHeader>
 
@@ -950,13 +1099,50 @@ const Expenses = () => {
                   <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
                     Cancel
                   </Button>
-                  <Button onClick={handleSubmit} disabled={saving || uploading}>
-                    {saving || uploading ? "Saving..." : "Add Expense"}
+                  <Button
+                    onClick={editingExpense ? handleUpdate : handleSubmit}
+                    disabled={saving || uploading}
+                  >
+                    {saving || uploading
+                      ? "Saving..."
+                      : editingExpense ? "Save changes" : "Add Expense"}
                   </Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
           )}
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this expense?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget && (
+                <>
+                  <span className="font-medium">{deleteTarget.description}</span>
+                  {" — "}
+                  {new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 })
+                    .format(Number(deleteTarget.amount))}
+                  {" on "}
+                  {format(new Date(deleteTarget.expense_date), "d MMM yyyy")}.
+                  <br /><br />
+                  This also reverses it out of the accounting ledger, so your
+                  profit and loss will change. It cannot be undone.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete expense
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
         </div>
       </div>
       {/* Expenses Table */}
@@ -975,7 +1161,7 @@ const Expenses = () => {
               <TableHead className="text-muted-foreground whitespace-nowrap min-w-[120px]">Amount</TableHead>
               <TableHead className="text-muted-foreground">Status</TableHead>
               <TableHead className="text-muted-foreground">Receipt</TableHead>
-              {isAdmin && <TableHead className="text-muted-foreground">Actions</TableHead>}
+              {(isAdmin || isSuperAdmin) && <TableHead className="text-muted-foreground">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -1046,22 +1232,32 @@ const Expenses = () => {
                         </Badge>
                       )}
                     </TableCell>
-                    {isAdmin && (
+                    {(isAdmin || isSuperAdmin) && (
                       <TableCell>
-                        {expense.approval_status === "pending" && (
-                          <div className="flex gap-1">
-                            {canApproveExpense && (
-                              <Button size="sm" variant="ghost" className="text-success" onClick={() => handleApproveExpense(expense)} disabled={saving}>
+                        <div className="flex gap-1">
+                          {isAdmin && expense.approval_status === "pending" && canApproveExpense && (
+                            <>
+                              <Button size="sm" variant="ghost" className="text-success" title="Approve" onClick={() => handleApproveExpense(expense)} disabled={saving}>
                                 <CheckCircle className="w-4 h-4" />
                               </Button>
-                            )}
-                            {canApproveExpense && (
-                              <Button size="sm" variant="ghost" className="text-destructive" onClick={() => { setSelectedExpense(expense); setIsApprovalDialogOpen(true); }}>
+                              <Button size="sm" variant="ghost" className="text-destructive" title="Reject" onClick={() => { setSelectedExpense(expense); setIsApprovalDialogOpen(true); }}>
                                 <XCircle className="w-4 h-4" />
                               </Button>
-                            )}
-                          </div>
-                        )}
+                            </>
+                          )}
+                          {/* Editing or deleting a posted expense moves money
+                              in the ledger, so it is super admin only. */}
+                          {isSuperAdmin && (
+                            <>
+                              <Button size="sm" variant="ghost" title="Edit" onClick={() => openEdit(expense)} disabled={saving}>
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button size="sm" variant="ghost" className="text-destructive" title="Delete" onClick={() => setDeleteTarget(expense)} disabled={saving}>
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </TableCell>
                     )}
                   </TableRow>
