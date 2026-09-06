@@ -60,6 +60,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { InvoicePreviewDialog } from "@/components/invoice/InvoicePreviewDialog";
 import { InvoiceCreationDialog } from "@/components/invoice/InvoiceCreationDialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import MonthRangeFilter, { currentMonthRange, type MonthRange } from "@/components/shared/MonthRangeFilter";
+import { startOfMonth, endOfMonth } from "date-fns";
 
 interface Invoice {
   id: string;
@@ -100,6 +102,7 @@ const InvoicesPage = () => {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [range, setRange] = useState<MonthRange>(currentMonthRange());
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -117,6 +120,8 @@ const InvoicesPage = () => {
         .from("invoices")
         .select(`*, customers(company_name, address, head_office_address, city, state, country), dispatches(pickup_address, delivery_address, distance_km)`)
         .eq("organization_id", organizationId ?? "00000000-0000-0000-0000-000000000000")
+        .gte("created_at", startOfMonth(new Date(range.startYear, range.startMonth)).toISOString())
+        .lte("created_at", endOfMonth(new Date(range.endYear, range.endMonth)).toISOString())
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -137,7 +142,9 @@ const InvoicesPage = () => {
     }
   };
 
-  useEffect(() => { fetchInvoices(); }, []);
+  // Refetch when the period changes: the range is applied server-side, so
+  // without this the list would keep showing the previous month's rows.
+  useEffect(() => { fetchInvoices(); }, [organizationId, range]);
 
   const updateInvoiceStatus = async (invoiceId: string, newStatus: string) => {
     try {
@@ -255,7 +262,7 @@ const InvoicesPage = () => {
 
       {/* Actions Bar */}
       <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between mb-6">
-        <div className="flex gap-3 flex-1">
+        <div className="flex gap-3 flex-1 flex-wrap items-center">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
@@ -265,6 +272,7 @@ const InvoicesPage = () => {
               className="pl-10"
             />
           </div>
+          <MonthRangeFilter value={range} onChange={setRange} />
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-36">
               <Filter className="w-4 h-4 mr-2" />

@@ -62,7 +62,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useApprovalPolicy } from "@/hooks/useApprovalPolicy";
 import { useAuditLog } from "@/hooks/useAuditLog";
-import { format } from "date-fns";
+import { format, startOfMonth, endOfMonth } from "date-fns";
+import MonthRangeFilter, { currentMonthRange, type MonthRange } from "@/components/shared/MonthRangeFilter";
 
 interface Expense {
   id: string;
@@ -134,6 +135,7 @@ const Expenses = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [cogsFilter, setCogsFilter] = useState("all");
+  const [range, setRange] = useState<MonthRange>(currentMonthRange());
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -173,11 +175,22 @@ const Expenses = () => {
 
   const fetchData = async () => {
     try {
+      // Explicit tenant filter. These queries relied on RLS alone, and the
+      // tenant gate deliberately grants platform owners cross-org visibility,
+      // so a super admin was seeing every organisation's expenses blended
+      // together.
+      const orgFilter = organizationId ?? "00000000-0000-0000-0000-000000000000";
       const [expensesRes, vendorsRes, vehiclesRes, driversRes] = await Promise.all([
-        supabase.from("expenses").select("*").order("expense_date", { ascending: false }),
-        supabase.from("partners").select("id, company_name"),
-        supabase.from("vehicles").select("id, registration_number"),
-        supabase.from("drivers").select("id, full_name"),
+        supabase
+          .from("expenses")
+          .select("*")
+          .eq("organization_id", orgFilter)
+          .gte("expense_date", format(startOfMonth(new Date(range.startYear, range.startMonth)), "yyyy-MM-dd"))
+          .lte("expense_date", format(endOfMonth(new Date(range.endYear, range.endMonth)), "yyyy-MM-dd"))
+          .order("expense_date", { ascending: false }),
+        supabase.from("partners").select("id, company_name").eq("organization_id", orgFilter),
+        supabase.from("vehicles").select("id, registration_number").eq("organization_id", orgFilter),
+        supabase.from("drivers").select("id, full_name").eq("organization_id", orgFilter),
       ]);
 
       if (expensesRes.error) throw expensesRes.error;
@@ -196,9 +209,11 @@ const Expenses = () => {
     }
   };
 
+  // The period is applied server-side, so the list must refetch when it
+  // changes or it would keep showing the previous month.
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [organizationId, range]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -645,8 +660,9 @@ const Expenses = () => {
 
       {/* Actions Bar */}
       <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between mb-6">
-        <div className="flex gap-4 flex-1 flex-wrap">
-          <div className="relative flex-1 max-w-md">
+        <div className="flex gap-4 flex-1 flex-wrap items-center">
+          <MonthRangeFilter value={range} onChange={setRange} />
+          <div className="relative flex-1 min-w-[220px] max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               placeholder="Search expenses..."
