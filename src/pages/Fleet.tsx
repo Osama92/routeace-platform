@@ -70,6 +70,7 @@ import { useTenantConfig } from "@/hooks/useTenantConfig";
 import { format, differenceInDays } from "date-fns";
 import VehicleDetailsDialog from "@/components/fleet/VehicleDetailsDialog";
 import RepairCostLeaderboard from "@/components/fleet/RepairCostLeaderboard";
+import TripCompliancePanel from "@/components/fleet/TripCompliancePanel";
 
 interface Vehicle {
   id: string;
@@ -1146,7 +1147,8 @@ const FleetPage = () => {
           roster rather than above it: the fleet list is what people come to
           Fleet for, and this answers a follow-up question. */}
       {!loading && (
-        <div className="mt-8">
+        <div className="mt-8 space-y-6">
+          <TripCompliancePanel />
           <RepairCostLeaderboard organizationId={organizationId} />
         </div>
       )}

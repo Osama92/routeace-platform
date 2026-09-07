@@ -56,6 +56,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useApprovalPolicy } from "@/hooks/useApprovalPolicy";
 import FuelPlanningCard from "@/components/dispatch/FuelPlanningCard";
+import TripChecklistDialog from "@/components/dispatch/TripChecklistDialog";
 import { useAuditLog } from "@/hooks/useAuditLog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import MultipleDropoffs from "@/components/dispatch/MultipleDropoffs";
@@ -189,6 +190,18 @@ const DispatchPage = () => {
   // Escape hatch: a genuinely new route can still be entered by hand. The
   // trip records no rate in that case, which finance sees on the dispatch.
   const [manualRoute, setManualRoute] = useState(false);
+  // Pre/post trip check for owned trucks.
+  const [tripCheck, setTripCheck] = useState<{
+    open: boolean;
+    type: "pre_trip" | "post_trip";
+    dispatchId: string;
+    dispatchNumber?: string;
+    vehicleId: string;
+    vehicleReg?: string;
+    driverId?: string | null;
+    suggestedLitres?: number | null;
+    litresSource?: "rate_card" | "estimate" | null;
+  } | null>(null);
   const [routeComboOpen, setRouteComboOpen] = useState(false);
   const [customerComboOpen, setCustomerComboOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -859,24 +872,44 @@ const DispatchPage = () => {
         await supabase.from("dispatch_dropoffs").insert(dropoffsToInsert);
       }
 
-      // For owned/internal vehicles, prompt user to confirm actual diesel issued.
-      // This captures estimate vs. actual for ROI accuracy.
-      if (data && suggestedFuel && suggestedFuel > 0 && formData.vehicle_id) {
+      // An OWNED truck now goes straight into its pre-trip check, which
+      // captures the diesel as part of the inspection rather than through a
+      // separate dismissible prompt. The database gate will refuse this
+      // truck's NEXT dispatch until the matching post-trip is completed.
+      if (data && formData.vehicle_id) {
         const selectedVehicle = vehicles.find(v => v.id === formData.vehicle_id);
         if (selectedVehicle?.ownership_type === "owned") {
-          setFuelConfirmData({
+          // Prefer the lane's agreed litres; fall back to the distance
+          // estimate so the field is never blank on a route with no rate.
+          let litres: number | null = null;
+          let source: "rate_card" | "estimate" = "estimate";
+          try {
+            const { data: agreed } = await (supabase.rpc as any)("get_lane_diesel_litres", {
+              p_organization_id: organizationId,
+              p_customer_id: formData.customer_id,
+              p_pickup: formData.pickup_address,
+              p_destination: formData.delivery_address,
+              p_truck_type: (selectedVehicle as any)?.truck_type ?? null,
+            });
+            if (agreed != null) { litres = Number(agreed); source = "rate_card"; }
+          } catch {
+            // Non-fatal: fall through to the estimate.
+          }
+          if (litres == null && suggestedFuel && suggestedFuel > 0) {
+            litres = Math.round(suggestedFuel * 10) / 10;
+          }
+
+          setTripCheck({
+            open: true,
+            type: "pre_trip",
             dispatchId: data.id,
             dispatchNumber: data.dispatch_number,
             vehicleId: formData.vehicle_id,
+            vehicleReg: selectedVehicle.registration_number,
             driverId: formData.driver_id || null,
-            logDate: formData.scheduled_pickup
-              ? formData.scheduled_pickup.split("T")[0]
-              : new Date().toISOString().split("T")[0],
-            estimatedLitres: Math.round(suggestedFuel * 10) / 10,
-            actualLitres: String(Math.round(suggestedFuel * 10) / 10),
-            costPerLitre: "",
+            suggestedLitres: litres,
+            litresSource: litres != null ? source : null,
           });
-          setFuelConfirmOpen(true);
         }
       }
 
@@ -980,9 +1013,34 @@ const DispatchPage = () => {
           ? "Status updated and customer notified via email" 
           : "Status updated successfully",
       });
+      // Captured before the dialog state is cleared below, otherwise the
+      // post-trip check would never fire.
+      const deliveredDispatch = selectedDispatch;
+
       setIsStatusDialogOpen(false);
       setSelectedDispatch(null);
       setStatusUpdate({ status: "", location: "", notes: "", latitude: null, longitude: null });
+
+      // Delivered on an owned truck: open the post-trip check immediately.
+      // Until it is submitted the database gate keeps this vehicle locked out
+      // of new dispatches, so prompting at the moment of delivery is what
+      // stops the truck being stranded later.
+      if (statusUpdate.status === "delivered" && deliveredDispatch?.vehicle_id) {
+        const v = vehicles.find((x) => x.id === deliveredDispatch.vehicle_id);
+        if (v?.ownership_type === "owned") {
+          setTripCheck({
+            open: true,
+            type: "post_trip",
+            dispatchId: deliveredDispatch.id,
+            dispatchNumber: deliveredDispatch.dispatch_number,
+            vehicleId: deliveredDispatch.vehicle_id,
+            vehicleReg: v.registration_number,
+            driverId: (deliveredDispatch as any).driver_id ?? null,
+            suggestedLitres: null,
+            litresSource: null,
+          });
+        }
+      }
 
       // Record billable usage event when delivery completes (non-fatal)
       if (statusUpdate.status === "delivered" && organizationId) {
@@ -2625,6 +2683,22 @@ const DispatchPage = () => {
       </Dialog>
       </>
       )}
+    {tripCheck && (
+      <TripChecklistDialog
+        open={tripCheck.open}
+        onOpenChange={(open) => setTripCheck((t) => (t ? { ...t, open } : null))}
+        type={tripCheck.type}
+        vehicleId={tripCheck.vehicleId}
+        vehicleReg={tripCheck.vehicleReg}
+        dispatchId={tripCheck.dispatchId}
+        dispatchNumber={tripCheck.dispatchNumber}
+        driverId={tripCheck.driverId}
+        suggestedLitres={tripCheck.suggestedLitres}
+        litresSource={tripCheck.litresSource}
+        onComplete={() => { setTripCheck(null); fetchData(); }}
+      />
+    )}
+
     </DashboardLayout>
   );
 };

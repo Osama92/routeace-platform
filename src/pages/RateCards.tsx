@@ -44,6 +44,7 @@ interface RateCard {
   destination_lng: number | null;
   truck_type: string;
   rate_amount: number;
+  diesel_litres: number | null;
   is_net: boolean;
   description: string | null;
   status: "pending" | "approved" | "rejected" | "superseded";
@@ -70,6 +71,7 @@ const emptyForm = {
   destination_lng: null as number | null,
   truck_type: "",
   rate_amount: "",
+  diesel_litres: "",
   is_net: true,
   description: "",
 };
@@ -193,6 +195,7 @@ export default function RateCards() {
             destination_lng: form.destination_lng,
             truck_type: form.truck_type,
             rate_amount: amount,
+            diesel_litres: form.diesel_litres === "" ? null : Number(form.diesel_litres),
             is_net: form.is_net,
             description: form.description || null,
           })
@@ -214,6 +217,7 @@ export default function RateCards() {
         destination_lng: form.destination_lng,
         truck_type: form.truck_type,
         rate_amount: amount,
+        diesel_litres: form.diesel_litres === "" ? null : Number(form.diesel_litres),
         is_net: form.is_net,
         description: form.description || null,
       });
@@ -273,6 +277,7 @@ export default function RateCards() {
       destination_lng: r.destination_lng,
       truck_type: r.truck_type,
       rate_amount: String(r.rate_amount),
+      diesel_litres: r.diesel_litres != null ? String(r.diesel_litres) : "",
       is_net: r.is_net,
       description: r.description ?? "",
     });
@@ -512,6 +517,22 @@ export default function RateCards() {
                   placeholder="0"
                 />
               </div>
+            </div>
+
+            {/* Optional. Seeds the pre-trip fuel check on owned trucks; a lane
+                without it falls back to the distance-based estimate. */}
+            <div className="space-y-2">
+              <Label>Agreed diesel (litres)</Label>
+              <Input
+                type="number"
+                min={0}
+                value={form.diesel_litres}
+                onChange={(e) => setForm((f) => ({ ...f, diesel_litres: e.target.value }))}
+                placeholder="Leave blank to estimate from distance"
+              />
+              <p className="text-xs text-muted-foreground">
+                Used to pre-fill the pre-trip fuel check for your own trucks.
+              </p>
             </div>
 
             <div className="space-y-2">
