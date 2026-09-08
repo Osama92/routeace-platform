@@ -14,7 +14,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { AlertTriangle, Fuel, CheckCircle2, ShieldAlert } from "lucide-react";
+import { AlertTriangle, Fuel, CheckCircle2, ShieldAlert, Gauge } from "lucide-react";
 
 /**
  * The same 31 items the Fleet Inspection Engine has always used, kept
@@ -84,6 +84,11 @@ export default function TripChecklistDialog({
   // itself from the vehicle's current reading.
   const [costPerLitre, setCostPerLitre] = useState("");
   const [litres, setLitres] = useState("");
+  // Captured only at post-trip: this is the moment the truck has actually
+  // covered the journey, so the distance between pre-trip and post-trip
+  // odometer readings is real, not estimated. That distance is what turns the
+  // pre-trip's fuel log row into a genuine km/L figure.
+  const [odometer, setOdometer] = useState("");
   const [saving, setSaving] = useState(false);
 
   const isPre = type === "pre_trip";
@@ -94,6 +99,7 @@ export default function TripChecklistDialog({
       setNotes("");
       setCostPerLitre("");
       setLitres(suggestedLitres != null ? String(suggestedLitres) : "");
+      setOdometer("");
     }
   }, [open, suggestedLitres]);
 
@@ -164,7 +170,7 @@ export default function TripChecklistDialog({
           // honour this unless completed_at is set, which it is below.
           blocked_dispatch: criticalFailures.length > 0,
           completed_at: new Date().toISOString(),
-          odometer_reading: null,
+          odometer_reading: !isPre && odometer ? Number(odometer) : null,
           ...(isPre
             ? { diesel_litres_planned: Number(litres) }
             : { diesel_litres_actual: litres ? Number(litres) : null }),
@@ -254,6 +260,65 @@ export default function TripChecklistDialog({
         }
       }
 
+      // Post-trip: the odometer just captured is the ONLY point in this whole
+      // flow where real distance travelled is known. Fold it back into the
+      // fuel log the pre-trip created for this dispatch, so km_since_last_fill
+      // and km_per_litre are computed from an actual trip rather than left
+      // blank forever. Nothing writes these columns anywhere else in the app.
+      if (!isPre && odometer && dispatchId) {
+        const { data: preTripLog } = await supabase
+          .from("fuel_logs")
+          .select("id, odometer_reading")
+          .eq("dispatch_id", dispatchId)
+          .eq("vehicle_id", vehicleId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (preTripLog) {
+          const startOdo = Number((preTripLog as any).odometer_reading) || 0;
+          const endOdo = Number(odometer);
+          const distanceKm = endOdo - startOdo;
+
+          // A negative or zero distance means the reading is wrong (or the
+          // odometer wasn't actually advanced) — writing a nonsense km/L would
+          // be worse than leaving it blank, so this is skipped rather than
+          // forced.
+          if (distanceKm > 0) {
+            // km_per_litre is a GENERATED column on fuel_logs
+            // (round(km_since_last_fill / litres_dispensed, 2), computed by
+            // Postgres whenever both inputs are positive). Writing to it
+            // directly is rejected with "can only be updated to DEFAULT" —
+            // confirmed against production before this shipped. Only the
+            // distance is written; the database derives the rate itself.
+            const { error: kmplError } = await (supabase.from("fuel_logs") as any)
+              .update({ km_since_last_fill: distanceKm })
+              .eq("id", (preTripLog as any).id);
+
+            if (kmplError) {
+              toast({
+                title: "Fuel efficiency not updated",
+                description: `${kmplError.message}. The fuel log entry is unaffected.`,
+                variant: "destructive",
+              });
+            }
+          } else {
+            toast({
+              title: "Odometer reading looks off",
+              description: "It is not higher than the pre-trip reading, so km/L was left blank rather than recorded wrong.",
+            });
+          }
+        }
+
+        // Also carry the ending odometer onto the vehicle record, so the NEXT
+        // pre-trip's fuel log starts from a real reading instead of a stale
+        // one.
+        await supabase
+          .from("vehicles")
+          .update({ current_odometer: Number(odometer) })
+          .eq("id", vehicleId);
+      }
+
       qc.invalidateQueries({ queryKey: ["trip-compliance"] });
       qc.invalidateQueries({ queryKey: ["fuel-logs"] });
       onOpenChange(false);
@@ -309,24 +374,44 @@ export default function TripChecklistDialog({
                 </p>
               )}
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Price per litre (NGN)</Label>
-              <Input
-                type="number"
-                min={0}
-                value={costPerLitre}
-                onChange={(e) => setCostPerLitre(e.target.value)}
-                placeholder="e.g. 1600"
-              />
-              {Number(litres) > 0 && Number(costPerLitre) > 0 && (
+            {isPre ? (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Price per litre (NGN)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={costPerLitre}
+                  onChange={(e) => setCostPerLitre(e.target.value)}
+                  placeholder="e.g. 1600"
+                />
+                {Number(litres) > 0 && Number(costPerLitre) > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Total{" "}
+                    {new Intl.NumberFormat("en-NG", {
+                      style: "currency", currency: "NGN", maximumFractionDigits: 0,
+                    }).format(Number(litres) * Number(costPerLitre))}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5 text-xs">
+                  <Gauge className="w-3.5 h-3.5" />
+                  Odometer (km)
+                </Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={odometer}
+                  onChange={(e) => setOdometer(e.target.value)}
+                  placeholder="Current reading"
+                />
                 <p className="text-xs text-muted-foreground">
-                  Total{" "}
-                  {new Intl.NumberFormat("en-NG", {
-                    style: "currency", currency: "NGN", maximumFractionDigits: 0,
-                  }).format(Number(litres) * Number(costPerLitre))}
+                  Sets this trip's fuel efficiency (km/L) and starts the next
+                  pre-trip's reading.
                 </p>
-              )}
-            </div>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center justify-between">
