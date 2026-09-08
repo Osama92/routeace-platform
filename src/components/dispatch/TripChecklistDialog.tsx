@@ -78,7 +78,11 @@ export default function TripChecklistDialog({
 
   const [conditions, setConditions] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState("");
-  const [odometer, setOdometer] = useState("");
+  // Price per litre rather than odometer: the pre-trip is where diesel is
+  // actually issued, so the price is known at that moment and is what the
+  // fuel log needs to compute cost. Odometer is captured on the fuel log
+  // itself from the vehicle's current reading.
+  const [costPerLitre, setCostPerLitre] = useState("");
   const [litres, setLitres] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -88,7 +92,7 @@ export default function TripChecklistDialog({
     if (open) {
       setConditions({});
       setNotes("");
-      setOdometer("");
+      setCostPerLitre("");
       setLitres(suggestedLitres != null ? String(suggestedLitres) : "");
     }
   }, [open, suggestedLitres]);
@@ -160,7 +164,7 @@ export default function TripChecklistDialog({
           // honour this unless completed_at is set, which it is below.
           blocked_dispatch: criticalFailures.length > 0,
           completed_at: new Date().toISOString(),
-          odometer_reading: odometer ? Number(odometer) : null,
+          odometer_reading: null,
           ...(isPre
             ? { diesel_litres_planned: Number(litres) }
             : { diesel_litres_actual: litres ? Number(litres) : null }),
@@ -203,7 +207,55 @@ export default function TripChecklistDialog({
         });
       }
 
+      // The diesel issued at pre-trip IS a fuel fill-up, so it belongs in the
+      // fuel log rather than being recorded only on the inspection. Writing it
+      // here means Fuel Logs shows actual litres and price per litre without
+      // anyone entering the same numbers twice.
+      //
+      // organization_id and logged_by are set explicitly: the insert policy
+      // requires logged_by = auth.uid() AND org membership, so a row can only
+      // ever be written into the caller's own organisation.
+      if (isPre && Number(litres) > 0) {
+        const { data: veh } = await supabase
+          .from("vehicles")
+          .select("current_odometer")
+          .eq("id", vehicleId)
+          .maybeSingle();
+
+        const cpl = Number(costPerLitre) || null;
+        const { error: fuelError } = await (supabase.from("fuel_logs") as any).insert({
+          organization_id: organizationId,
+          vehicle_id: vehicleId,
+          driver_id: driverId || null,
+          logged_by: user?.id,
+          log_date: new Date().toISOString().split("T")[0],
+          // NOT NULL on fuel_logs. The pre-trip no longer asks for a reading,
+          // so the vehicle's last known odometer is carried forward rather
+          // than writing a fictitious 0.
+          odometer_reading: Number((veh as any)?.current_odometer ?? 0),
+          litres_dispensed: Number(litres),
+          cost_per_litre: cpl,
+          total_cost: cpl ? Number(litres) * cpl : null,
+          fuel_type: "diesel",
+          dispatch_id: dispatchId || null,
+          // A real issue at pre-trip, not a system estimate.
+          is_dispatch_estimate: false,
+        });
+
+        // Non-fatal: the inspection is the record that gates dispatch, and
+        // failing the whole check because a fuel row did not write would be
+        // the wrong trade. Surfaced so it is not lost silently.
+        if (fuelError) {
+          toast({
+            title: "Fuel log not recorded",
+            description: `${fuelError.message}. Add it manually under Fuel Logs.`,
+            variant: "destructive",
+          });
+        }
+      }
+
       qc.invalidateQueries({ queryKey: ["trip-compliance"] });
+      qc.invalidateQueries({ queryKey: ["fuel-logs"] });
       onOpenChange(false);
       // A grounded truck must not proceed to dispatch, so the caller is only
       // resumed when the check actually passed.
@@ -230,8 +282,8 @@ export default function TripChecklistDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Fuel and odometer first: they are the numbers most likely to be
-              forgotten once someone starts working through 31 checkboxes. */}
+          {/* Diesel first: it is what gets forgotten once someone starts
+              working through 31 checkboxes, and it feeds the fuel log. */}
           <div className="grid grid-cols-2 gap-3 rounded-lg border p-3 bg-secondary/30">
             <div className="space-y-1.5">
               <Label className="flex items-center gap-1.5 text-xs">
@@ -258,14 +310,22 @@ export default function TripChecklistDialog({
               )}
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Odometer (km)</Label>
+              <Label className="text-xs">Price per litre (NGN)</Label>
               <Input
                 type="number"
                 min={0}
-                value={odometer}
-                onChange={(e) => setOdometer(e.target.value)}
-                placeholder="Current reading"
+                value={costPerLitre}
+                onChange={(e) => setCostPerLitre(e.target.value)}
+                placeholder="e.g. 1600"
               />
+              {Number(litres) > 0 && Number(costPerLitre) > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Total{" "}
+                  {new Intl.NumberFormat("en-NG", {
+                    style: "currency", currency: "NGN", maximumFractionDigits: 0,
+                  }).format(Number(litres) * Number(costPerLitre))}
+                </p>
+              )}
             </div>
           </div>
 

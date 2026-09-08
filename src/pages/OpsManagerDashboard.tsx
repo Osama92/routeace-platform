@@ -418,7 +418,6 @@ const OpsManagerDashboardInner = () => {
                       <div className="text-center py-8 text-muted-foreground">
                         <Package className="w-8 h-8 mx-auto mb-2 opacity-40" />
                         <p className="text-sm">No active dispatches</p>
-                        <CreateDispatchDialog />
                       </div>
                     )}
                   </div>
@@ -581,7 +580,7 @@ const OpsManagerDashboardInner = () => {
                 <div className="text-center py-12 text-muted-foreground">
                   <Package className="w-10 h-10 mx-auto mb-2 opacity-40" />
                   <p>No active dispatches</p>
-                  <CreateDispatchDialog />
+                  <p className="text-sm mt-1">Use New Dispatch above to create one.</p>
                 </div>
               )}
             </CardContent>
