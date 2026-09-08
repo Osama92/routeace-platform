@@ -752,6 +752,59 @@ const DispatchPage = () => {
 
       const slaDeadline = computeSlaDeadline(formData.scheduled_pickup || null, formData.route_id || undefined);
 
+      // A pre-trip must EXIST before the dispatch does. Previously the
+      // dispatch was created and the checklist opened afterwards, so closing
+      // the dialog left a live trip with no check — which is what the gate
+      // was supposed to prevent. The database refuses the insert now, so this
+      // opens the checklist first and resumes once it is submitted.
+      if (formData.vehicle_id) {
+        const sv = vehicles.find(v => v.id === formData.vehicle_id);
+        if (sv?.ownership_type === "owned") {
+          const { data: ready } = await (supabase.rpc as any)("find_open_pretrip", {
+            p_vehicle_id: formData.vehicle_id,
+          });
+          if (!ready) {
+            let litres: number | null = null;
+            let source: "rate_card" | "estimate" | null = null;
+            try {
+              const { data: agreed } = await (supabase.rpc as any)("get_lane_diesel_litres", {
+                p_organization_id: organizationId,
+                p_customer_id: formData.customer_id,
+                p_pickup: formData.pickup_address,
+                p_destination: formData.delivery_address,
+                p_truck_type: (sv as any)?.truck_type ?? null,
+              });
+              if (agreed != null) { litres = Number(agreed); source = "rate_card"; }
+            } catch {
+              // Non-fatal: fall through to the distance estimate.
+            }
+            if (litres == null) {
+              const est = calculateSuggestedFuel(formData.vehicle_id, distanceKm ?? 0, returnTrip);
+              if (est > 0) { litres = Math.round(est * 10) / 10; source = "estimate"; }
+            }
+
+            // dispatchId is empty: the check stands against the VEHICLE and is
+            // claimed by the dispatch once it is created.
+            setTripCheck({
+              open: true,
+              type: "pre_trip",
+              dispatchId: "",
+              vehicleId: formData.vehicle_id,
+              vehicleReg: sv.registration_number,
+              driverId: formData.driver_id || null,
+              suggestedLitres: litres,
+              litresSource: source,
+            });
+            setSaving(false);
+            toast({
+              title: "Pre-trip check required",
+              description: `Complete the check for ${sv.registration_number} — the dispatch is created once it passes.`,
+            });
+            return;
+          }
+        }
+      }
+
       const insertData = {
         dispatch_number: `DSP-${Date.now()}`,
         organization_id: organizationId ?? null,
@@ -870,47 +923,6 @@ const DispatchPage = () => {
         }));
 
         await supabase.from("dispatch_dropoffs").insert(dropoffsToInsert);
-      }
-
-      // An OWNED truck now goes straight into its pre-trip check, which
-      // captures the diesel as part of the inspection rather than through a
-      // separate dismissible prompt. The database gate will refuse this
-      // truck's NEXT dispatch until the matching post-trip is completed.
-      if (data && formData.vehicle_id) {
-        const selectedVehicle = vehicles.find(v => v.id === formData.vehicle_id);
-        if (selectedVehicle?.ownership_type === "owned") {
-          // Prefer the lane's agreed litres; fall back to the distance
-          // estimate so the field is never blank on a route with no rate.
-          let litres: number | null = null;
-          let source: "rate_card" | "estimate" = "estimate";
-          try {
-            const { data: agreed } = await (supabase.rpc as any)("get_lane_diesel_litres", {
-              p_organization_id: organizationId,
-              p_customer_id: formData.customer_id,
-              p_pickup: formData.pickup_address,
-              p_destination: formData.delivery_address,
-              p_truck_type: (selectedVehicle as any)?.truck_type ?? null,
-            });
-            if (agreed != null) { litres = Number(agreed); source = "rate_card"; }
-          } catch {
-            // Non-fatal: fall through to the estimate.
-          }
-          if (litres == null && suggestedFuel && suggestedFuel > 0) {
-            litres = Math.round(suggestedFuel * 10) / 10;
-          }
-
-          setTripCheck({
-            open: true,
-            type: "pre_trip",
-            dispatchId: data.id,
-            dispatchNumber: data.dispatch_number,
-            vehicleId: formData.vehicle_id,
-            vehicleReg: selectedVehicle.registration_number,
-            driverId: formData.driver_id || null,
-            suggestedLitres: litres,
-            litresSource: litres != null ? source : null,
-          });
-        }
       }
 
       // Log the creation
@@ -2695,7 +2707,14 @@ const DispatchPage = () => {
         driverId={tripCheck.driverId}
         suggestedLitres={tripCheck.suggestedLitres}
         litresSource={tripCheck.litresSource}
-        onComplete={() => { setTripCheck(null); fetchData(); }}
+        onComplete={() => {
+          const wasPreTripBeforeCreate = tripCheck.type === "pre_trip" && !tripCheck.dispatchId;
+          setTripCheck(null);
+          fetchData();
+          // The pre-trip was filled to unlock creation, so finish the job the
+          // user actually started rather than making them fill the form again.
+          if (wasPreTripBeforeCreate) handleCreateDispatch();
+        }}
       />
     )}
 

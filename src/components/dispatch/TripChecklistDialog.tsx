@@ -45,6 +45,8 @@ interface Props {
   type: "pre_trip" | "post_trip";
   vehicleId: string;
   vehicleReg?: string;
+  /** Empty when the check is filled BEFORE the dispatch exists — the trip
+   *  then claims it on creation. */
   dispatchId: string;
   dispatchNumber?: string;
   driverId?: string | null;
@@ -147,7 +149,7 @@ export default function TripChecklistDialog({
         .insert({
           organization_id: organizationId,
           vehicle_id: vehicleId,
-          dispatch_id: dispatchId,
+          dispatch_id: dispatchId || null,
           driver_id: driverId || null,
           inspector_id: user?.id,
           inspection_type: type,
@@ -194,14 +196,18 @@ export default function TripChecklistDialog({
             criticalFailures.length > 0
               ? `${vehicleReg ?? "The vehicle"} is grounded on a safety-critical fault.`
               : isPre
-                ? `${Number(litres).toLocaleString()} L recorded. The truck is cleared for this trip.`
+                ? dispatchId
+                  ? `${Number(litres).toLocaleString()} L recorded. The truck is cleared for this trip.`
+                  : `${Number(litres).toLocaleString()} L recorded. Creating the dispatch...`
                 : `${vehicleReg ?? "The vehicle"} is released for its next trip.`,
         });
       }
 
       qc.invalidateQueries({ queryKey: ["trip-compliance"] });
       onOpenChange(false);
-      onComplete?.();
+      // A grounded truck must not proceed to dispatch, so the caller is only
+      // resumed when the check actually passed.
+      if (criticalFailures.length === 0) onComplete?.();
     } catch (e: any) {
       toast({ title: "Could not save", description: e?.message ?? "Unknown error", variant: "destructive" });
     } finally {

@@ -414,42 +414,53 @@ const CreateDispatchDialog = () => {
       };
       console.log("[CreateDispatch] Insert payload:", insertPayload);
 
+      // A pre-trip must exist BEFORE the dispatch. The database refuses the
+      // insert otherwise, so the checklist opens first and creation resumes
+      // when it passes.
+      if (form.vehicle_id) {
+        const sv = vehicles?.find((x: any) => x.id === form.vehicle_id);
+        if ((sv as any)?.ownership_type === "owned") {
+          const { data: ready } = await (supabase.rpc as any)("find_open_pretrip", {
+            p_vehicle_id: form.vehicle_id,
+          });
+          if (!ready) {
+            let litres: number | null = null;
+            let source: "rate_card" | "estimate" | null = null;
+            try {
+              const { data: agreed } = await (supabase.rpc as any)("get_lane_diesel_litres", {
+                p_organization_id: organizationId,
+                p_customer_id: form.customer_id || null,
+                p_pickup: form.pickup_address,
+                p_destination: form.delivery_address,
+                p_truck_type: (sv as any)?.truck_type ?? null,
+              });
+              if (agreed != null) { litres = Number(agreed); source = "rate_card"; }
+            } catch {
+              // Non-fatal: the operator types the litres in.
+            }
+            setTripCheck({
+              open: true,
+              dispatchId: "",
+              vehicleId: form.vehicle_id,
+              vehicleReg: (sv as any)?.registration_number,
+              driverId: form.driver_id || null,
+              suggestedLitres: litres,
+              litresSource: source,
+            });
+            setSaving(false);
+            toast({
+              title: "Pre-trip check required",
+              description: `Complete the check for ${(sv as any)?.registration_number} — the dispatch follows once it passes.`,
+            });
+            return;
+          }
+        }
+      }
+
       const { data: disp, error } = await supabase.from("dispatches").insert([insertPayload as any]).select("id").single();
       console.log("[CreateDispatch] Insert result:", { disp, error });
 
       if (error) throw error;
-
-      // Owned truck: open the pre-trip check, mirroring /dispatch. Without
-      // this the checklist never gets a dispatch_id, so no post-trip is owed
-      // and the vehicle lock cannot engage.
-      if (disp?.id && form.vehicle_id) {
-        const v = vehicles?.find((x: any) => x.id === form.vehicle_id);
-        if ((v as any)?.ownership_type === "owned") {
-          let litres: number | null = null;
-          let source: "rate_card" | "estimate" | null = null;
-          try {
-            const { data: agreed } = await (supabase.rpc as any)("get_lane_diesel_litres", {
-              p_organization_id: organizationId,
-              p_customer_id: form.customer_id || null,
-              p_pickup: form.pickup_address,
-              p_destination: form.delivery_address,
-              p_truck_type: (v as any)?.truck_type ?? null,
-            });
-            if (agreed != null) { litres = Number(agreed); source = "rate_card"; }
-          } catch {
-            // Non-fatal: the operator enters the litres by hand.
-          }
-          setTripCheck({
-            open: true,
-            dispatchId: disp.id,
-            vehicleId: form.vehicle_id,
-            vehicleReg: (v as any)?.registration_number,
-            driverId: form.driver_id || null,
-            suggestedLitres: litres,
-            litresSource: source,
-          });
-        }
-      }
 
       // Audit an override of the inspection safety gate.
       if (blockedOverrideRef.current && disp?.id) {
@@ -782,7 +793,7 @@ const CreateDispatchDialog = () => {
         driverId={tripCheck.driverId}
         suggestedLitres={tripCheck.suggestedLitres}
         litresSource={tripCheck.litresSource}
-        onComplete={() => setTripCheck(null)}
+        onComplete={() => { setTripCheck(null); handleSubmit(); }}
       />
     )}
     </>
