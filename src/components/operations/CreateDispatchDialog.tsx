@@ -10,6 +10,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import TripChecklistDialog from "@/components/dispatch/TripChecklistDialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { Plus, Loader2, Route, ArrowLeftRight, ArrowRight, ChevronsUpDown, Check } from "lucide-react";
 import { isQuotaError, emitQuotaExceeded, resourceFromError } from "@/lib/quotaErrors";
@@ -24,6 +25,19 @@ const CreateDispatchDialog = () => {
   // Holds the id of a blocking inspection the user chose to override, so the
   // decision can be recorded against them in dispatch_safety_gates.
   const blockedOverrideRef = useRef<string | null>(null);
+  // Pre-trip check for owned trucks. This dialog is the dispatch path used
+  // from the Ops Manager and Dept dashboards; without this it created
+  // dispatches with no checklist at all, so no post-trip was ever owed and
+  // the vehicle lock could never engage.
+  const [tripCheck, setTripCheck] = useState<{
+    open: boolean;
+    dispatchId: string;
+    vehicleId: string;
+    vehicleReg?: string;
+    driverId?: string | null;
+    suggestedLitres?: number | null;
+    litresSource?: "rate_card" | "estimate" | null;
+  } | null>(null);
   const [returnTrip, setReturnTrip] = useState(false);
   const [routeComboOpen, setRouteComboOpen] = useState(false);
   const [customerComboOpen, setCustomerComboOpen] = useState(false);
@@ -151,12 +165,12 @@ const CreateDispatchDialog = () => {
       if (!organizationId) return [];
       const [orgRes, nullRes] = await Promise.all([
         supabase.from("vehicles")
-          .select("id, registration_number, truck_type, vehicle_type, status")
+          .select("id, registration_number, truck_type, vehicle_type, status, ownership_type")
           .eq("organization_id", organizationId)
           .eq("status", "available")
           .order("registration_number"),
         supabase.from("vehicles")
-          .select("id, registration_number, truck_type, vehicle_type, status")
+          .select("id, registration_number, truck_type, vehicle_type, status, ownership_type")
           .is("organization_id", null)
           .eq("status", "available")
           .order("registration_number"),
@@ -405,6 +419,38 @@ const CreateDispatchDialog = () => {
 
       if (error) throw error;
 
+      // Owned truck: open the pre-trip check, mirroring /dispatch. Without
+      // this the checklist never gets a dispatch_id, so no post-trip is owed
+      // and the vehicle lock cannot engage.
+      if (disp?.id && form.vehicle_id) {
+        const v = vehicles?.find((x: any) => x.id === form.vehicle_id);
+        if ((v as any)?.ownership_type === "owned") {
+          let litres: number | null = null;
+          let source: "rate_card" | "estimate" | null = null;
+          try {
+            const { data: agreed } = await (supabase.rpc as any)("get_lane_diesel_litres", {
+              p_organization_id: organizationId,
+              p_customer_id: form.customer_id || null,
+              p_pickup: form.pickup_address,
+              p_destination: form.delivery_address,
+              p_truck_type: (v as any)?.truck_type ?? null,
+            });
+            if (agreed != null) { litres = Number(agreed); source = "rate_card"; }
+          } catch {
+            // Non-fatal: the operator enters the litres by hand.
+          }
+          setTripCheck({
+            open: true,
+            dispatchId: disp.id,
+            vehicleId: form.vehicle_id,
+            vehicleReg: (v as any)?.registration_number,
+            driverId: form.driver_id || null,
+            suggestedLitres: litres,
+            litresSource: source,
+          });
+        }
+      }
+
       // Audit an override of the inspection safety gate.
       if (blockedOverrideRef.current && disp?.id) {
         await supabase.from("dispatch_safety_gates").insert({
@@ -464,6 +510,7 @@ const CreateDispatchDialog = () => {
   };
 
   return (
+    <>
     <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
       <DialogTrigger asChild>
         <Button size="sm"><Plus className="w-3 h-3 mr-1" />New Dispatch</Button>
@@ -723,6 +770,22 @@ const CreateDispatchDialog = () => {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    {tripCheck && (
+      <TripChecklistDialog
+        open={tripCheck.open}
+        onOpenChange={(o) => setTripCheck((t) => (t ? { ...t, open: o } : null))}
+        type="pre_trip"
+        vehicleId={tripCheck.vehicleId}
+        vehicleReg={tripCheck.vehicleReg}
+        dispatchId={tripCheck.dispatchId}
+        driverId={tripCheck.driverId}
+        suggestedLitres={tripCheck.suggestedLitres}
+        litresSource={tripCheck.litresSource}
+        onComplete={() => setTripCheck(null)}
+      />
+    )}
+    </>
   );
 };
 
