@@ -26,7 +26,6 @@ import FleetKPIPanel from "@/components/fleet/FleetKPIPanel";
 import OrderIntakeEngine from "@/components/operations/OrderIntakeEngine";
 import WaybillEngine from "@/components/operations/WaybillEngine";
 import OpsOnboardingChecklist from "@/components/operations/OpsOnboardingChecklist";
-import CreateDispatchDialog from "@/components/operations/CreateDispatchDialog";
 import {
   Truck, Users, Package, AlertTriangle, CheckCircle, Clock, MapPin,
   Wrench, TrendingUp, FileText, RefreshCw, Shield, Brain, Gauge,
@@ -350,7 +349,6 @@ const OpsManagerDashboardInner = () => {
 
       {/* Quick Actions */}
       <div className="flex flex-wrap gap-2 mb-6">
-        <CreateDispatchDialog />
         <Button size="sm" variant="outline" onClick={() => navigate("/drivers")}><Users className="w-3 h-3 mr-1" />Add Driver</Button>
         <Button size="sm" variant="outline" onClick={() => navigate("/fleet")}><Truck className="w-3 h-3 mr-1" />Add Fleet</Button>
         <Button size="sm" variant="outline" onClick={() => navigate("/advanced-route-planner")}><Route className="w-3 h-3 mr-1" />Plan Route</Button>
@@ -580,7 +578,6 @@ const OpsManagerDashboardInner = () => {
                 <div className="text-center py-12 text-muted-foreground">
                   <Package className="w-10 h-10 mx-auto mb-2 opacity-40" />
                   <p>No active dispatches</p>
-                  <p className="text-sm mt-1">Use New Dispatch above to create one.</p>
                 </div>
               )}
             </CardContent>
