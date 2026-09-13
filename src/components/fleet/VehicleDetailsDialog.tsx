@@ -194,9 +194,11 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange, initialTab = "overv
 
     setSaving(true);
     try {
-      // log_vehicle_repair() writes the repair AND books the expense in one
-      // call, so the workshop record and the money cannot drift apart. It
-      // also rejects vendor-owned trucks.
+      // log_vehicle_repair() records the repair and leaves it 'pending' — it
+      // does NOT book an expense. That only happens when a super admin
+      // approves it (approve_vehicle_repair), which is what makes the
+      // approval trail mean something: an unapproved repair is not yet money
+      // in the accounts. It still rejects vendor-owned trucks.
       const partsCost = parseFloat(repairForm.parts_cost || "0") || 0;
       const labourCost = parseFloat(repairForm.labour_cost || "0") || 0;
 
@@ -218,10 +220,10 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange, initialTab = "overv
       if (error) throw error;
 
       toast({
-        title: "Repair logged",
+        title: "Repair logged — awaiting approval",
         description: partsCost + labourCost > 0
-          ? `${formatCurrency(partsCost + labourCost)} also booked to expenses.`
-          : "No cost recorded, so nothing was booked to expenses.",
+          ? `${formatCurrency(partsCost + labourCost)} will book to expenses once a super admin approves it.`
+          : "No cost recorded.",
       });
       setShowRepairForm(false);
       setRepairForm(emptyRepairForm);

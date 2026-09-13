@@ -41,8 +41,19 @@ const fmt = (n: number) =>
  *
  * The reviewer needs the parts/labour split and the odometer to judge whether
  * a figure is reasonable, so the row shows them rather than a bare total.
+ *
+ * readOnly: Finance can see this same list (what's logged, what it'll cost
+ * once approved) without the Approve/Reject buttons — approval stays
+ * super-admin-only. One component, not a copy, so the two views cannot drift
+ * apart the way the fuel/pre-trip dialogs once did.
  */
-const RepairApprovalQueue = ({ organizationId }: { organizationId?: string | null }) => {
+const RepairApprovalQueue = ({
+  organizationId,
+  readOnly = false,
+}: {
+  organizationId?: string | null;
+  readOnly?: boolean;
+}) => {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -108,10 +119,12 @@ const RepairApprovalQueue = ({ organizationId }: { organizationId?: string | nul
           <div>
             <CardTitle className="text-base flex items-center gap-2">
               <Wrench className="w-4 h-4 text-primary" />
-              Repair Approvals
+              {readOnly ? "Pending Repair Costs" : "Repair Approvals"}
             </CardTitle>
             <CardDescription>
-              Workshop costs on owned trucks. Nothing is booked to expenses until approved.
+              {readOnly
+                ? "Workshop costs on owned trucks, awaiting a super admin's approval before they book to expenses."
+                : "Workshop costs on owned trucks. Nothing is booked to expenses until approved."}
             </CardDescription>
           </div>
           {pending.length > 0 && (
@@ -194,30 +207,33 @@ const RepairApprovalQueue = ({ organizationId }: { organizationId?: string | nul
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={busyId === r.id}
-                    onClick={() => decide.mutate({ id: r.id, action: "reject" })}
-                  >
-                    <X className="w-4 h-4 mr-1" />
-                    Reject
-                  </Button>
-                  <Button
-                    size="sm"
-                    disabled={busyId === r.id}
-                    onClick={() => decide.mutate({ id: r.id, action: "approve" })}
-                  >
-                    <Check className="w-4 h-4 mr-1" />
-                    Approve
-                  </Button>
-                </div>
+                {!readOnly && (
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busyId === r.id}
+                      onClick={() => decide.mutate({ id: r.id, action: "reject" })}
+                    >
+                      <X className="w-4 h-4 mr-1" />
+                      Reject
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={busyId === r.id}
+                      onClick={() => decide.mutate({ id: r.id, action: "approve" })}
+                    >
+                      <Check className="w-4 h-4 mr-1" />
+                      Approve
+                    </Button>
+                  </div>
+                )}
               </div>
             ))}
 
             <p className="text-xs text-muted-foreground flex items-start gap-1.5 pt-1">
               <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              {readOnly && "Visible here for awareness — only a super admin can approve or reject. "}
               Approving books the cost to expenses against the vehicle and counts it
               toward fleet spend. Rejecting books nothing.
             </p>

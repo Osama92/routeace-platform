@@ -24,9 +24,10 @@ import FinanceKPIIntelligence from "@/components/finance/FinanceKPIIntelligence"
 import PAYECalculator from "@/components/finance/PAYECalculator";
 import FinanceIntelligenceEngine from "@/components/finance/FinanceIntelligenceEngine";
 import DispatchFinanceQueue from "@/components/finance/DispatchFinanceQueue";
+import RepairApprovalQueue from "@/components/approvals/RepairApprovalQueue";
 import {
   FileText, CreditCard, Wallet, Download, RefreshCw, CheckCircle,
-  Clock, TrendingUp, AlertTriangle, Plus, Send, BarChart3, Brain, Activity, Truck
+  Clock, TrendingUp, AlertTriangle, Plus, Send, BarChart3, Brain, Activity, Truck, Wrench
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -157,6 +158,7 @@ const FinanceManagerDashboardInner = () => {
           <TabsTrigger value="intelligence" className="gap-1"><Brain className="w-3.5 h-3.5" />Intelligence Engine</TabsTrigger>
           <TabsTrigger value="kpi-intel" className="gap-1"><Activity className="w-3.5 h-3.5" />KPI Suite</TabsTrigger>
           <TabsTrigger value="dispatch-finance" className="gap-1"><Truck className="w-3.5 h-3.5" />Dispatch Finance</TabsTrigger>
+          <TabsTrigger value="repairs" className="gap-1"><Wrench className="w-3.5 h-3.5" />Vehicle Repairs</TabsTrigger>
           <TabsTrigger value="invoices">Invoices</TabsTrigger>
           <TabsTrigger value="insights">Revenue Insights</TabsTrigger>
           <TabsTrigger value="assets">Asset Profitability</TabsTrigger>
@@ -167,6 +169,10 @@ const FinanceManagerDashboardInner = () => {
 
         <TabsContent value="dispatch-finance">
           <DispatchFinanceQueue />
+        </TabsContent>
+
+        <TabsContent value="repairs">
+          <RepairApprovalQueue organizationId={organizationId} readOnly />
         </TabsContent>
 
         {/* Intelligence Engine Tab - PRIMARY */}
