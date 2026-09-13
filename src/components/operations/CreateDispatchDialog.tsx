@@ -18,7 +18,11 @@ import { AddressAutocomplete } from "@/components/shared/AddressAutocomplete";
 
 const CreateDispatchDialog = () => {
   const { toast } = useToast();
-  const { user, organizationId } = useAuth();
+  const { user, organizationId, hasAnyRole } = useAuth();
+  // Mirrors src/pages/Dispatch.tsx — the two dispatch-creation surfaces must
+  // agree on who auto-approves, otherwise the same role gets a different
+  // outcome depending on which dashboard they dispatched from.
+  const isAdmin = hasAnyRole(["admin", "super_admin", "org_admin", "ops_manager"]);
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -411,6 +415,9 @@ const CreateDispatchDialog = () => {
         status: form.driver_id || form.transporter_id ? "assigned" : "pending",
         created_by: user?.id,
         submitted_by: user?.id,
+        approval_status: isAdmin ? "approved" : "pending",
+        approved_by: isAdmin ? user?.id : null,
+        approved_at: isAdmin ? new Date().toISOString() : null,
       };
       console.log("[CreateDispatch] Insert payload:", insertPayload);
 
@@ -501,7 +508,9 @@ const CreateDispatchDialog = () => {
         } catch (e) { console.warn("transporter notify failed", e); }
       }
 
-      toast({ title: "Dispatch created", description: "New dispatch has been created successfully" });
+      toast(isAdmin
+        ? { title: "Dispatch created", description: "New dispatch has been created successfully" }
+        : { title: "Dispatch created — pending approval", description: "An admin, org admin or ops manager must approve it before it can proceed." });
       queryClient.invalidateQueries({ queryKey: ["ops-dispatches"] });
       queryClient.invalidateQueries({ queryKey: ["ops-today-dispatches"] });
       queryClient.invalidateQueries({ queryKey: ["waybill-dispatches"] });
