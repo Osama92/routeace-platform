@@ -140,6 +140,12 @@ export default function RateCards() {
   };
 
   const canEdit = hasAnyRole(["finance_manager", "org_admin", "admin", "super_admin"]);
+  // Narrower than canEdit on purpose: the rate_cards_finance_delete RLS
+  // policy only allows super_admin and finance_manager to delete — org_admin
+  // and admin can still edit/propose changes, just not delete. Kept in sync
+  // with that policy so the button doesn't appear for a role the DB will
+  // reject.
+  const canDelete = hasAnyRole(["finance_manager", "super_admin"]);
 
   const { data: rates = [], isLoading } = useQuery({
     queryKey: ["rate-cards", organizationId],
@@ -444,7 +450,7 @@ export default function RateCards() {
                                     <Button variant="ghost" size="sm" onClick={() => openEdit(r)}>
                                       <Edit className="w-4 h-4" />
                                     </Button>
-                                    {r.status !== "approved" && (
+                                    {r.status !== "approved" && canDelete && (
                                       <Button
                                         variant="ghost"
                                         size="sm"
