@@ -26,7 +26,7 @@ import { AddressAutocomplete } from "@/components/shared/AddressAutocomplete";
 import RateCardUpload from "@/components/ratecard/RateCardUpload";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Plus, Edit, Trash2, ArrowRight, Building2, Truck, Clock, CheckCircle2, XCircle, AlertTriangle,
+  Plus, Edit, Trash2, ArrowRight, Building2, Truck, Clock, CheckCircle2, XCircle, AlertTriangle, Loader2,
 } from "lucide-react";
 
 const TRUCK_TYPES = ["3T", "5T", "10T", "15T", "20T", "30T", "45T", "60T"];
@@ -104,6 +104,40 @@ export default function RateCards() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<RateCard | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [calculatingDistance, setCalculatingDistance] = useState(false);
+
+  // Fires as soon as both ends of the lane have coordinates — picking a
+  // place from the autocomplete, not every keystroke. Uses the same
+  // calculate-route-distance edge function Routes.tsx uses, with no
+  // waypoints, so it returns a single one-way point-to-point figure — the
+  // same convention rate_cards.distance_km is stored in.
+  const autoCalculateDistance = async (
+    pickup: { address: string; lat: number | null; lng: number | null },
+    destination: { address: string; lat: number | null; lng: number | null },
+  ) => {
+    if (pickup.lat == null || pickup.lng == null || destination.lat == null || destination.lng == null) return;
+    setCalculatingDistance(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("calculate-route-distance", {
+        body: {
+          origin: { location_name: "Pickup", address: pickup.address, latitude: pickup.lat, longitude: pickup.lng },
+          destination: { location_name: "Destination", address: destination.address, latitude: destination.lat, longitude: destination.lng },
+        },
+      });
+      if (error) throw error;
+      if (data?.total_distance_km != null) {
+        setForm((f) => ({ ...f, distance_km: String(data.total_distance_km) }));
+      }
+    } catch (e: any) {
+      toast({
+        title: "Could not auto-calculate distance",
+        description: e?.message ?? "Enter it manually below.",
+        variant: "destructive",
+      });
+    } finally {
+      setCalculatingDistance(false);
+    }
+  };
 
   const canEdit = hasAnyRole(["finance_manager", "org_admin", "admin", "super_admin"]);
 
@@ -475,9 +509,13 @@ export default function RateCards() {
               <AddressAutocomplete
                 value={form.pickup_address}
                 onChange={(v) => setForm((f) => ({ ...f, pickup_address: v }))}
-                onPlaceSelect={(d) =>
-                  setForm((f) => ({ ...f, pickup_address: d.formattedAddress, pickup_lat: d.lat, pickup_lng: d.lng }))
-                }
+                onPlaceSelect={(d) => {
+                  setForm((f) => ({ ...f, pickup_address: d.formattedAddress, pickup_lat: d.lat, pickup_lng: d.lng }));
+                  autoCalculateDistance(
+                    { address: d.formattedAddress, lat: d.lat, lng: d.lng },
+                    { address: form.destination_address, lat: form.destination_lat, lng: form.destination_lng },
+                  );
+                }}
                 placeholder="Start typing a pickup location..."
                 disabled={!!editing}
               />
@@ -488,9 +526,13 @@ export default function RateCards() {
               <AddressAutocomplete
                 value={form.destination_address}
                 onChange={(v) => setForm((f) => ({ ...f, destination_address: v }))}
-                onPlaceSelect={(d) =>
-                  setForm((f) => ({ ...f, destination_address: d.formattedAddress, destination_lat: d.lat, destination_lng: d.lng }))
-                }
+                onPlaceSelect={(d) => {
+                  setForm((f) => ({ ...f, destination_address: d.formattedAddress, destination_lat: d.lat, destination_lng: d.lng }));
+                  autoCalculateDistance(
+                    { address: form.pickup_address, lat: form.pickup_lat, lng: form.pickup_lng },
+                    { address: d.formattedAddress, lat: d.lat, lng: d.lng },
+                  );
+                }}
                 placeholder="Start typing a destination..."
                 disabled={!!editing}
               />
@@ -524,20 +566,29 @@ export default function RateCards() {
               </div>
             </div>
 
-            {/* Optional. Seeds dispatch distance and the fuel estimate when no
-                saved route matches this lane. ONE-WAY — the dispatch form's
-                own return-trip toggle doubles it, same as manual entry. */}
+            {/* Auto-calculated from pickup/destination via Google (same
+                calculate-route-distance function Routes.tsx uses) as soon as
+                both are picked from the autocomplete. Still editable — a
+                dispatcher can override it. Seeds dispatch distance and the
+                fuel estimate when no saved route matches this lane. ONE-WAY —
+                the dispatch form's own return-trip toggle doubles it. */}
             <div className="space-y-2">
               <Label>Distance (km, one-way)</Label>
-              <Input
-                type="number"
-                min={0}
-                value={form.distance_km}
-                onChange={(e) => setForm((f) => ({ ...f, distance_km: e.target.value }))}
-                placeholder="Leave blank to use a saved route or manual entry"
-              />
+              <div className="relative">
+                <Input
+                  type="number"
+                  min={0}
+                  value={form.distance_km}
+                  onChange={(e) => setForm((f) => ({ ...f, distance_km: e.target.value }))}
+                  placeholder={calculatingDistance ? "Calculating from Google Maps…" : "Auto-fills once pickup and destination are set"}
+                  disabled={calculatingDistance}
+                />
+                {calculatingDistance && (
+                  <Loader2 className="w-4 h-4 animate-spin absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                )}
+              </div>
               <p className="text-xs text-muted-foreground">
-                One-way only — dispatch doubles it for a return trip. Pre-fills dispatch distance and the fuel estimate.
+                Calculated automatically by Google once both addresses are picked — one-way, edit if needed. Dispatch doubles it for a return trip.
               </p>
             </div>
 
