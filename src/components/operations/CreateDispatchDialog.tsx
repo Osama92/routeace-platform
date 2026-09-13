@@ -19,10 +19,10 @@ import { AddressAutocomplete } from "@/components/shared/AddressAutocomplete";
 const CreateDispatchDialog = () => {
   const { toast } = useToast();
   const { user, organizationId, hasAnyRole } = useAuth();
-  // Mirrors src/pages/Dispatch.tsx — the two dispatch-creation surfaces must
-  // agree on who auto-approves, otherwise the same role gets a different
-  // outcome depending on which dashboard they dispatched from.
-  const isAdmin = hasAnyRole(["admin", "super_admin", "org_admin", "ops_manager"]);
+  // Mirrors src/pages/Dispatch.tsx — only a super admin's own dispatch skips
+  // the approval queue. admin/org_admin/ops_manager can still manage
+  // dispatches, but their own creations need sign-off like anyone else's.
+  const canAutoApprove = hasAnyRole(["super_admin"]);
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -415,9 +415,9 @@ const CreateDispatchDialog = () => {
         status: form.driver_id || form.transporter_id ? "assigned" : "pending",
         created_by: user?.id,
         submitted_by: user?.id,
-        approval_status: isAdmin ? "approved" : "pending",
-        approved_by: isAdmin ? user?.id : null,
-        approved_at: isAdmin ? new Date().toISOString() : null,
+        approval_status: canAutoApprove ? "approved" : "pending",
+        approved_by: canAutoApprove ? user?.id : null,
+        approved_at: canAutoApprove ? new Date().toISOString() : null,
       };
       console.log("[CreateDispatch] Insert payload:", insertPayload);
 
@@ -508,9 +508,9 @@ const CreateDispatchDialog = () => {
         } catch (e) { console.warn("transporter notify failed", e); }
       }
 
-      toast(isAdmin
+      toast(canAutoApprove
         ? { title: "Dispatch created", description: "New dispatch has been created successfully" }
-        : { title: "Dispatch created — pending approval", description: "An admin, org admin or ops manager must approve it before it can proceed." });
+        : { title: "Dispatch created — pending approval", description: "A super admin must approve it before it can proceed." });
       queryClient.invalidateQueries({ queryKey: ["ops-dispatches"] });
       queryClient.invalidateQueries({ queryKey: ["ops-today-dispatches"] });
       queryClient.invalidateQueries({ queryKey: ["waybill-dispatches"] });

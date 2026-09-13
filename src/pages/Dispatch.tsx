@@ -230,6 +230,11 @@ const DispatchPage = () => {
   const { logChange } = useAuditLog();
 
   const isAdmin = hasAnyRole(["admin", "super_admin", "org_admin", "ops_manager"]);
+  // Narrower than isAdmin on purpose: only a super admin's own dispatch skips
+  // the approval queue. admin/org_admin/ops_manager can still act on and move
+  // dispatches (that's what isAdmin gates elsewhere), but their own creations
+  // go through the same "Submit for Approval" step as anyone else's.
+  const canAutoApprove = hasAnyRole(["super_admin"]);
   const { canApprove: canApproveDispatch } = useApprovalPolicy("dispatch");
 
   const [formData, setFormData] = useState({
@@ -822,10 +827,10 @@ const DispatchPage = () => {
         return_distance_km: returnTrip ? distanceKm : null,
         total_distance_km: totalDistanceKm,
         suggested_fuel_liters: suggestedFuel,
-        approval_status: isAdmin ? "approved" : "pending",
+        approval_status: canAutoApprove ? "approved" : "pending",
         submitted_by: user?.id,
-        approved_by: isAdmin ? user?.id : null,
-        approved_at: isAdmin ? new Date().toISOString() : null,
+        approved_by: canAutoApprove ? user?.id : null,
+        approved_at: canAutoApprove ? new Date().toISOString() : null,
         created_by: user?.id,
         sla_deadline: slaDeadline,
         sla_policy_id: defaultSlaPolicy?.id ?? null,
@@ -935,10 +940,9 @@ const DispatchPage = () => {
         });
       }
 
-      toast({
-        title: "Success",
-        description: "Dispatch created successfully",
-      });
+      toast(canAutoApprove
+        ? { title: "Success", description: "Dispatch created successfully" }
+        : { title: "Dispatch created — pending approval", description: "A super admin must approve it before it can proceed." });
       setIsDialogOpen(false);
       setFormData({
         customer_id: "",
