@@ -45,6 +45,7 @@ interface RateCard {
   truck_type: string;
   rate_amount: number;
   diesel_litres: number | null;
+  distance_km: number | null;
   is_net: boolean;
   description: string | null;
   status: "pending" | "approved" | "rejected" | "superseded";
@@ -72,6 +73,7 @@ const emptyForm = {
   truck_type: "",
   rate_amount: "",
   diesel_litres: "",
+  distance_km: "",
   is_net: true,
   description: "",
 };
@@ -196,6 +198,7 @@ export default function RateCards() {
             truck_type: form.truck_type,
             rate_amount: amount,
             diesel_litres: form.diesel_litres === "" ? null : Number(form.diesel_litres),
+            distance_km: form.distance_km === "" ? null : Number(form.distance_km),
             is_net: form.is_net,
             description: form.description || null,
           })
@@ -218,6 +221,7 @@ export default function RateCards() {
         truck_type: form.truck_type,
         rate_amount: amount,
         diesel_litres: form.diesel_litres === "" ? null : Number(form.diesel_litres),
+        distance_km: form.distance_km === "" ? null : Number(form.distance_km),
         is_net: form.is_net,
         description: form.description || null,
       });
@@ -278,6 +282,7 @@ export default function RateCards() {
       truck_type: r.truck_type,
       rate_amount: String(r.rate_amount),
       diesel_litres: r.diesel_litres != null ? String(r.diesel_litres) : "",
+      distance_km: r.distance_km != null ? String(r.distance_km) : "",
       is_net: r.is_net,
       description: r.description ?? "",
     });
@@ -517,6 +522,23 @@ export default function RateCards() {
                   placeholder="0"
                 />
               </div>
+            </div>
+
+            {/* Optional. Seeds dispatch distance and the fuel estimate when no
+                saved route matches this lane. ONE-WAY — the dispatch form's
+                own return-trip toggle doubles it, same as manual entry. */}
+            <div className="space-y-2">
+              <Label>Distance (km, one-way)</Label>
+              <Input
+                type="number"
+                min={0}
+                value={form.distance_km}
+                onChange={(e) => setForm((f) => ({ ...f, distance_km: e.target.value }))}
+                placeholder="Leave blank to use a saved route or manual entry"
+              />
+              <p className="text-xs text-muted-foreground">
+                One-way only — dispatch doubles it for a return trip. Pre-fills dispatch distance and the fuel estimate.
+              </p>
             </div>
 
             {/* Optional. Seeds the pre-trip fuel check on owned trucks; a lane

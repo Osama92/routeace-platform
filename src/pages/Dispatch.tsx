@@ -1549,9 +1549,17 @@ const DispatchPage = () => {
                           // toggle, the fuel card, cost per km — expects ONE
                           // WAY, so halve it here at the single point where a
                           // route becomes a dispatch.
+                          //
+                          // No matched route: fall back to the rate card
+                          // lane's OWN distance_km, which — unlike
+                          // routes.distance_km — is already one-way (see the
+                          // migration comment on rate_cards.distance_km), so
+                          // it needs no halving here.
                           distance_km: matched?.distance_km
                             ? String(Number(matched.distance_km) / 2)
-                            : prev.distance_km,
+                            : lane?.distance_km != null
+                              ? String(Number(lane.distance_km))
+                              : prev.distance_km,
                         }));
                       }}
                     >

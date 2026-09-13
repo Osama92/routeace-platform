@@ -392,6 +392,31 @@ const CreateDispatchDialog = () => {
         return;
       }
 
+      // No distance typed or pulled from the route library yet: fall back to
+      // the rate card lane's own distance_km. That column is already ONE-WAY
+      // (unlike routes.distance_km, which is round-trip) so it is used as-is
+      // — this form's own returnTrip toggle below still does the doubling,
+      // exactly like it does for a hand-typed distance.
+      let effectiveOneWayKm = oneWayKm;
+      if (effectiveOneWayKm == null && form.pickup_address && form.delivery_address) {
+        try {
+          const sv = vehicles?.find((x: any) => x.id === form.vehicle_id);
+          const { data: laneKm } = await (supabase.rpc as any)("get_lane_distance_km", {
+            p_organization_id: organizationId,
+            p_customer_id: form.customer_id || null,
+            p_pickup: form.pickup_address,
+            p_destination: form.delivery_address,
+            p_truck_type: (sv as any)?.truck_type ?? null,
+          });
+          if (laneKm != null) effectiveOneWayKm = Number(laneKm);
+        } catch {
+          // Non-fatal: the operator types the distance in.
+        }
+      }
+      const effectiveTotalKm = effectiveOneWayKm != null
+        ? (returnTrip ? effectiveOneWayKm * 2 : effectiveOneWayKm)
+        : null;
+
       const insertPayload = {
         dispatch_number: `DSP-${Date.now()}`,
         organization_id: organizationId,
@@ -406,9 +431,9 @@ const CreateDispatchDialog = () => {
         vehicle_id: form.vehicle_id || null,
         driver_id: form.driver_id || null,
         transporter_id: form.transporter_id || null,
-        distance_km: oneWayKm,
-        return_distance_km: returnTrip ? oneWayKm : null,
-        total_distance_km: totalKm,
+        distance_km: effectiveOneWayKm,
+        return_distance_km: returnTrip ? effectiveOneWayKm : null,
+        total_distance_km: effectiveTotalKm,
         suggested_fuel_liters: dieselNum,
         total_drops: 1 + extraDrops.filter((d) => d.address).length,
         cost: costValue,
