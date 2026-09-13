@@ -397,7 +397,26 @@ function FuelLogs({ orgId }: { orgId: string }) {
     },
   });
   const [open, setOpen] = useState(false);
-  const [f, setF] = useState<any>({ vehicle_id: "", log_date: new Date().toISOString().split("T")[0], odometer_reading: "", litres_dispensed: "", cost_per_litre: "", fuel_station: "", receipt_number: "", fuel_type: "diesel", km_since_last_fill: "" });
+  const [f, setF] = useState<any>({ vehicle_id: "", dispatch_id: "", log_date: new Date().toISOString().split("T")[0], odometer_reading: "", litres_dispensed: "", cost_per_litre: "", fuel_station: "", receipt_number: "", fuel_type: "diesel", km_since_last_fill: "" });
+
+  // Recent, non-cancelled dispatches for the vehicle currently picked in the
+  // form. Without dispatch_id on the fuel log, this table's "Sys. Est. (L)"
+  // column has nothing to join against — the dispatch's suggested_fuel_liters
+  // exists, but only reaches this log if the log says which dispatch it was
+  // filled for.
+  const { data: vehicleDispatches = [] } = useQuery({
+    queryKey: ["fuel-log-vehicle-dispatches", f.vehicle_id],
+    enabled: !!f.vehicle_id && open,
+    queryFn: async () => {
+      const { data } = await sb.from("dispatches")
+        .select("id, dispatch_number, status, suggested_fuel_liters, created_at")
+        .eq("vehicle_id", f.vehicle_id)
+        .neq("status", "cancelled")
+        .order("created_at", { ascending: false })
+        .limit(20);
+      return data ?? [];
+    },
+  });
 
   // When a vehicle is selected, auto-fill the odometer with its current reading
   const handleVehicleSelect = (vehicleId: string) => {
@@ -406,7 +425,19 @@ function FuelLogs({ orgId }: { orgId: string }) {
     setF((prev: any) => ({
       ...prev,
       vehicle_id: vehicleId,
+      dispatch_id: "",
       odometer_reading: currentOdo ? String(currentOdo) : "",
+    }));
+  };
+
+  // Picking a dispatch pre-fills litres from its system estimate — still a
+  // suggestion the operator can overwrite with what was actually pumped.
+  const handleDispatchSelect = (dispatchId: string) => {
+    const d = (vehicleDispatches as any[]).find((x: any) => x.id === dispatchId);
+    setF((prev: any) => ({
+      ...prev,
+      dispatch_id: dispatchId,
+      litres_dispensed: prev.litres_dispensed || (d?.suggested_fuel_liters != null ? String(d.suggested_fuel_liters) : prev.litres_dispensed),
     }));
   };
 
@@ -424,6 +455,7 @@ function FuelLogs({ orgId }: { orgId: string }) {
       const total = (parseFloat(f.cost_per_litre) || 0) * (parseFloat(f.litres_dispensed) || 0);
       const { error } = await sb.from("fuel_logs").insert({
         organization_id: orgId, vehicle_id: f.vehicle_id, logged_by: user.id,
+        dispatch_id: f.dispatch_id || null,
         log_date: f.log_date, odometer_reading: parseFloat(f.odometer_reading) || 0,
         litres_dispensed: parseFloat(f.litres_dispensed) || 0,
         cost_per_litre: parseFloat(f.cost_per_litre) || null,
@@ -433,7 +465,12 @@ function FuelLogs({ orgId }: { orgId: string }) {
       });
       if (error) throw error;
     },
-    onSuccess: () => { toast({ title: "Fuel log added" }); setOpen(false); qc.invalidateQueries({ queryKey: ["fuel-logs", orgId] }); },
+    onSuccess: () => {
+      toast({ title: "Fuel log added" });
+      setOpen(false);
+      setF({ vehicle_id: "", dispatch_id: "", log_date: new Date().toISOString().split("T")[0], odometer_reading: "", litres_dispensed: "", cost_per_litre: "", fuel_station: "", receipt_number: "", fuel_type: "diesel", km_since_last_fill: "" });
+      qc.invalidateQueries({ queryKey: ["fuel-logs", orgId] });
+    },
     onError: (e: any) => toast({ title: e.message, variant: "destructive" }),
   });
 
@@ -485,6 +522,26 @@ function FuelLogs({ orgId }: { orgId: string }) {
                   ))}
                 </SelectContent>
               </Select>
+              {f.vehicle_id && (
+                <div className="space-y-1">
+                  <Select value={f.dispatch_id} onValueChange={handleDispatchSelect}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={vehicleDispatches.length ? "Link a dispatch (optional)" : "No recent dispatches for this vehicle"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(vehicleDispatches as any[]).map((d: any) => (
+                        <SelectItem key={d.id} value={d.id}>
+                          {d.dispatch_number}
+                          {d.suggested_fuel_liters != null ? ` · Est. ${Number(d.suggested_fuel_liters).toFixed(1)} L` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[10px] text-muted-foreground">
+                    Links this fill-up to a trip so its system estimate shows in the table below, and pre-fills litres from it.
+                  </p>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-2">
                 <Input type="date" value={f.log_date} onChange={e => setF({ ...f, log_date: e.target.value })} />
                 <div className="space-y-1">
