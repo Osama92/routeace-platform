@@ -24,6 +24,7 @@ import {
   AlertTriangle,
   XCircle,
   Plus,
+  Lock,
 } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
@@ -120,6 +121,11 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange, initialTab = "overv
   const canManage = hasAnyRole([
     "ops_manager", "org_admin", "finance_manager", "admin", "super_admin",
   ]);
+  // Narrower than canManage on purpose: anyone who can log a repair can see
+  // that work happened (type, date, parts replaced), but repair COSTS are
+  // restricted to super_admin and finance_manager only — an ops_manager or
+  // org_admin sees the record with amounts hidden, not blocked from the tab.
+  const canSeeCost = hasAnyRole(["finance_manager", "super_admin"]);
   // A vendor maintains their own truck at their own cost, so repairs are
   // only logged against owned vehicles. The database enforces this too.
   const isOwned = (vehicle?.ownership_type ?? "owned") === "owned";
@@ -254,6 +260,19 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange, initialTab = "overv
       minimumFractionDigits: 0,
     }).format(amount);
   };
+
+  // Repair costs are restricted to super_admin and finance_manager — an
+  // ops_manager or org_admin still sees the repair happened (type, date,
+  // parts) but not what it cost. Renders a lock rather than just omitting
+  // the figure, so it reads as "restricted" and not as "free" or "unlogged".
+  const CostValue = ({ amount }: { amount: number }) =>
+    canSeeCost ? (
+      <>{formatCurrency(amount)}</>
+    ) : (
+      <span className="inline-flex items-center gap-1 text-muted-foreground">
+        <Lock className="w-3.5 h-3.5" /> Restricted
+      </span>
+    );
 
   if (!vehicle) return null;
 
@@ -392,7 +411,7 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange, initialTab = "overv
             {repairs.length > 0 && (
               <div className="border-t pt-4">
                 <h4 className="text-sm font-medium mb-2">Total Repair Cost</h4>
-                <p className="text-2xl font-bold text-foreground">{formatCurrency(totalRepairCost)}</p>
+                <p className="text-2xl font-bold text-foreground"><CostValue amount={totalRepairCost} /></p>
               </div>
             )}
           </TabsContent>
@@ -453,7 +472,7 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange, initialTab = "overv
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div className="rounded-lg bg-secondary/50 p-3">
                     <p className="text-xs text-muted-foreground">Total spend</p>
-                    <p className="text-lg font-semibold">{formatCurrency(Number(insights.total_spend))}</p>
+                    <p className="text-lg font-semibold"><CostValue amount={Number(insights.total_spend)} /></p>
                   </div>
                   <div className="rounded-lg bg-secondary/50 p-3">
                     <p className="text-xs text-muted-foreground">Repairs</p>
@@ -490,7 +509,8 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange, initialTab = "overv
                             <li key={f.repair_type} className="text-sm">
                               <span className="font-medium">{f.repair_type}</span>
                               <span className="text-muted-foreground">
-                                {" "}&times;{f.occurrences} · {formatCurrency(Number(f.total_cost))}
+                                {" "}&times;{f.occurrences}
+                                {canSeeCost && <> · {formatCurrency(Number(f.total_cost))}</>}
                               </span>
                             </li>
                           ))}
@@ -690,9 +710,11 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange, initialTab = "overv
                         )}
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="font-semibold text-foreground">{formatCurrency(Number(repair.cost))}</p>
-                        {/* Only worth splitting out when both halves exist. */}
-                        {Number(repair.parts_cost) > 0 && Number(repair.labour_cost) > 0 && (
+                        <p className="font-semibold text-foreground"><CostValue amount={Number(repair.cost)} /></p>
+                        {/* Only worth splitting out when both halves exist, and only for
+                            roles allowed to see cost at all — a restricted total with a
+                            visible split would defeat the restriction. */}
+                        {canSeeCost && Number(repair.parts_cost) > 0 && Number(repair.labour_cost) > 0 && (
                           <p className="text-xs text-muted-foreground">
                             {formatCurrency(Number(repair.parts_cost))} parts ·{" "}
                             {formatCurrency(Number(repair.labour_cost))} labour

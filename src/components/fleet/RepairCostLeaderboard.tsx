@@ -1,12 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Wrench, AlertTriangle } from "lucide-react";
+import { Wrench, AlertTriangle, Lock } from "lucide-react";
 import { format } from "date-fns";
 
 interface LeaderboardRow {
@@ -38,6 +39,13 @@ const fmt = (n: number) =>
  * the work it does, so both are shown and neither is presented alone.
  */
 const RepairCostLeaderboard = ({ organizationId }: { organizationId?: string | null }) => {
+  const { hasAnyRole } = useAuth();
+  // Repair costs are restricted to super_admin and finance_manager. This
+  // table ranks vehicles by spend, so an ops_manager/org_admin seeing it
+  // without the restriction would learn exact repair costs even though the
+  // same figures are hidden inside the vehicle detail dialog.
+  const canSeeCost = hasAnyRole(["finance_manager", "super_admin"]);
+
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ["repair-leaderboard", organizationId],
     enabled: !!organizationId,
@@ -77,7 +85,13 @@ const RepairCostLeaderboard = ({ organizationId }: { organizationId?: string | n
           </div>
           {totalSpend > 0 && (
             <div className="text-right">
-              <p className="text-lg font-semibold">{fmt(totalSpend)}</p>
+              <p className="text-lg font-semibold">
+                {canSeeCost ? fmt(totalSpend) : (
+                  <span className="inline-flex items-center gap-1 text-muted-foreground text-sm font-normal">
+                    <Lock className="w-3.5 h-3.5" /> Restricted
+                  </span>
+                )}
+              </p>
               <p className="text-xs text-muted-foreground">
                 across {withRepairs.length} {withRepairs.length === 1 ? "truck" : "trucks"}
                 {totalBreakdowns > 0 && ` · ${totalBreakdowns} breakdown${totalBreakdowns === 1 ? "" : "s"}`}
@@ -133,10 +147,14 @@ const RepairCostLeaderboard = ({ organizationId }: { organizationId?: string | n
                         </div>
                       </TableCell>
                       <TableCell className="text-right font-semibold">
-                        {fmt(Number(r.total_spend))}
+                        {canSeeCost ? fmt(Number(r.total_spend)) : (
+                          <Lock className="w-3.5 h-3.5 text-muted-foreground inline" />
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
-                        {r.cost_per_km !== null && Number(r.cost_per_km) > 0 ? (
+                        {!canSeeCost ? (
+                          <Lock className="w-3.5 h-3.5 text-muted-foreground inline" />
+                        ) : r.cost_per_km !== null && Number(r.cost_per_km) > 0 ? (
                           fmt(Number(r.cost_per_km))
                         ) : (
                           // No distance recorded, so cost per km would be a

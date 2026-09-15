@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { format, differenceInDays, startOfMonth } from "date-fns";
-import { ClipboardCheck, Wrench, Fuel, AlertTriangle, FileText, Car, Trash2 } from "lucide-react";
+import { ClipboardCheck, Wrench, Fuel, AlertTriangle, FileText, Car, Trash2, Lock } from "lucide-react";
 
 const sb = supabase as any;
 
@@ -658,7 +658,11 @@ function FuelLogs({ orgId }: { orgId: string }) {
 
 /* ---------- Tab 5 Fines & Incidents ---------- */
 function FinesAndIncidents({ orgId }: { orgId: string }) {
-  const { user } = useAuth();
+  const { user, hasAnyRole } = useAuth();
+  // Repair cost estimates are restricted the same as approved repair costs —
+  // an ops_manager/org_admin can log an incident and its estimate, but not
+  // see estimates already on record.
+  const canSeeRepairCost = hasAnyRole(["finance_manager", "super_admin"]);
   const { toast } = useToast();
   const qc = useQueryClient();
   const { data: vehicles = [] } = useVehicles(orgId);
@@ -741,7 +745,7 @@ function FinesAndIncidents({ orgId }: { orgId: string }) {
           </Dialog>
         </div>
         <Card><CardContent className="p-0 overflow-x-auto"><table className="w-full text-sm"><thead className="bg-muted/40"><tr><th className="p-2 text-left">Date</th><th className="p-2 text-left">Vehicle</th><th className="p-2 text-left">Type</th><th className="p-2 text-left">Severity</th><th className="p-2 text-left">Status</th><th className="p-2 text-left">Cost</th><th className="p-2"></th></tr></thead><tbody>
-          {(incidents as any[]).map(i => { const v = (vehicles as any[]).find(x => x.id === i.vehicle_id); return <tr key={i.id} className="border-t"><td className="p-2">{i.incident_date}</td><td className="p-2">{v?.registration_number ?? "-"}</td><td className="p-2">{i.incident_type}</td><td className="p-2">{i.severity}</td><td className="p-2"><Badge variant="outline">{i.status}</Badge></td><td className="p-2">₦{Number(i.repair_cost_estimate ?? 0).toLocaleString()}</td><td className="p-2"><Button size="sm" variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 w-7 p-0" onClick={() => deleteIncident(i.id)}><Trash2 className="w-3.5 h-3.5" /></Button></td></tr>; })}
+          {(incidents as any[]).map(i => { const v = (vehicles as any[]).find(x => x.id === i.vehicle_id); return <tr key={i.id} className="border-t"><td className="p-2">{i.incident_date}</td><td className="p-2">{v?.registration_number ?? "-"}</td><td className="p-2">{i.incident_type}</td><td className="p-2">{i.severity}</td><td className="p-2"><Badge variant="outline">{i.status}</Badge></td><td className="p-2">{canSeeRepairCost ? `₦${Number(i.repair_cost_estimate ?? 0).toLocaleString()}` : <Lock className="w-3.5 h-3.5 text-muted-foreground inline" />}</td><td className="p-2"><Button size="sm" variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 w-7 p-0" onClick={() => deleteIncident(i.id)}><Trash2 className="w-3.5 h-3.5" /></Button></td></tr>; })}
           {incidents.length === 0 && <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">No incidents logged.</td></tr>}
         </tbody></table></CardContent></Card>
       </TabsContent>
