@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -441,6 +441,24 @@ function FuelLogs({ orgId }: { orgId: string }) {
     }));
   };
 
+  // Reported twice now: an operator fuels up a truck and never notices the
+  // dispatch dropdown, so Sys. Est. (L) stays blank even when a matching
+  // dispatch exists. Leaving this to be remembered doesn't work — so once the
+  // vehicle's dispatch list loads, auto-pick it FOR them when there is
+  // exactly one live candidate (pending/picked_up/in_transit — a trip this
+  // truck is actually on right now). More than one live dispatch, or none,
+  // and it is left blank rather than guessing which trip a fill-up was for.
+  useEffect(() => {
+    if (!f.vehicle_id || f.dispatch_id) return;
+    const live = (vehicleDispatches as any[]).filter((d: any) =>
+      ["pending", "picked_up", "in_transit"].includes(d.status),
+    );
+    if (live.length === 1) {
+      handleDispatchSelect(live[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vehicleDispatches, f.vehicle_id]);
+
   const deleteFuelLog = async (id: string) => {
     if (!window.confirm("Delete this fuel log?")) return;
     const { error } = await sb.from("fuel_logs").delete().eq("id", id).eq("organization_id", orgId);
@@ -526,7 +544,7 @@ function FuelLogs({ orgId }: { orgId: string }) {
                 <div className="space-y-1">
                   <Select value={f.dispatch_id} onValueChange={handleDispatchSelect}>
                     <SelectTrigger>
-                      <SelectValue placeholder={vehicleDispatches.length ? "Link a dispatch (optional)" : "No recent dispatches for this vehicle"} />
+                      <SelectValue placeholder={vehicleDispatches.length ? "Which dispatch is this for?" : "No recent dispatches for this vehicle"} />
                     </SelectTrigger>
                     <SelectContent>
                       {(vehicleDispatches as any[]).map((d: any) => (
@@ -538,7 +556,9 @@ function FuelLogs({ orgId }: { orgId: string }) {
                     </SelectContent>
                   </Select>
                   <p className="text-[10px] text-muted-foreground">
-                    Links this fill-up to a trip so its system estimate shows in the table below, and pre-fills litres from it.
+                    {f.dispatch_id
+                      ? "Linked automatically — its system estimate will show in the table below. Change it if this fill-up was for a different trip."
+                      : "Pick the trip this fill-up was for so its system estimate shows in the table below."}
                   </p>
                 </div>
               )}
