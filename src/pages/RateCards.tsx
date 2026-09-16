@@ -46,6 +46,8 @@ interface RateCard {
   rate_amount: number;
   diesel_litres: number | null;
   distance_km: number | null;
+  distance_source: "manual" | "auto_calculated" | "geocoded_backfill" | null;
+  distance_confidence: "high" | "low" | null;
   is_net: boolean;
   description: string | null;
   status: "pending" | "approved" | "rejected" | "superseded";
@@ -74,6 +76,11 @@ const emptyForm = {
   rate_amount: "",
   diesel_litres: "",
   distance_km: "",
+  // Provenance of distance_km, not user-facing — set by autoCalculateDistance
+  // when it succeeds, reverted to 'manual' the moment someone edits the
+  // field by hand. Lets a saved rate be distinguished from the 347-row
+  // geocoded_backfill (lower confidence — see rate_cards_distance_confidence.sql).
+  distance_source: null as "manual" | "auto_calculated" | null,
   is_net: true,
   description: "",
 };
@@ -127,7 +134,7 @@ export default function RateCards() {
       });
       if (error) throw error;
       if (data?.total_distance_km != null) {
-        setForm((f) => ({ ...f, distance_km: String(data.total_distance_km) }));
+        setForm((f) => ({ ...f, distance_km: String(data.total_distance_km), distance_source: "auto_calculated" }));
       }
     } catch (e: any) {
       toast({
@@ -249,6 +256,8 @@ export default function RateCards() {
             rate_amount: amount,
             diesel_litres: form.diesel_litres === "" ? null : Number(form.diesel_litres),
             distance_km: form.distance_km === "" ? null : Number(form.distance_km),
+            distance_source: form.distance_km === "" ? null : form.distance_source,
+            distance_confidence: form.distance_km !== "" && form.distance_source === "auto_calculated" ? "high" : null,
             is_net: form.is_net,
             description: form.description || null,
           })
@@ -272,6 +281,8 @@ export default function RateCards() {
         rate_amount: amount,
         diesel_litres: form.diesel_litres === "" ? null : Number(form.diesel_litres),
         distance_km: form.distance_km === "" ? null : Number(form.distance_km),
+        distance_source: form.distance_km === "" ? null : form.distance_source,
+        distance_confidence: form.distance_km !== "" && form.distance_source === "auto_calculated" ? "high" : null,
         is_net: form.is_net,
         description: form.description || null,
       });
@@ -333,6 +344,13 @@ export default function RateCards() {
       rate_amount: String(r.rate_amount),
       diesel_litres: r.diesel_litres != null ? String(r.diesel_litres) : "",
       distance_km: r.distance_km != null ? String(r.distance_km) : "",
+      // 'geocoded_backfill' has no equivalent in the form's narrower type —
+      // this only matters if the rate is non-approved (an approved rate's
+      // edit always goes through propose_rate_card_change below, which
+      // preserves distance_source/confidence untouched), so mapping it to
+      // 'manual' here is safe: it only downgrades tracking for a rate that
+      // was never live in the first place.
+      distance_source: r.distance_source === "geocoded_backfill" ? "manual" : r.distance_source,
       is_net: r.is_net,
       description: r.description ?? "",
     });
@@ -441,6 +459,11 @@ export default function RateCards() {
                           {g.lanes.filter((l) => l.status === "pending").length} pending
                         </Badge>
                       )}
+                      {g.lanes.some((l) => l.distance_confidence === "low") && (
+                        <Badge variant="outline" className="text-orange-600 border-orange-500/40">
+                          {g.lanes.filter((l) => l.distance_confidence === "low").length} distance to verify
+                        </Badge>
+                      )}
                     </div>
                   </AccordionTrigger>
                   <AccordionContent>
@@ -465,7 +488,20 @@ export default function RateCards() {
                                   <span>{r.pickup_address}</span>
                                   <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0" />
                                   <span>{r.destination_address}</span>
+                                  {r.distance_confidence === "low" && (
+                                    <AlertTriangle
+                                      className="w-3.5 h-3.5 text-orange-500 shrink-0"
+                                      aria-label="Distance backfilled from an ambiguous address match — verify before relying on it"
+                                    >
+                                      <title>Distance backfilled from an ambiguous address match — verify before relying on it</title>
+                                    </AlertTriangle>
+                                  )}
                                 </div>
+                                {r.distance_confidence === "low" && (
+                                  <p className="text-[10px] text-orange-600 mt-0.5">
+                                    Distance ({r.distance_km} km) backfilled from an ambiguous address match — verify
+                                  </p>
+                                )}
                               </TableCell>
                               <TableCell>{r.truck_type}</TableCell>
                               <TableCell className="text-right font-semibold">
@@ -621,7 +657,7 @@ export default function RateCards() {
                   type="number"
                   min={0}
                   value={form.distance_km}
-                  onChange={(e) => setForm((f) => ({ ...f, distance_km: e.target.value }))}
+                  onChange={(e) => setForm((f) => ({ ...f, distance_km: e.target.value, distance_source: "manual" }))}
                   placeholder={calculatingDistance ? "Calculating from Google Maps…" : "Auto-fills once pickup and destination are set"}
                   disabled={calculatingDistance}
                 />
