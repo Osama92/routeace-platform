@@ -441,20 +441,21 @@ function FuelLogs({ orgId }: { orgId: string }) {
     }));
   };
 
-  // Reported twice now: an operator fuels up a truck and never notices the
-  // dispatch dropdown, so Sys. Est. (L) stays blank even when a matching
-  // dispatch exists. Leaving this to be remembered doesn't work — so once the
-  // vehicle's dispatch list loads, auto-pick it FOR them when there is
-  // exactly one live candidate (pending/picked_up/in_transit — a trip this
-  // truck is actually on right now). More than one live dispatch, or none,
-  // and it is left blank rather than guessing which trip a fill-up was for.
+  // Reported three times now. The system estimate is fixed at dispatch
+  // creation and has nothing to do with the trip's current status — the
+  // whole point is comparing "what the system predicted" against "what was
+  // actually pumped," whether that trip is still running or long delivered.
+  // An earlier version of this only auto-picked from pending/picked_up/
+  // in_transit dispatches, which meant nothing ever auto-linked once a trip
+  // was marked delivered — exactly the common case, since fuel is usually
+  // logged after the fact, not mid-trip. Any non-cancelled dispatch is a
+  // valid candidate now; the most recent one for this vehicle is used, since
+  // a fill-up is logged close in time to the trip it belongs to.
   useEffect(() => {
     if (!f.vehicle_id || f.dispatch_id) return;
-    const live = (vehicleDispatches as any[]).filter((d: any) =>
-      ["pending", "picked_up", "in_transit"].includes(d.status),
-    );
-    if (live.length === 1) {
-      handleDispatchSelect(live[0].id);
+    const mostRecent = (vehicleDispatches as any[])[0];
+    if (mostRecent) {
+      handleDispatchSelect(mostRecent.id);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vehicleDispatches, f.vehicle_id]);
