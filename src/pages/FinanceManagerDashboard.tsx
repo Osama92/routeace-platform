@@ -158,7 +158,7 @@ const FinanceManagerDashboardInner = () => {
           <TabsTrigger value="intelligence" className="gap-1"><Brain className="w-3.5 h-3.5" />Intelligence Engine</TabsTrigger>
           <TabsTrigger value="kpi-intel" className="gap-1"><Activity className="w-3.5 h-3.5" />KPI Suite</TabsTrigger>
           <TabsTrigger value="dispatch-finance" className="gap-1"><Truck className="w-3.5 h-3.5" />Dispatch Finance</TabsTrigger>
-          <TabsTrigger value="repairs" className="gap-1"><Wrench className="w-3.5 h-3.5" />Vehicle Repairs</TabsTrigger>
+          <TabsTrigger value="repairs" className="gap-1"><Wrench className="w-3.5 h-3.5" />Repair Review</TabsTrigger>
           <TabsTrigger value="invoices">Invoices</TabsTrigger>
           <TabsTrigger value="insights">Revenue Insights</TabsTrigger>
           <TabsTrigger value="assets">Asset Profitability</TabsTrigger>
@@ -172,7 +172,7 @@ const FinanceManagerDashboardInner = () => {
         </TabsContent>
 
         <TabsContent value="repairs">
-          <RepairApprovalQueue organizationId={organizationId} readOnly />
+          <RepairApprovalQueue organizationId={organizationId} stage="finance" />
         </TabsContent>
 
         {/* Intelligence Engine Tab - PRIMARY */}

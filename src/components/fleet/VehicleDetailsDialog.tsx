@@ -74,7 +74,15 @@ interface VehicleRepair {
   labour_cost: number | null;
   is_breakdown: boolean;
   downtime_days: number | null;
+  status: "pending_finance" | "pending_super_admin" | "approved" | "rejected";
 }
+
+const REPAIR_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+  pending_finance: { label: "Awaiting finance review", className: "text-amber-600 border-amber-500/40" },
+  pending_super_admin: { label: "Awaiting final approval", className: "text-blue-600 border-blue-500/40" },
+  approved: { label: "Approved", className: "text-green-600 border-green-500/40" },
+  rejected: { label: "Rejected", className: "text-red-600 border-red-500/40" },
+};
 
 interface RepairInsights {
   ok: boolean;
@@ -200,11 +208,12 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange, initialTab = "overv
 
     setSaving(true);
     try {
-      // log_vehicle_repair() records the repair and leaves it 'pending' — it
-      // does NOT book an expense. That only happens when a super admin
-      // approves it (approve_vehicle_repair), which is what makes the
-      // approval trail mean something: an unapproved repair is not yet money
-      // in the accounts. It still rejects vendor-owned trucks.
+      // log_vehicle_repair() records the repair at status 'pending_finance'
+      // — it does NOT book an expense. Two approvals happen before it does:
+      // finance_review_repair() (finance may revise the cost, sends it on)
+      // then approve_vehicle_repair() (super admin, final — this is what
+      // books it). An unapproved repair is not yet money in the accounts.
+      // It still rejects vendor-owned trucks.
       const partsCost = parseFloat(repairForm.parts_cost || "0") || 0;
       const labourCost = parseFloat(repairForm.labour_cost || "0") || 0;
 
@@ -226,9 +235,9 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange, initialTab = "overv
       if (error) throw error;
 
       toast({
-        title: "Repair logged — awaiting approval",
+        title: "Repair logged — awaiting finance review",
         description: partsCost + labourCost > 0
-          ? `${formatCurrency(partsCost + labourCost)} will book to expenses once a super admin approves it.`
+          ? `${formatCurrency(partsCost + labourCost)} will book to expenses after finance and a super admin both approve it.`
           : "No cost recorded.",
       });
       setShowRepairForm(false);
@@ -690,6 +699,14 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange, initialTab = "overv
                           >
                             {repair.is_breakdown ? "Breakdown" : "Planned"}
                           </Badge>
+                          {REPAIR_STATUS_CONFIG[repair.status] && (
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] ${REPAIR_STATUS_CONFIG[repair.status].className}`}
+                            >
+                              {REPAIR_STATUS_CONFIG[repair.status].label}
+                            </Badge>
+                          )}
                         </div>
                         <p className="text-sm text-muted-foreground">
                           {format(new Date(repair.repair_date), "dd MMM yyyy")}

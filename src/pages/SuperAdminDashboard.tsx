@@ -515,7 +515,7 @@ const SuperAdminDashboardInner = () => {
             <>
               <CustomerVendorApprovalQueue level="sa" organizationId={organizationId} />
               <RateCardApprovalQueue organizationId={organizationId} />
-              <RepairApprovalQueue organizationId={organizationId} />
+              <RepairApprovalQueue organizationId={organizationId} stage="super_admin" />
             </>
           )}
           <DemoPreviewToggleCard />
