@@ -26,7 +26,7 @@ import { AddressAutocomplete } from "@/components/shared/AddressAutocomplete";
 import RateCardUpload from "@/components/ratecard/RateCardUpload";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Plus, Edit, Trash2, ArrowRight, Building2, Truck, Clock, CheckCircle2, XCircle, AlertTriangle, Loader2,
+  Plus, Edit, Trash2, ArrowRight, Building2, Truck, Clock, CheckCircle2, XCircle, AlertTriangle, Loader2, Search, X,
 } from "lucide-react";
 
 const TRUCK_TYPES = ["3T", "5T", "10T", "15T", "20T", "30T", "45T", "60T"];
@@ -105,6 +105,7 @@ export default function RateCards() {
   const [editing, setEditing] = useState<RateCard | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [calculatingDistance, setCalculatingDistance] = useState(false);
+  const [search, setSearch] = useState("");
 
   // Fires as soon as both ends of the lane have coordinates — picking a
   // place from the autocomplete, not every keystroke. Uses the same
@@ -199,10 +200,19 @@ export default function RateCards() {
   // Group by party — one client usually has many lanes, and the question is
   // "what do we charge this client", not "list every rate we hold".
   const visible = rates.filter((r) => r.card_type === tab);
+  const searchTerm = search.trim().toLowerCase();
+  const matchesSearch = (r: RateCard, partyLabel: string) =>
+    !searchTerm ||
+    r.pickup_address.toLowerCase().includes(searchTerm) ||
+    r.destination_address.toLowerCase().includes(searchTerm) ||
+    r.truck_type.toLowerCase().includes(searchTerm) ||
+    partyLabel.toLowerCase().includes(searchTerm);
   const grouped = parties
     .map((p) => ({
       ...p,
-      lanes: visible.filter((r) => (tab === "client" ? r.customer_id : r.partner_id) === p.id),
+      lanes: visible.filter(
+        (r) => (tab === "client" ? r.customer_id : r.partner_id) === p.id && matchesSearch(r, p.label),
+      ),
     }))
     .filter((g) => g.lanes.length > 0);
 
@@ -363,6 +373,25 @@ export default function RateCards() {
           )}
         </div>
 
+        <div className="relative mb-4 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by pickup, destination, truck type or client/vendor…"
+            className="pl-9 pr-9"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
         <p className="text-sm text-muted-foreground mb-4">
           {tab === "client"
             ? "What you charge each client for a route. This is your revenue on the trip."
@@ -381,9 +410,11 @@ export default function RateCards() {
             <Card>
               <CardContent className="p-10 text-center">
                 <p className="text-muted-foreground">
-                  No {tab === "client" ? "client" : "vendor"} rates yet.
+                  {searchTerm
+                    ? `No routes match "${search}".`
+                    : `No ${tab === "client" ? "client" : "vendor"} rates yet.`}
                 </p>
-                {parties.length === 0 && (
+                {!searchTerm && parties.length === 0 && (
                   <p className="text-sm text-muted-foreground mt-2">
                     Add {tab === "client" ? "a customer" : "a vendor"} first, then set their rates here.
                   </p>
@@ -391,7 +422,12 @@ export default function RateCards() {
               </CardContent>
             </Card>
           ) : (
-            <Accordion type="multiple" defaultValue={grouped.map((g) => g.id)} className="space-y-3">
+            <Accordion
+              key={searchTerm}
+              type="multiple"
+              defaultValue={grouped.map((g) => g.id)}
+              className="space-y-3"
+            >
               {grouped.map((g) => (
                 <AccordionItem key={g.id} value={g.id} className="border rounded-lg px-4">
                   <AccordionTrigger className="hover:no-underline">
