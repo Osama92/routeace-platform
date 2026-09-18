@@ -494,6 +494,68 @@ const CreateDispatchDialog = () => {
 
       if (error) throw error;
 
+      // ── Attach the money ──────────────────────────────────────────────
+      // Ported from src/pages/Dispatch.tsx, which had this and this dialog
+      // never did — every dispatch created from the Ops Manager / Dept
+      // dashboards got no dispatch_financials row at all, silently, since
+      // dispatch creation itself always succeeded regardless. Reported as
+      // "dispatch finance is not picking required values from rate card";
+      // traced to exactly this dialog being the one the affected user's
+      // role (ops_manager) actually uses.
+      //
+      // Deliberately non-blocking, same as the original: a dispatch must
+      // never fail to create because a rate is missing.
+      if (disp?.id && form.vehicle_id && resolvedCustomerId) {
+        try {
+          const sv = vehicles?.find((x: any) => x.id === form.vehicle_id);
+          const truckType = (sv as any)?.truck_type ?? null;
+          if (!truckType) {
+            console.warn("Vehicle has no truck_type; cannot resolve a rate", form.vehicle_id);
+          }
+          const { data: resolved } = truckType ? await (supabase.rpc as any)("resolve_dispatch_rates", {
+            p_organization_id: organizationId,
+            p_customer_id: resolvedCustomerId,
+            p_vehicle_id: form.vehicle_id,
+            p_pickup: form.pickup_address,
+            p_destination: form.delivery_address,
+            p_truck_type: truckType,
+          }) : { data: null };
+
+          const clientRevenue = resolved?.client_revenue ?? null;
+          const vendorCost = resolved?.vendor_cost ?? null;
+
+          if (clientRevenue !== null || vendorCost !== null) {
+            await (supabase.from("dispatch_financials") as any).upsert(
+              {
+                dispatch_id: disp.id,
+                organization_id: organizationId,
+                client_revenue: clientRevenue,
+                vendor_cost: vendorCost,
+                revenue_source: clientRevenue !== null ? "rate_card" : "manual",
+                cost_source:
+                  vendorCost !== null
+                    ? "rate_card"
+                    : resolved?.ownership_type === "owned"
+                      ? "owned_fleet"
+                      : "manual",
+                client_rate_card_id: resolved?.client_rate_id ?? null,
+                vendor_rate_card_id: resolved?.vendor_rate_id ?? null,
+                finance_status: vendorCost === null && resolved?.missing_vendor_rate
+                  ? "pending"
+                  : "complete",
+              },
+              { onConflict: "dispatch_id" },
+            );
+          }
+        } catch (rateErr: any) {
+          console.error("Could not attach rates to dispatch", rateErr);
+          toast({
+            title: "Dispatch created, but no rate attached",
+            description: "Finance will need to enter the value for this trip. " + (rateErr?.message ?? ""),
+          });
+        }
+      }
+
       // Audit an override of the inspection safety gate.
       if (blockedOverrideRef.current && disp?.id) {
         await supabase.from("dispatch_safety_gates").insert({
