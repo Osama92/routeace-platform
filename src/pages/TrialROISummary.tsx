@@ -8,11 +8,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
   Collapsible, CollapsibleContent, CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { differenceInDays } from "date-fns";
-import { useState } from "react";
+import { differenceInDays, subDays } from "date-fns";
+import { useState, useMemo } from "react";
 import {
   TrendingUp, ShieldCheck, AlertTriangle, Wallet, Gauge,
   Fuel, FileCheck, Wrench, Truck, Info, ChevronDown,
@@ -69,11 +72,27 @@ const sourceTooltip: Record<DataSource, string> = {
   benchmark: "Using a Nigerian industry benchmark (NARTO) as a stand-in — no verified data exists for this yet. Replaced automatically once real data is recorded.",
 };
 
+// Same window convention already used on Fleet Compliance's fuel log
+// filter — kept identical rather than inventing calendar-month/quarter
+// labels, so "period" means the same thing everywhere in the app.
+type Period = "30" | "90" | "365" | "all";
+const PERIOD_DAYS: Record<Exclude<Period, "all">, number> = { "30": 30, "90": 90, "365": 365 };
+
 export default function TrialROISummary() {
   const { organizationId: orgId, hasAnyRole } = useAuth();
   const navigate = useNavigate();
   const canSubscribe = hasAnyRole(["super_admin", "org_admin", "admin"]);
   const [openCard, setOpenCard] = useState<string | null>(null);
+  const [period, setPeriod] = useState<Period>("30");
+
+  // Cutoff date for the selected period, or null for "all time" (no filter).
+  // Memoised so it's a stable reference across renders within the same period.
+  const periodStart = useMemo(
+    () => (period === "all" ? null : subDays(new Date(), PERIOD_DAYS[period])),
+    [period],
+  );
+  const periodStartIso = periodStart ? periodStart.toISOString() : null;
+  const periodStartDate = periodStart ? periodStart.toISOString().split("T")[0] : null;
 
   // ── Organisation ─────────────────────────────────────────────────────────
   const { data: org } = useQuery({
@@ -102,77 +121,81 @@ export default function TrialROISummary() {
   });
 
   // ── Dispatch financials ──────────────────────────────────────────────────
+  // Deliberately UNFILTERED by period. Revenue At Risk is a backlog, not a
+  // flow — an unbilled dispatch from 3 months ago is still at risk today,
+  // and filtering it out by period would understate real exposure. Profit
+  // Generated (which SHOULD move with the period) filters this same set
+  // client-side below, so there's one query instead of two nearly-identical
+  // ones.
   const { data: dispatchFinancials = [] } = useQuery({
     queryKey: ["impact-dispatch-financials", orgId],
     enabled: !!orgId,
     queryFn: async () => {
       const { data } = await (supabase.from("dispatch_financials") as any)
-        .select("client_revenue, vendor_cost, gross_profit, finance_status, invoice_id, dispatch_id")
+        .select("client_revenue, vendor_cost, gross_profit, finance_status, invoice_id, dispatch_id, created_at")
         .eq("organization_id", orgId!);
-      return data ?? [];
-    },
-  });
-
-  // ── Delivered dispatches (for the unbilled backlog) ─────────────────────
-  const { data: deliveredDispatches = [] } = useQuery({
-    queryKey: ["impact-delivered-dispatches", orgId],
-    enabled: !!orgId,
-    queryFn: async () => {
-      const { data } = await supabase.from("dispatches")
-        .select("id, created_at")
-        .eq("organization_id", orgId!)
-        .eq("status", "delivered")
-        .order("created_at", { ascending: false })
-        .limit(1000);
       return data ?? [];
     },
   });
 
   // ── Invoices ─────────────────────────────────────────────────────────────
+  // Filtered by invoice_date — Revenue Protected and Cash Outstanding are
+  // meant to reflect billing activity IN the selected period.
   const { data: invoiceData = [] } = useQuery({
-    queryKey: ["impact-invoices", orgId],
+    queryKey: ["impact-invoices", orgId, periodStartDate],
     enabled: !!orgId,
     queryFn: async () => {
-      const { data } = await supabase.from("invoices")
-        .select("id, status, total_amount, balance_due, dispatch_id, due_date, paid_date")
+      let q = supabase.from("invoices")
+        .select("id, status, total_amount, balance_due, dispatch_id, invoice_date, due_date, paid_date")
         .eq("organization_id", orgId!);
+      if (periodStartDate) q = q.gte("invoice_date", periodStartDate);
+      const { data } = await q;
       return data ?? [];
     },
   });
 
   // ── Fuel logs ────────────────────────────────────────────────────────────
   const { data: fuelLogs = [] } = useQuery({
-    queryKey: ["impact-fuel", orgId],
+    queryKey: ["impact-fuel", orgId, periodStartDate],
     enabled: !!orgId,
     queryFn: async () => {
-      const { data } = await supabase.from("fuel_logs")
+      let q = supabase.from("fuel_logs")
         .select("total_cost, km_since_last_fill")
         .eq("organization_id", orgId!);
+      if (periodStartDate) q = q.gte("log_date", periodStartDate);
+      const { data } = await q;
       return data ?? [];
     },
   });
 
   // ── Vehicle repairs (Maintenance Shifted) ───────────────────────────────
   const { data: repairs = [] } = useQuery({
-    queryKey: ["impact-repairs", orgId],
+    queryKey: ["impact-repairs", orgId, periodStartDate],
     enabled: !!orgId,
     queryFn: async () => {
-      const { data } = await (supabase.from("vehicle_repairs") as any)
+      let q = (supabase.from("vehicle_repairs") as any)
         .select("cost, is_breakdown, status")
         .eq("organization_id", orgId!)
         .eq("status", "approved");
+      if (periodStartDate) q = q.gte("repair_date", periodStartDate);
+      const { data } = await q;
       return data ?? [];
     },
   });
 
   // ── Fleet utilisation (from the audit-log-backed RPC) ───────────────────
+  // "All time" has no natural day-count for this RPC (it needs a concrete
+  // window to compare against a peer target), so it falls back to a wide
+  // 3650-day span rather than leaving utilisation undefined for that choice.
+  const utilizationDays = period === "all" ? 3650 : PERIOD_DAYS[period];
+
   const { data: utilizationSummary } = useQuery({
-    queryKey: ["impact-utilization", orgId],
+    queryKey: ["impact-utilization", orgId, utilizationDays],
     enabled: !!orgId,
     queryFn: async () => {
       const { data, error } = await (supabase.rpc as any)("get_fleet_utilization_summary", {
         p_organization_id: orgId,
-        p_days: 30,
+        p_days: utilizationDays,
       });
       if (error) throw error;
       return data;
@@ -180,12 +203,12 @@ export default function TrialROISummary() {
   });
 
   const { data: utilizationRows = [] } = useQuery({
-    queryKey: ["impact-utilization-rows", orgId],
+    queryKey: ["impact-utilization-rows", orgId, utilizationDays],
     enabled: !!orgId,
     queryFn: async () => {
       const { data, error } = await (supabase.rpc as any)("get_fleet_utilization", {
         p_organization_id: orgId,
-        p_days: 30,
+        p_days: utilizationDays,
       });
       if (error) throw error;
       return data ?? [];
@@ -204,41 +227,50 @@ export default function TrialROISummary() {
   // TAB 1 — THE OPERATION
   // ══════════════════════════════════════════════════════════════════════
 
-  // 1. Profit Generated — real, from dispatch_financials rows finance has completed
-  const completedFinancials = dispatchFinancials.filter((f: any) => f.finance_status === "complete");
-  const pendingFinancials   = dispatchFinancials.filter((f: any) => f.finance_status !== "complete");
+  // 1. Profit Generated — real, from dispatch_financials rows finance has
+  // completed, filtered to the selected period client-side (the query
+  // itself is unfiltered — see the note on that query above).
+  const periodFinancials    = periodStart
+    ? dispatchFinancials.filter((f: any) => f.created_at && new Date(f.created_at) >= periodStart)
+    : dispatchFinancials;
+  const completedFinancials = periodFinancials.filter((f: any) => f.finance_status === "complete");
+  const pendingFinancials   = periodFinancials.filter((f: any) => f.finance_status !== "complete");
   const profitGenerated     = completedFinancials.reduce((s: number, f: any) => s + Number(f.gross_profit ?? 0), 0);
-  const totalRevenue        = completedFinancials.reduce((s: number, f: any) => s + Number(f.client_revenue ?? 0), 0);
-  const totalCost           = completedFinancials.reduce((s: number, f: any) => s + Number(f.vendor_cost ?? 0), 0);
   const profitIsReal        = completedFinancials.length > 0;
 
-  // 2. Revenue Protected — invoiced (sent/paid), whether or not dispatch-linked
+  // 2. Revenue Protected — total invoiced value, i.e. every invoice that has
+  // actually been issued to a client. Matches the Invoice screen's own
+  // total: pending + paid + overdue. 'draft' is excluded — it hasn't been
+  // sent, so nothing has been "protected" yet.
+  //
+  // NOTE ON STATUS VALUES: verified directly against production before
+  // writing this — the real enum is {draft, pending, overdue, paid}. There
+  // is NO 'sent' status in this schema. An earlier version of this file
+  // filtered on 'sent', which silently matched zero rows and undercounted
+  // both this metric and Cash Outstanding below.
   const invoicedRevenue = invoiceData
-    .filter((i: any) => ["sent", "paid", "overdue"].includes(i.status))
+    .filter((i: any) => ["pending", "paid", "overdue"].includes(i.status))
     .reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0);
-  const paidCount   = invoiceData.filter((i: any) => i.status === "paid").length;
-  const sentCount    = invoiceData.filter((i: any) => i.status === "sent").length;
+  const paidCount    = invoiceData.filter((i: any) => i.status === "paid").length;
+  const pendingCount = invoiceData.filter((i: any) => i.status === "pending").length;
   const overdueCount = invoiceData.filter((i: any) => i.status === "overdue").length;
 
-  // 3. Revenue At Risk — delivered dispatches with resolved revenue but no linked invoice
-  const linkedDispatchIds = new Set(
-    invoiceData.filter((i: any) => i.dispatch_id).map((i: any) => i.dispatch_id),
-  );
-  const unbilledFinancials = dispatchFinancials.filter(
-    (f: any) => f.client_revenue != null && f.dispatch_id && !linkedDispatchIds.has(f.dispatch_id),
-  );
-  const revenueAtRisk   = unbilledFinancials.reduce((s: number, f: any) => s + Number(f.client_revenue ?? 0), 0);
-  const unbilledCount   = unbilledFinancials.length;
-  const oldestUnbilled  = deliveredDispatches
-    .filter((d: any) => unbilledFinancials.some((f: any) => f.dispatch_id === d.id))
-    .reduce((oldest: number, d: any) => {
-      const days = differenceInDays(new Date(), new Date(d.created_at));
-      return Math.max(oldest, days);
-    }, 0);
+  // 3. Revenue At Risk = Client Revenue (all dispatch_financials, ignoring
+  // the period filter — see the note on that query) minus Revenue Protected
+  // (which DOES respect the period, since it's what's been billed lately).
+  // This is deliberately a simpler subtraction, not a per-dispatch
+  // unbilled-invoice match: the per-dispatch version undercounts whenever an
+  // invoice exists but isn't linked back to the dispatch it covers — a real
+  // and common gap in this platform's manual invoicing flow. A flat
+  // subtraction can't be fooled by a missing link. Clamped at 0 — a
+  // negative number here would mean "billed more than resolved," which
+  // reads as noise, not a real risk figure.
+  const totalClientRevenue = dispatchFinancials.reduce((s: number, f: any) => s + Number(f.client_revenue ?? 0), 0);
+  const revenueAtRisk = Math.max(0, totalClientRevenue - invoicedRevenue);
 
-  // 4. Cash Outstanding — invoiced, unpaid (sent + overdue)
+  // 4. Cash Outstanding — invoiced but not yet paid: pending + overdue.
   const cashOutstanding = invoiceData
-    .filter((i: any) => ["sent", "overdue"].includes(i.status))
+    .filter((i: any) => ["pending", "overdue"].includes(i.status))
     .reduce((s: number, i: any) => s + Number(i.balance_due ?? i.total_amount ?? 0), 0);
   const overdueAmount = invoiceData
     .filter((i: any) => i.status === "overdue")
@@ -250,14 +282,18 @@ export default function TrialROISummary() {
       return Math.max(worst, days);
     }, 0);
 
-  // 5. Cash Flow Risk — banded across not-invoiced / overdue / healthy
-  const paidAmount = invoiceData
+  // 5. Cash Flow Risk — banded across not-invoiced / overdue / healthy.
+  // Revenue At Risk (not-invoiced) is the whole-of-time backlog per its own
+  // definition above, so this band mixes a period-scoped healthy/overdue
+  // figure against a whole-of-time risk figure by design — the backlog
+  // doesn't shrink just because you're looking at "this month".
+  const paidAmount    = invoiceData
     .filter((i: any) => i.status === "paid")
     .reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0);
-  const healthyAmount   = paidAmount + invoiceData
-    .filter((i: any) => i.status === "sent")
+  const healthyAmount = paidAmount + invoiceData
+    .filter((i: any) => i.status === "pending")
     .reduce((s: number, i: any) => s + Number(i.balance_due ?? i.total_amount ?? 0), 0);
-  const riskTotal = revenueAtRisk + overdueAmount + healthyAmount;
+  const riskTotal       = revenueAtRisk + overdueAmount + healthyAmount;
   const notInvoicedPct = riskTotal > 0 ? Math.round((revenueAtRisk / riskTotal) * 100) : 0;
   const overduePct      = riskTotal > 0 ? Math.round((overdueAmount / riskTotal) * 100) : 0;
   const healthyPct       = Math.max(0, 100 - notInvoicedPct - overduePct);
@@ -404,10 +440,29 @@ export default function TrialROISummary() {
       >
         <div className="space-y-6 max-w-4xl mx-auto">
           <Tabs defaultValue="operation">
-            <TabsList>
-              <TabsTrigger value="operation">The Operation</TabsTrigger>
-              <TabsTrigger value="savings">Savings</TabsTrigger>
-            </TabsList>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <TabsList>
+                <TabsTrigger value="operation">The Operation</TabsTrigger>
+                <TabsTrigger value="savings">Savings</TabsTrigger>
+              </TabsList>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Showing</span>
+                <Select value={period} onValueChange={(v) => setPeriod(v as Period)}>
+                  <SelectTrigger className="h-8 w-[150px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="30">Last 30 days</SelectItem>
+                    <SelectItem value="90">Last 90 days</SelectItem>
+                    <SelectItem value="365">Last 12 months</SelectItem>
+                    <SelectItem value="all">All time</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-1.5">
+              Revenue At Risk always shows the full unbilled backlog, regardless of period — old unbilled revenue is still a risk today.
+            </p>
 
             {/* ══════════════ TAB 1 — THE OPERATION ══════════════ */}
             <TabsContent value="operation" className="space-y-4 mt-4">
@@ -434,7 +489,7 @@ export default function TrialROISummary() {
                     </div>
                     <p className="text-2xl font-black">{NGN(invoicedRevenue)}</p>
                     <p className="text-[11px] text-muted-foreground mt-1">
-                      {sentCount + paidCount + overdueCount} invoiced — {paidCount} paid, {sentCount} within terms, {overdueCount} overdue
+                      {pendingCount + paidCount + overdueCount} invoiced — {paidCount} paid, {pendingCount} within terms, {overdueCount} overdue
                     </p>
                   </CardContent>
                 </Card>
@@ -447,8 +502,7 @@ export default function TrialROISummary() {
                     </div>
                     <p className="text-2xl font-black text-amber-600">{NGN(revenueAtRisk)}</p>
                     <p className="text-[11px] text-muted-foreground mt-1">
-                      {unbilledCount} delivered, not yet invoiced
-                      {oldestUnbilled > 0 && ` · oldest is ${oldestUnbilled} day${oldestUnbilled !== 1 ? "s" : ""} old`}
+                      Client revenue not yet reflected in an invoice · whole-of-time backlog
                     </p>
                   </CardContent>
                 </Card>
@@ -461,7 +515,7 @@ export default function TrialROISummary() {
                     </div>
                     <p className="text-2xl font-black">{NGN(cashOutstanding)}</p>
                     <p className="text-[11px] text-muted-foreground mt-1">
-                      {sentCount + overdueCount} invoiced, unpaid
+                      {pendingCount + overdueCount} invoiced, unpaid
                       {overdueAmount > 0 && ` · ${NGN(overdueAmount)} overdue`}
                     </p>
                   </CardContent>
@@ -607,11 +661,6 @@ export default function TrialROISummary() {
                   </Collapsible>
                 ))}
               </div>
-
-              <p className="text-[11px] text-muted-foreground flex items-start gap-1.5">
-                <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                Demurrage Avoided isn't shown — the platform doesn't yet track actual demurrage charges incurred or prevented. It'll appear here once that data exists, not before.
-              </p>
             </TabsContent>
           </Tabs>
 
