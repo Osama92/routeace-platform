@@ -184,9 +184,9 @@ export default function TrialROISummary() {
   });
 
   // ── Fleet utilisation (from the audit-log-backed RPC) ───────────────────
-  // "All time" has no natural day-count for this RPC (it needs a concrete
-  // window to compare against a peer target), so it falls back to a wide
-  // 3650-day span rather than leaving utilisation undefined for that choice.
+  // "All time" has no natural day-count for this RPC (the pooled workday
+  // quota needs a concrete window), so it falls back to a wide 3650-day
+  // span rather than leaving utilisation undefined for that choice.
   const utilizationDays = period === "all" ? 3650 : PERIOD_DAYS[period];
 
   const { data: utilizationSummary } = useQuery({
@@ -332,11 +332,16 @@ export default function TrialROISummary() {
   const maintenanceShifted = Math.round(plannedRepairs.length * avgBreakdownCost * 0.4);
   const maintenanceIsReal  = repairs.length > 0;
 
-  // Fleet Utilisation — real, from the audit-log-backed RPC
+  // Fleet Utilisation — real, from the audit-log-backed RPC. Pooled quota:
+  // (total active days across owned trucks) / (30 workdays x truck count),
+  // scaled for the selected period — not a per-vehicle peer comparison.
   const fleetUtilPct   = utilizationSummary?.fleet_utilization_pct ?? null;
-  const utilBestVehicle = (utilizationRows as any[]).find((r) => r.is_benchmark_vehicle);
-  const utilWorstMeasured = (utilizationRows as any[])
-    .filter((r) => r.recommended_days != null)
+  const utilVehicleCount = utilizationSummary?.total_owned_vehicles ?? 0;
+  const utilActiveDays = utilizationSummary?.total_active_days ?? 0;
+  const utilWorkdayQuota = utilizationSummary?.total_workday_quota ?? 0;
+  const utilIdleCount = utilizationSummary?.vehicles_idle ?? 0;
+  const utilLeastActive = (utilizationRows as any[])
+    .slice()
     .sort((a, b) => a.active_days - b.active_days)[0];
 
   const savingsCards: SavingsCard[] = [
@@ -410,8 +415,8 @@ export default function TrialROISummary() {
       icon: Truck,
       label: "Fleet Utilisation",
       sublabel: fleetUtilPct != null
-        ? `Owned fleet's active days over the last 30, against your own busiest truck of the same class`
-        : "No owned vehicles with dispatch activity in the last 30 days",
+        ? `${utilVehicleCount} owned truck${utilVehicleCount !== 1 ? "s" : ""} · active days pooled against a 30-workday-per-truck quota`
+        : "No owned vehicles to measure",
       value: fleetUtilPct != null ? fleetUtilPct : "—",
       valueSuffix: fleetUtilPct != null ? "%" : undefined,
       color: "text-violet-500",
@@ -419,13 +424,15 @@ export default function TrialROISummary() {
       bg: "bg-violet-500/10",
       source: "real" as DataSource,
       derivation: fleetUtilPct != null ? [
-        { label: "Owned vehicles measured", value: String(utilizationSummary?.vehicles_measured ?? 0) },
-        ...(utilBestVehicle ? [{ label: "Busiest truck (sets the target)", value: `${utilBestVehicle.registration_number} — ${utilBestVehicle.active_days} of 30 days` }] : []),
-        ...(utilWorstMeasured ? [{ label: "Lowest measured", value: `${utilWorstMeasured.registration_number} — ${utilWorstMeasured.utilization_pct}%` }] : []),
+        { label: "Owned vehicles", value: String(utilVehicleCount) },
+        { label: "Workday quota", value: `${utilVehicleCount} trucks × 30 days = ${utilWorkdayQuota} days` },
+        { label: "Active days logged (all trucks combined)", value: String(utilActiveDays) },
+        { label: "Idle trucks (0 active days)", value: String(utilIdleCount) },
+        ...(utilLeastActive ? [{ label: "Least active truck", value: `${utilLeastActive.registration_number} — ${utilLeastActive.active_days} days` }] : []),
         { label: "Fleet utilisation", value: `${fleetUtilPct}%`, highlight: true },
         { label: "Scope", note: "Owned/internal vehicles only — vendor trucks are excluded, that's the vendor's fleet to manage" },
       ] : [
-        { label: "No active owned vehicles in the last 30 days", note: "This fills in as soon as a dispatch on an owned truck reaches picked up or in transit" },
+        { label: "No owned vehicles on record", note: "This fills in as soon as an owned truck is added and a dispatch reaches picked up or in transit" },
       ],
     },
   ];
