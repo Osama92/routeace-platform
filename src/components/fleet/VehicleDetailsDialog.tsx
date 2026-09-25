@@ -14,6 +14,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
   Truck,
   Fuel,
   Gauge,
@@ -97,6 +100,15 @@ interface RepairInsights {
   repeat_faults: { repair_type: string; occurrences: number; total_cost: number }[];
 }
 
+interface OpenSchedule {
+  id: string;
+  service_type: string;
+  component_type: string | null;
+  priority: string;
+  scheduled_date: string;
+  prediction_id: string | null;
+}
+
 interface VehicleDetailsDialogProps {
   vehicle: Vehicle | null;
   open: boolean;
@@ -140,6 +152,7 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange, initialTab = "overv
 
   const [insights, setInsights] = useState<RepairInsights | null>(null);
   const [activeTab, setActiveTab] = useState<string>(initialTab);
+  const [openSchedules, setOpenSchedules] = useState<OpenSchedule[]>([]);
 
   const emptyRepairForm = {
     repair_date: format(new Date(), "yyyy-MM-dd"),
@@ -153,6 +166,7 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange, initialTab = "overv
     is_breakdown: false,
     downtime_days: "",
     notes: "",
+    schedule_id: "",
   };
   const [repairForm, setRepairForm] = useState(emptyRepairForm);
 
@@ -163,8 +177,24 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange, initialTab = "overv
       setActiveTab(initialTab);
       fetchDocuments();
       fetchRepairs();
+      fetchOpenSchedules();
     }
   }, [vehicle, open, initialTab]);
+
+  // Scheduled services (from an AI prediction or manual scheduling) not yet
+  // fulfilled by a repair — lets the user link the repair they're logging
+  // back to the prediction that triggered it, so Business Impact can prove
+  // a specific breakdown was predicted and avoided, not just estimate one.
+  const fetchOpenSchedules = async () => {
+    if (!vehicle) return;
+    const { data } = await supabase
+      .from("maintenance_schedules")
+      .select("id, service_type, component_type, priority, scheduled_date, prediction_id")
+      .eq("vehicle_id", vehicle.id)
+      .in("schedule_status", ["scheduled", "in_progress", "overdue"])
+      .order("scheduled_date", { ascending: true });
+    setOpenSchedules(data ?? []);
+  };
 
   const fetchDocuments = async () => {
     if (!vehicle) return;
@@ -230,6 +260,7 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange, initialTab = "overv
         p_is_breakdown: repairForm.is_breakdown,
         p_downtime_days: repairForm.downtime_days ? parseInt(repairForm.downtime_days) : null,
         p_book_expense: true,
+        p_schedule_id: repairForm.schedule_id || null,
       });
 
       if (error) throw error;
@@ -243,6 +274,7 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange, initialTab = "overv
       setShowRepairForm(false);
       setRepairForm(emptyRepairForm);
       fetchRepairs();
+      fetchOpenSchedules();
     } catch (error: any) {
       toast({
         title: "Error",
@@ -610,6 +642,33 @@ const VehicleDetailsDialog = ({ vehicle, open, onOpenChange, initialTab = "overv
                     onChange={(e) => setRepairForm(p => ({ ...p, parts_replaced: e.target.value }))}
                   />
                 </div>
+
+                {openSchedules.length > 0 && (
+                  <div className="space-y-2">
+                    <Label>Fulfils a scheduled service?</Label>
+                    <Select
+                      value={repairForm.schedule_id || "none"}
+                      onValueChange={(v) => setRepairForm(p => ({ ...p, schedule_id: v === "none" ? "" : v }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Not linked to a scheduled service" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Not linked to a scheduled service</SelectItem>
+                        {openSchedules.map((s) => (
+                          <SelectItem key={s.id} value={s.id}>
+                            {s.service_type} — due {format(new Date(s.scheduled_date), "d MMM yyyy")}
+                            {s.prediction_id ? " (AI-predicted)" : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Link this if it's AI-predicted — it lets Business Impact count this as a
+                      verified avoided breakdown instead of an estimate.
+                    </p>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-4">
                   {/* Breakdown vs planned is the reliability signal: a truck

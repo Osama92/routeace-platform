@@ -32,6 +32,7 @@ interface PendingRepair {
   performed_by: string | null;
   is_breakdown: boolean;
   downtime_days: number | null;
+  prediction_id: string | null;
   status: string;
   finance_reviewed_by: string | null;
   finance_note: string | null;
@@ -90,7 +91,7 @@ const RepairApprovalQueue = ({
     queryFn: async () => {
       const { data, error } = await (supabase.from("vehicle_repairs") as any)
         .select(
-          "id, vehicle_id, repair_date, repair_type, description, parts_replaced, parts_cost, labour_cost, cost, original_cost, original_parts_cost, original_labour_cost, mileage_at_repair, performed_by, is_breakdown, downtime_days, status, finance_reviewed_by, finance_note, vehicles(registration_number, truck_type)",
+          "id, vehicle_id, repair_date, repair_type, description, parts_replaced, parts_cost, labour_cost, cost, original_cost, original_parts_cost, original_labour_cost, mileage_at_repair, performed_by, is_breakdown, downtime_days, prediction_id, status, finance_reviewed_by, finance_note, vehicles(registration_number, truck_type)",
         )
         .eq("organization_id", organizationId!)
         .in("status", statuses)
@@ -241,6 +242,11 @@ const RepairApprovalQueue = ({
                         >
                           {r.is_breakdown ? "Breakdown" : "Planned"}
                         </Badge>
+                        {r.prediction_id && (
+                          <Badge variant="outline" className="text-violet-600 border-violet-500/40 text-[10px]">
+                            AI-predicted — approving this resolves the prediction
+                          </Badge>
+                        )}
                         {stage === "super_admin" && r.status === "pending_finance" && (
                           <Badge variant="outline" className="text-amber-600 border-amber-500/40 text-[10px]">
                             Not yet reviewed by finance

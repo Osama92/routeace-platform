@@ -174,12 +174,32 @@ export default function TrialROISummary() {
     enabled: !!orgId,
     queryFn: async () => {
       let q = (supabase.from("vehicle_repairs") as any)
-        .select("cost, is_breakdown, status")
+        .select("cost, is_breakdown, status, prediction_id")
         .eq("organization_id", orgId!)
         .eq("status", "approved");
       if (periodStartDate) q = q.gte("repair_date", periodStartDate);
       const { data } = await q;
       return data ?? [];
+    },
+  });
+
+  // Verified avoided-cost: only repairs traceable to a resolved AI
+  // prediction (user linked a scheduled service at logging time, and it was
+  // later approved). Distinct from the fleet-average estimate below — this
+  // is the "a specific breakdown was predicted and avoided" claim, backed by
+  // get_predicted_maintenance_savings() (20260925130000). Falls back to a
+  // wide 3650-day span for "all time", same reasoning as fleet utilisation.
+  const predictedSavingsDays = period === "all" ? 3650 : PERIOD_DAYS[period];
+  const { data: predictedSavings } = useQuery({
+    queryKey: ["impact-predicted-savings", orgId, predictedSavingsDays],
+    enabled: !!orgId,
+    queryFn: async () => {
+      const { data, error } = await (supabase.rpc as any)("get_predicted_maintenance_savings", {
+        p_organization_id: orgId,
+        p_days: predictedSavingsDays,
+      });
+      if (error) throw error;
+      return data;
     },
   });
 
@@ -321,16 +341,42 @@ export default function TrialROISummary() {
   // No fabricated figure: zero until the platform can actually see a correction.
   const billingRecovered = 0;
 
-  // Maintenance Shifted — real, from approved repairs
-  const plannedRepairs   = repairs.filter((r: any) => !r.is_breakdown);
-  const breakdownRepairs = repairs.filter((r: any) => r.is_breakdown);
+  // Maintenance Shifted — two tiers, kept explicitly separate:
+  //
+  // 1. VERIFIED (real): a repair that traces back to a resolved AI
+  //    prediction — the user linked it to a maintenance_schedules row at
+  //    logging time (see VehicleDetailsDialog's "Fulfils a scheduled
+  //    service?" picker), a super admin approved it, and
+  //    approve_vehicle_repair() marked the prediction resolved. This is the
+  //    only case where "this specific breakdown was predicted and avoided"
+  //    is a provable claim, not an inference. Source: get_predicted_
+  //    maintenance_savings() (migration 20260925130000).
+  //
+  // 2. ESTIMATED (partial): every other approved planned repair, valued
+  //    against the fleet's own average breakdown cost — the same shape as
+  //    the worked example (breakdown cost minus planned cost), just without
+  //    proof a specific breakdown was heading this vehicle's way. Kept at
+  //    the same conservative 40% credit as before: a planned repair often
+  //    prevents SOME future breakdown, but claiming its full averted cost
+  //    without a prediction to point to would overstate the claim.
+  const verifiedCount       = predictedSavings?.verified_count ?? 0;
+  const verifiedPlannedCost = predictedSavings?.total_planned_cost ?? 0;
+  const verifiedAvoided     = predictedSavings?.total_avoided_cost ?? 0;
+  const verifiedBreakdownCost = verifiedCount > 0 ? verifiedPlannedCost + verifiedAvoided : 0;
+
+  const unverifiedRepairs = repairs.filter((r: any) => !r.prediction_id);
+  const plannedRepairs   = unverifiedRepairs.filter((r: any) => !r.is_breakdown);
+  const breakdownRepairs = unverifiedRepairs.filter((r: any) => r.is_breakdown);
   const avgBreakdownCost = breakdownRepairs.length > 0
     ? breakdownRepairs.reduce((s: number, r: any) => s + Number(r.cost ?? 0), 0) / breakdownRepairs.length
     : plannedRepairs.length > 0
       ? plannedRepairs.reduce((s: number, r: any) => s + Number(r.cost ?? 0), 0) / plannedRepairs.length * 1.6
       : 0;
-  const maintenanceShifted = Math.round(plannedRepairs.length * avgBreakdownCost * 0.4);
+  const estimatedShifted = Math.round(plannedRepairs.length * avgBreakdownCost * 0.4);
+
+  const maintenanceShifted = verifiedAvoided + estimatedShifted;
   const maintenanceIsReal  = repairs.length > 0;
+  const hasVerified = verifiedCount > 0;
 
   // Fleet Utilisation — real, from the audit-log-backed RPC. Pooled quota:
   // (total active days across owned trucks) / (30 workdays x truck count),
@@ -392,24 +438,40 @@ export default function TrialROISummary() {
     {
       icon: Wrench,
       label: "Maintenance Shifted",
-      sublabel: maintenanceIsReal
-        ? `${plannedRepairs.length} planned repair${plannedRepairs.length !== 1 ? "s" : ""} vs ${breakdownRepairs.length} breakdown${breakdownRepairs.length !== 1 ? "s" : ""} — each with real parts & labour cost on file`
-        : "Log and approve repairs to start tracking breakdown cost avoided",
+      sublabel: hasVerified
+        ? `${verifiedCount} repair${verifiedCount !== 1 ? "s" : ""} verified against an AI prediction, plus ${plannedRepairs.length} other planned repair${plannedRepairs.length !== 1 ? "s" : ""} estimated`
+        : maintenanceIsReal
+          ? `${plannedRepairs.length} planned repair${plannedRepairs.length !== 1 ? "s" : ""} vs ${breakdownRepairs.length} breakdown${breakdownRepairs.length !== 1 ? "s" : ""} — each with real parts & labour cost on file`
+          : "Log and approve repairs to start tracking breakdown cost avoided",
       value: NGN(maintenanceShifted),
       color: "text-orange-500",
       border: "border-l-orange-500",
       bg: "bg-orange-500/10",
-      source: (maintenanceIsReal ? "real" : "benchmark") as DataSource,
+      source: (hasVerified ? "real" : maintenanceIsReal ? "partial" : "benchmark") as DataSource,
       derivation: maintenanceIsReal ? [
-        { label: "Approved repairs on record", value: String(repairs.length) },
-        { label: "Planned (caught before breakdown)", value: String(plannedRepairs.length) },
-        { label: "Breakdown", value: String(breakdownRepairs.length) },
-        { label: "Avg cost per repair", value: NGN(Math.round(avgBreakdownCost)) },
-        { label: "Estimated breakdown cost avoided (40% of planned repair value)", value: NGN(maintenanceShifted), highlight: true },
+        ...(hasVerified ? [
+          { label: "— Verified (AI-predicted repairs) —", note: "Traced to a resolved prediction: scheduled from an AI risk flag, then actually carried out and approved" },
+          { label: "Repairs verified", value: String(verifiedCount) },
+          { label: "Historical breakdown repair (this fleet's average)", value: NGN(Math.round(verifiedBreakdownCost / verifiedCount)) },
+          { label: "Planned intervention (actual cost)", value: NGN(Math.round(verifiedPlannedCost / verifiedCount)) },
+          { label: "Verified avoided cost", value: NGN(verifiedAvoided), highlight: true },
+        ] : []),
+        ...(plannedRepairs.length > 0 ? [
+          ...(hasVerified ? [{ label: "— Estimated (no prediction on file) —", note: "Not traced to any AI prediction" }] : []),
+          { label: hasVerified ? "Other planned repairs" : "Planned (caught before breakdown)", value: String(plannedRepairs.length) },
+          { label: "Breakdowns on record", value: String(breakdownRepairs.length) },
+          { label: "Avg cost per repair", value: NGN(Math.round(avgBreakdownCost)) },
+          { label: "Estimated breakdown cost avoided (40% of planned repair value)", value: NGN(estimatedShifted), highlight: true, note: "Not linked to a specific prediction — a conservative credit, not a proven avoided breakdown" },
+        ] : []),
+        { label: "Total maintenance shifted", value: NGN(maintenanceShifted), highlight: true },
       ] : [
         { label: "No approved repairs on record yet", note: "Log repairs against owned vehicles, then have a super admin approve them" },
       ],
-      actionPrompt: !maintenanceIsReal ? "Log a vehicle repair to start tracking this" : undefined,
+      actionPrompt: !maintenanceIsReal
+        ? "Log a vehicle repair to start tracking this"
+        : !hasVerified
+          ? "Link a repair to a scheduled service in the vehicle's Repairs tab to start verifying avoided breakdowns"
+          : undefined,
     },
     {
       icon: Truck,
