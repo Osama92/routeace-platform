@@ -385,6 +385,14 @@ export default function TrialROISummary() {
     : Math.round(vehicleCount * 40_000 * FUEL_WASTE_RATE * monthsActive);
   const fuelSource: DataSource = logsWithDistance.length > 0 ? "real" : "benchmark";
 
+  // Running UNDER the system estimate is a different claim from "recovered":
+  // no waste was ever being lost, so it's never folded into fuelRecovered or
+  // totalSavings — it's an efficiency signal, not cash clawed back. Shown as
+  // its own labeled figure only.
+  const underEstimateLitres = logsWithDistance.length > 0 ? Math.max(0, expectedLitres - totalLitres) : 0;
+  const underEstimateValue  = Math.round(underEstimateLitres * avgCostPerLitre);
+  const underEstimatePct    = expectedLitres > 0 ? Math.round((underEstimateLitres / expectedLitres) * 100) : 0;
+
   // Billing Recovered — placeholder until invoice-revision tracking exists.
   // No fabricated figure: zero until the platform can actually see a correction.
   const billingRecovered = 0;
@@ -459,6 +467,13 @@ export default function TrialROISummary() {
         { label: "Excess over estimate", value: `${Math.round(excessLitres).toLocaleString()} L` },
         { label: "Avg cost per litre (this fleet)", value: NGN(Math.round(avgCostPerLitre)) },
         { label: "Fuel recovered", value: NGN(fuelRecovered), highlight: true },
+        ...(underEstimateLitres > 0 ? [
+          {
+            label: `Running ${underEstimatePct}% under estimate`,
+            value: NGN(underEstimateValue),
+            note: `${Math.round(underEstimateLitres).toLocaleString()} L not needed vs. the system estimate — a good sign, but not waste recovered, so it's kept out of the total above`,
+          },
+        ] : []),
       ] : [
         { label: "No verified fuel baseline yet", note: "Benchmark: NARTO's 12% average fuel-waste rate applied to an assumed ₦40,000/vehicle/month" },
         { label: "Vehicles", value: String(vehicleCount) },
