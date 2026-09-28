@@ -20,6 +20,7 @@ import {
   TrendingUp, ShieldCheck, AlertTriangle, Wallet, Gauge,
   Fuel, FileCheck, Wrench, Truck, Info, ChevronDown,
 } from "lucide-react";
+import { resolveKmpl, DEFAULT_KMPL } from "@/lib/fuel/vehicleKmpl";
 
 // ── Nigerian industry benchmark (NARTO) ───────────────────────────────────
 // Used only as a fallback for Fuel Recovered when no verified fleet baseline
@@ -155,15 +156,32 @@ export default function TrialROISummary() {
   });
 
   // ── Fuel logs ────────────────────────────────────────────────────────────
+  // Same shape and same real System-Est-vs-Actual methodology as
+  // FuelIntelligence.tsx: distance / per-vehicle-type km/L baseline
+  // (src/lib/fuel/vehicleKmpl.ts) gives expected litres; actual minus
+  // expected, times this fleet's own average cost/litre, is the recovered
+  // figure. That baseline is a maintained, shared table (8 real vehicle
+  // classes), not a guess — it's what already drives Fuel Intelligence's
+  // "Expected (L)" column and DynamicPricingEngine.
   const { data: fuelLogs = [] } = useQuery({
     queryKey: ["impact-fuel", orgId, periodStartDate],
     enabled: !!orgId,
     queryFn: async () => {
       let q = supabase.from("fuel_logs")
-        .select("total_cost, km_since_last_fill")
+        .select("vehicle_id, litres_dispensed, total_cost, km_since_last_fill, is_dispatch_estimate, dispatch_id, dispatches(total_distance_km, distance_km)")
         .eq("organization_id", orgId!);
       if (periodStartDate) q = q.gte("log_date", periodStartDate);
       const { data } = await q;
+      return data ?? [];
+    },
+  });
+
+  const { data: fuelVehicles = [] } = useQuery({
+    queryKey: ["impact-fuel-vehicles", orgId],
+    enabled: !!orgId,
+    queryFn: async () => {
+      const { data } = await supabase.from("vehicles")
+        .select("id, vehicle_type").eq("organization_id", orgId!);
       return data ?? [];
     },
   });
@@ -328,14 +346,44 @@ export default function TrialROISummary() {
   // TAB 2 — SAVINGS
   // ══════════════════════════════════════════════════════════════════════
 
-  // Fuel Recovered — benchmark only until fleet has a real baseline
-  const totalFuelSpend   = fuelLogs.reduce((s: number, f: any) => s + Number(f.total_cost ?? 0), 0);
-  const disciplinedLogs  = fuelLogs.filter((f: any) => f.km_since_last_fill != null && Number(f.km_since_last_fill) > 0);
-  const disciplinedSpend = disciplinedLogs.reduce((s: number, f: any) => s + Number(f.total_cost ?? 0), 0);
-  const fuelRecovered    = disciplinedSpend > 0
-    ? Math.round(disciplinedSpend * FUEL_WASTE_RATE)
+  // Fuel Recovered — real System Estimate vs. Actual, same methodology as
+  // FuelIntelligence.tsx (its "Expected (L)" / "Actual (L)" columns): for
+  // every fuel log with a resolvable distance, expected litres = distance /
+  // this vehicle-type's km/L baseline (src/lib/fuel/vehicleKmpl.ts, a
+  // maintained per-class table — bike/van/truck sizes/trailer/HGV — already
+  // driving Fuel Intelligence and DynamicPricingEngine). Recovered =
+  // (actual - expected) litres, clamped at 0, times this fleet's own average
+  // cost/litre. Falls back to the old benchmark only when there is no
+  // distance data at all to compute a real expected figure from.
+  const vKmplMap = Object.fromEntries(
+    (fuelVehicles as any[]).map((v) => [v.id, resolveKmpl(v.vehicle_type)])
+  );
+  const effectiveKm = (l: any): number =>
+    Number(l.km_since_last_fill || 0) ||
+    Number((l.dispatches as any)?.total_distance_km || 0) ||
+    Number((l.dispatches as any)?.distance_km || 0);
+  // Mirrors FuelIntelligence's isActual(): excludes system-estimated
+  // dispatch fuel rows (not a real fill) from the actual-litres/spend side.
+  const isActualFuelLog = (l: any): boolean => {
+    if (l.is_dispatch_estimate === true) return false;
+    if (l.is_dispatch_estimate === null && l.dispatch_id) return false;
+    return true;
+  };
+
+  const actualFuelLogs   = fuelLogs.filter(isActualFuelLog);
+  const totalFuelSpend   = actualFuelLogs.reduce((s: number, f: any) => s + Number(f.total_cost ?? 0), 0);
+  const totalLitres      = actualFuelLogs.reduce((s: number, f: any) => s + Number(f.litres_dispensed ?? 0), 0);
+  const logsWithDistance = actualFuelLogs.filter((f: any) => effectiveKm(f) > 0);
+  const expectedLitres   = logsWithDistance.reduce((sum: number, f: any) => {
+    const kmpl = vKmplMap[f.vehicle_id] ?? DEFAULT_KMPL;
+    return sum + (effectiveKm(f) / kmpl);
+  }, 0);
+  const avgCostPerLitre  = totalLitres > 0 ? totalFuelSpend / totalLitres : 0;
+  const excessLitres     = logsWithDistance.length > 0 ? Math.max(0, totalLitres - expectedLitres) : 0;
+  const fuelRecovered    = logsWithDistance.length > 0
+    ? Math.round(excessLitres * avgCostPerLitre)
     : Math.round(vehicleCount * 40_000 * FUEL_WASTE_RATE * monthsActive);
-  const fuelSource: DataSource = disciplinedSpend > 0 ? "partial" : "benchmark";
+  const fuelSource: DataSource = logsWithDistance.length > 0 ? "real" : "benchmark";
 
   // Billing Recovered — placeholder until invoice-revision tracking exists.
   // No fabricated figure: zero until the platform can actually see a correction.
@@ -394,21 +442,22 @@ export default function TrialROISummary() {
     {
       icon: Fuel,
       label: "Fuel Recovered",
-      sublabel: disciplinedSpend > 0
-        ? `${disciplinedLogs.length} of ${fuelLogs.length} fuel logs have odometer readings — waste rate applied to that disciplined spend`
+      sublabel: logsWithDistance.length > 0
+        ? `${logsWithDistance.length} of ${actualFuelLogs.length} fuel logs have a resolvable distance — system estimate vs. actual applied to those`
         : totalFuelSpend > 0
-          ? `${NGN(totalFuelSpend)} logged, but no odometer readings yet — showing a fleet-size benchmark instead`
-          : `${vehicleCount} vehicles — log fuel with odometer readings to start tracking real recovery`,
+          ? `${NGN(totalFuelSpend)} logged, but no distance data yet — showing a fleet-size benchmark instead`
+          : `${vehicleCount} vehicles — log fuel with odometer readings or link a dispatch to start tracking real recovery`,
       value: NGN(fuelRecovered),
       color: "text-blue-500",
       border: "border-l-blue-500",
       bg: "bg-blue-500/10",
       source: fuelSource,
-      derivation: disciplinedSpend > 0 ? [
-        { label: "Total fuel spend logged", value: NGN(totalFuelSpend) },
-        { label: "Logs with odometer readings", value: `${disciplinedLogs.length} of ${fuelLogs.length}` },
-        { label: "Disciplined fuel spend", value: NGN(disciplinedSpend) },
-        { label: "NARTO waste rate", value: "12%", note: "Applied to disciplined spend only — undisciplined logs can't prove the km were tracked" },
+      derivation: logsWithDistance.length > 0 ? [
+        { label: "Actual litres dispensed", value: `${Math.round(totalLitres).toLocaleString()} L` },
+        { label: "System-estimated litres (distance ÷ vehicle-type km/L)", value: `${Math.round(expectedLitres).toLocaleString()} L` },
+        { label: "Logs with a resolvable distance", value: `${logsWithDistance.length} of ${actualFuelLogs.length}` },
+        { label: "Excess over estimate", value: `${Math.round(excessLitres).toLocaleString()} L` },
+        { label: "Avg cost per litre (this fleet)", value: NGN(Math.round(avgCostPerLitre)) },
         { label: "Fuel recovered", value: NGN(fuelRecovered), highlight: true },
       ] : [
         { label: "No verified fuel baseline yet", note: "Benchmark: NARTO's 12% average fuel-waste rate applied to an assumed ₦40,000/vehicle/month" },
@@ -416,8 +465,8 @@ export default function TrialROISummary() {
         { label: "Months active", value: String(monthsActive) },
         { label: "Benchmark estimate", value: NGN(fuelRecovered), highlight: true },
       ],
-      actionPrompt: disciplinedSpend === 0
-        ? "Log fuel fill-ups with an odometer reading each time to unlock a real, fleet-specific figure"
+      actionPrompt: logsWithDistance.length === 0
+        ? "Log fuel fill-ups with an odometer reading (or link them to a dispatch) to unlock a real, fleet-specific figure"
         : undefined,
     },
     {
