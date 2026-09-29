@@ -599,6 +599,11 @@ export default function AdvancedRoutePlanner() {
   // ("4 instead of 2"): two dispatches for the same lane, inserted
   // milliseconds apart.
   const applyingRef = useRef(false);
+  // Generated once per modal-open, sent with the insert. Backed by a
+  // per-org unique index on dispatches(organization_id, client_request_id)
+  // — a resubmit that slips past applyingRef (two tabs, a retried request)
+  // still gets rejected at the database, not just the UI.
+  const clientRequestIdRef = useRef<string>(crypto.randomUUID());
   const [applyForm, setApplyForm] = useState({
     customer_id: "",
     driver_id:   "",
@@ -614,6 +619,7 @@ export default function AdvancedRoutePlanner() {
       driver_id:   "",
       notes: `Route: ${opt.name} · ${opt.distanceKm} km · Est. ${opt.durationHours}h · ${opt.algorithm}`,
     });
+    clientRequestIdRef.current = crypto.randomUUID();
     setApplyModalOpen(true);
   };
 
@@ -636,6 +642,7 @@ export default function AdvancedRoutePlanner() {
     try {
       const { data, error } = await supabase.from("dispatches").insert({
         organization_id:   organizationId,
+        client_request_id: clientRequestIdRef.current,
         created_by:        user?.id,
         customer_id:       applyForm.customer_id,
         driver_id:         applyForm.driver_id || null,

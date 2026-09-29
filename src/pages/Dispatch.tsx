@@ -225,6 +225,11 @@ const DispatchPage = () => {
   // Confirmed in production: duplicate dispatches on the same lane inserted
   // milliseconds apart, traced back to exactly this gap.
   const creatingDispatchRef = useRef(false);
+  // Generated once per dialog-open, sent with the insert. Backed by a
+  // per-org unique index on dispatches(organization_id, client_request_id)
+  // — a resubmit that slips past creatingDispatchRef (two tabs, a retried
+  // request) still gets rejected at the database, not just the UI.
+  const clientRequestIdRef = useRef<string>(crypto.randomUUID());
   const [activeTab, setActiveTab] = useState("all");
   const [isApprovalDialogOpen, setIsApprovalDialogOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
@@ -822,6 +827,7 @@ const DispatchPage = () => {
 
       const insertData = {
         dispatch_number: `DSP-${Date.now()}`,
+        client_request_id: clientRequestIdRef.current,
         organization_id: organizationId ?? null,
         customer_id: formData.customer_id,
         route_id: formData.route_id || null,
@@ -1399,7 +1405,7 @@ const DispatchPage = () => {
         </div>
 
         {canManage && (
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <Dialog open={isDialogOpen} onOpenChange={(v) => { setIsDialogOpen(v); if (v) clientRequestIdRef.current = crypto.randomUUID(); }}>
             <DialogTrigger asChild>
               <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
                 <Plus className="w-4 h-4 mr-2" />

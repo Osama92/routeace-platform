@@ -56,6 +56,11 @@ export default function ConvertToDispatchDialog({ pendingRequests, onDone }: Pro
   // `create.mutate()` twice before the first render lands. A ref mutation
   // is synchronous, so it actually closes the race.
   const submittingRef = useRef(false);
+  // Generated once per dialog-open, sent with the insert. Backed by a
+  // per-org unique index on dispatches(organization_id, client_request_id)
+  // — a resubmit that slips past submittingRef (two tabs, a retried
+  // request) still gets rejected at the database, not just the UI.
+  const clientRequestIdRef = useRef<string>(crypto.randomUUID());
 
   const create = useMutation({
     mutationFn: async () => {
@@ -96,6 +101,7 @@ export default function ConvertToDispatchDialog({ pendingRequests, onDone }: Pro
 
       const { data: disp, error: e1 } = await supabase.from("dispatches").insert({
         dispatch_number: dispatchNumber,
+        client_request_id: clientRequestIdRef.current,
         pickup_address: first.origin_address,
         delivery_address: rows.map((r) => r.destination_address).join(" | "),
         cargo_description: cargo.slice(0, 1000),
@@ -170,7 +176,7 @@ export default function ConvertToDispatchDialog({ pendingRequests, onDone }: Pro
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button size="sm" variant="outline" onClick={() => setOpen(true)} disabled={eligible.length === 0}>
+      <Button size="sm" variant="outline" onClick={() => { clientRequestIdRef.current = crypto.randomUUID(); setOpen(true); }} disabled={eligible.length === 0}>
         <Truck className="w-4 h-4 mr-1" /> Convert to Dispatch
       </Button>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">

@@ -65,6 +65,11 @@ const SalesPipeline = () => {
     try {
       const { error } = await supabase.from("dispatches").insert([{
         dispatch_number: `DSP-${Date.now()}`,
+        // The opportunity's own id is a stable idempotency key here — one
+        // opportunity should only ever convert to one dispatch, so reusing
+        // opp.id (rather than a fresh random id per call) also protects
+        // against a genuine retry of the same click, not just a race.
+        client_request_id: opp.id,
         customer_id: opp.account_id || null,
         pickup_address: "Warehouse (from Sales Order)",
         delivery_address: opp.account?.account_name || "Customer Location",

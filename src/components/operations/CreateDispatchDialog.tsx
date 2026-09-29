@@ -33,6 +33,11 @@ const CreateDispatchDialog = () => {
   // the very next line of JS, so it actually closes the race. This is what
   // was producing duplicate dispatches milliseconds apart in production.
   const submittingRef = useRef(false);
+  // Generated once per dialog-open, sent with the insert. Backed by a
+  // per-org unique index on dispatches(organization_id, client_request_id)
+  // — a resubmit that slips past submittingRef (two tabs, a retried
+  // request) still gets rejected at the database, not just the UI.
+  const clientRequestIdRef = useRef<string>(crypto.randomUUID());
   // Holds the id of a blocking inspection the user chose to override, so the
   // decision can be recorded against them in dispatch_safety_gates.
   const blockedOverrideRef = useRef<string | null>(null);
@@ -433,6 +438,7 @@ const CreateDispatchDialog = () => {
 
       const insertPayload = {
         dispatch_number: `DSP-${Date.now()}`,
+        client_request_id: clientRequestIdRef.current,
         organization_id: organizationId,
         customer_id: resolvedCustomerId,
         route_id: form.route_id || null,
@@ -633,7 +639,7 @@ const CreateDispatchDialog = () => {
 
   return (
     <>
-    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
+    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (v) clientRequestIdRef.current = crypto.randomUUID(); else resetForm(); }}>
       <DialogTrigger asChild>
         <Button size="sm"><Plus className="w-3 h-3 mr-1" />New Dispatch</Button>
       </DialogTrigger>
