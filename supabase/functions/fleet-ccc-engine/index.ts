@@ -55,10 +55,32 @@ Deno.serve(async (req) => {
     const ldBlock = blockIfLD(tenantCtx, "Cash Conversion Cycle is a Logistics Company financial module and is unavailable for Logistics Department tenants.");
     if (ldBlock) return ldBlock;
 
+    // Resolve the caller's own organisation — every query below MUST be
+    // scoped to it. This function runs on the service-role key, which
+    // bypasses RLS entirely, so without this filter it silently pools the
+    // most recent 500 rows across EVERY tenant on the platform.
+    const { data: membership, error: memErr } = await supabase
+      .from("organization_members")
+      .select("organization_id")
+      .eq("user_id", user.id)
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle();
+    if (memErr) console.error("membership lookup error", memErr);
+
+    const orgId = membership?.organization_id;
+    if (!orgId) {
+      return new Response(JSON.stringify({ error: "No active organisation membership found" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // 1. Fetch Accounts Receivable data (DSO)
     const { data: arData } = await supabase
       .from("accounts_receivable")
       .select("amount_due, balance, posting_date, due_date, status")
+      .eq("organization_id", orgId)
       .order("posting_date", { ascending: false })
       .limit(500);
 
@@ -66,6 +88,7 @@ Deno.serve(async (req) => {
     const { data: apData } = await supabase
       .from("accounts_payable")
       .select("amount_due, amount_paid, balance, posting_date, due_date, status, vendor_name, category")
+      .eq("organization_id", orgId)
       .order("posting_date", { ascending: false })
       .limit(500);
 
@@ -73,15 +96,30 @@ Deno.serve(async (req) => {
     const { data: invoiceData } = await supabase
       .from("invoices")
       .select("total_amount, status, invoice_date, due_date, balance_due")
+      .eq("organization_id", orgId)
       .order("invoice_date", { ascending: false })
       .limit(500);
 
-    // 4. Fetch expense data for COGS
+    // 4. Fetch expense data (still used for DIO's parts/fuel/maintenance proxy)
     const { data: expenseData } = await supabase
       .from("expenses")
       .select("amount, category, expense_date, status")
+      .eq("organization_id", orgId)
       .order("expense_date", { ascending: false })
       .limit(500);
+
+    // 5. Fetch real COGS from the posted ledger (bills + expenses booked to
+    // cost_of_sales), not just the standalone expenses table. An org that
+    // runs its vendor spend through the Bills module never duplicates that
+    // spend into `expenses`, so `expenses` alone silently under-measures
+    // COGS to near-zero for those orgs, force-zeroing DPO and DIO below.
+    const { data: ledgerCogsData } = await supabase
+      .from("accounting_ledger")
+      .select("debit")
+      .eq("organization_id", orgId)
+      .eq("account_name", "cost_of_sales")
+      .order("entry_date", { ascending: false })
+      .limit(1000);
 
     // Calculate metrics
     const now = new Date();
@@ -97,16 +135,24 @@ Deno.serve(async (req) => {
     const annualizedRevenue = totalRevenue > 0 ? totalRevenue : 1;
     const dso = totalRevenue > 0 ? Math.round((totalAR / (annualizedRevenue / 365)) * 10) / 10 : 0;
 
-    // DPO Calculation
+    // DPO Calculation. COGS comes from the posted ledger's cost_of_sales
+    // entries (bills + expenses actually booked as cost of sales), which is
+    // the real figure — NOT the standalone expenses table alone, which
+    // under-measures COGS for any org that runs vendor spend through Bills
+    // instead of manual expense entry (see comment on ledgerCogsData above).
     const totalAP = (apData || []).reduce((sum, r) => sum + (r.balance || 0), 0);
-    const totalCOGS = (expenseData || [])
-      .filter((e) => e.status !== "cancelled")
-      .reduce((sum, e) => sum + (e.amount || 0), 0);
+    const totalCOGS = (ledgerCogsData || []).reduce((sum, r) => sum + (r.debit || 0), 0);
     const annualizedCOGS = totalCOGS > 0 ? totalCOGS : 1;
     const dpo = totalCOGS > 0 ? Math.round((totalAP / (annualizedCOGS / 365)) * 10) / 10 : 0;
 
-    // DIO Calculation (using fleet-related expense categories as inventory proxy)
-    const inventoryCategories = ["fuel", "maintenance", "spare_parts", "tires", "lubricants", "parts"];
+    // DIO Calculation (using fleet-related expense categories as inventory
+    // proxy — there is no dedicated parts/inventory table in this schema).
+    // Categories must match the real expense_category enum values (fuel,
+    // maintenance, driver_salary, insurance, tolls, parking, repairs,
+    // administrative, marketing, utilities, rent, equipment, other) —
+    // 'spare_parts', 'tires', 'lubricants', and bare 'parts' were never
+    // real values here and could never match anything.
+    const inventoryCategories = ["fuel", "maintenance", "repairs"];
     const inventoryExpenses = (expenseData || []).filter((e) =>
       inventoryCategories.some((c) => (e.category || "").toLowerCase().includes(c))
     );
@@ -248,10 +294,6 @@ Return JSON array with objects: { "title": string, "description": string, "impac
       )
     ));
 
-    // Regional benchmark (simulated)
-    const regionalAvgCCC = 32;
-    const cccVsBenchmark = Math.round((regionalAvgCCC - ccc) * 10) / 10;
-
     const response = {
       ccc: { value: ccc, isNegative: isNegativeCCC, trend: ccc < 0 ? "optimal" : ccc < 20 ? "good" : ccc < 40 ? "fair" : "poor" },
       dso: { value: dso, totalAR, arAging },
@@ -259,7 +301,6 @@ Return JSON array with objects: { "title": string, "description": string, "impac
       dio: { value: dio, avgInventory },
       revenue: { total: totalRevenue, cogs: totalCOGS },
       liquidityScore,
-      benchmark: { regionalAvg: regionalAvgCCC, advantage: cccVsBenchmark, advantageLabel: cccVsBenchmark > 0 ? `${cccVsBenchmark} days faster` : `${Math.abs(cccVsBenchmark)} days slower` },
       trend: trendMonths,
       recommendations: aiRecommendations,
       overdueClients: overdueAR,

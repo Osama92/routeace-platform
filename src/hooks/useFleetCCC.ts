@@ -8,7 +8,6 @@ export interface FleetCCCData {
   dio: { value: number; avgInventory: number };
   revenue: { total: number; cogs: number };
   liquidityScore: number;
-  benchmark: { regionalAvg: number; advantage: number; advantageLabel: string };
   trend: Array<{ month: string; ccc: number; dso: number; dpo: number; dio: number }>;
   recommendations: Array<{ title: string; description: string; impact: string; category: string; estimatedImprovement: string }>;
   overdueClients: Array<{ balance: number; due_date: string; status: string }>;

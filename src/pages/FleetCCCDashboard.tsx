@@ -9,7 +9,7 @@ import { Progress } from "@/components/ui/progress";
 import { useFleetCCC } from "@/hooks/useFleetCCC";
 import {
   TrendingUp, TrendingDown, DollarSign, Clock, Wallet, BarChart3, AlertTriangle,
-  ArrowUpRight, ArrowDownRight, Zap, Target, Shield, RefreshCw, Download,
+  ArrowUpRight, ArrowDownRight, Zap, Shield, RefreshCw, Download,
   Lightbulb, Gauge, ArrowRight, CheckCircle, Info
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend, Area, AreaChart } from "recharts";
@@ -71,7 +71,6 @@ const FleetCCCDashboard = () => {
   const dpo = data?.dpo ?? { value: 0, totalAP: 0, byCategory: {} };
   const dio = data?.dio ?? { value: 0, avgInventory: 0 };
   const liquidityScore = data?.liquidityScore ?? 0;
-  const benchmark = data?.benchmark ?? { regionalAvg: 32, advantage: 0, advantageLabel: "-" };
   const trend = data?.trend ?? [];
   const recommendations = data?.recommendations ?? [];
   const revenue = data?.revenue ?? { total: 0, cogs: 0 };
@@ -149,12 +148,11 @@ const FleetCCCDashboard = () => {
         </div>
 
         {/* Core Metrics */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <MetricTile label="DSO" value={dso.value} unit="days" icon={Clock} trend={dso.value < 30 ? "good" : dso.value < 45 ? "fair" : "poor"} subtitle="Client payment speed" />
           <MetricTile label="DPO" value={dpo.value} unit="days" icon={Wallet} trend={dpo.value > 30 ? "good" : dpo.value > 15 ? "fair" : "poor"} subtitle="Supplier payment cycle" />
           <MetricTile label="DIO" value={dio.value} unit="days" icon={BarChart3} trend={dio.value < 15 ? "good" : dio.value < 30 ? "fair" : "poor"} subtitle="Parts inventory holding" />
           <MetricTile label="Liquidity Score" value={liquidityScore} unit="/100" icon={Gauge} trend={liquidityScore > 70 ? "good" : liquidityScore > 40 ? "fair" : "poor"} subtitle="Fleet financial health" />
-          <MetricTile label="vs Regional Avg" value={benchmark.advantage} unit="days" icon={Target} trend={benchmark.advantage > 0 ? "good" : "poor"} subtitle={benchmark.advantageLabel} />
         </div>
 
         {/* Tabs */}
@@ -225,20 +223,6 @@ const FleetCCCDashboard = () => {
                 </CardContent>
               </Card>
             </div>
-
-            {/* Benchmark Card */}
-            <Card className="border-primary/10 bg-primary/5">
-              <CardContent className="py-4 flex items-center gap-4">
-                <Target className="w-8 h-8 text-primary" />
-                <div>
-                  <p className="text-sm font-semibold">Pan-African Fleet Benchmark</p>
-                  <p className="text-xs text-muted-foreground">
-                    Your CCC is <span className="font-bold text-foreground">{benchmark.advantageLabel}</span> than the regional fleet average of {benchmark.regionalAvg} days.
-                    {benchmark.advantage > 0 && " This positions your fleet in the top performance tier."}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
           </TabsContent>
 
           <TabsContent value="receivables" className="space-y-4 mt-4">
