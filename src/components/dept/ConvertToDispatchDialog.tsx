@@ -3,7 +3,7 @@
  * Multi-select pending outbound requests → group into a single dispatch,
  * assign a 3PL transporter, and email the transporter.
  */
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -50,8 +50,37 @@ export default function ConvertToDispatchDialog({ pendingRequests, onDone }: Pro
     setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
   };
 
+  // React Query's `isPending` has the same commit-timing gap as raw
+  // useState — it only becomes true after the mutation fn is invoked AND
+  // React commits the resulting render, so a fast double-click can call
+  // `create.mutate()` twice before the first render lands. A ref mutation
+  // is synchronous, so it actually closes the race.
+  const submittingRef = useRef(false);
+
   const create = useMutation({
     mutationFn: async () => {
+      if (submittingRef.current) throw new Error("__DOUBLE_SUBMIT_IGNORED__");
+      submittingRef.current = true;
+      try {
+        return await createDispatchInner();
+      } finally {
+        submittingRef.current = false;
+      }
+    },
+    onSuccess: (d) => {
+      toast.success(`Dispatch ${d?.dispatch_number} created - transporter notified by email`);
+      qc.invalidateQueries({ queryKey: ["outbound-requests"] });
+      qc.invalidateQueries({ queryKey: ["waybills-management"] });
+      setOpen(false); setSelectedIds([]); setTransporterId(""); setScheduledPickup(""); setAgreedRate(""); setTotalKm(""); setDieselLiters(""); setExtraDrops([]);
+      onDone?.();
+    },
+    onError: (e: any) => {
+      if (e?.message === "__DOUBLE_SUBMIT_IGNORED__") return;
+      toast.error(e?.message ?? "Failed to create dispatch");
+    },
+  });
+
+  async function createDispatchInner() {
       if (!user) throw new Error("Not authenticated");
       if (selectedIds.length === 0) throw new Error("Select at least one request");
       if (!transporterId) throw new Error("Select a transporter");
@@ -135,16 +164,7 @@ export default function ConvertToDispatchDialog({ pendingRequests, onDone }: Pro
       }
 
       return disp;
-    },
-    onSuccess: (d) => {
-      toast.success(`Dispatch ${d?.dispatch_number} created - transporter notified by email`);
-      qc.invalidateQueries({ queryKey: ["outbound-requests"] });
-      qc.invalidateQueries({ queryKey: ["waybills-management"] });
-      setOpen(false); setSelectedIds([]); setTransporterId(""); setScheduledPickup(""); setAgreedRate(""); setTotalKm(""); setDieselLiters(""); setExtraDrops([]);
-      onDone?.();
-    },
-    onError: (e: any) => toast.error(e?.message ?? "Failed to create dispatch"),
-  });
+  }
 
   const eligible = pendingRequests.filter((r) => r.status === "pending");
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -38,6 +38,12 @@ const SalesPipeline = () => {
     opportunity_name: "", account_id: "", stage: "lead", amount: "", expected_close_date: "",
     competitor: "", notes: "",
   });
+  // Had NO re-submit guard at all — a fast double-click on "Convert to
+  // Dispatch" could insert two dispatches for the same opportunity. Tracked
+  // per-opportunity (not one flag) since converting one shouldn't disable
+  // the button for every other "won" deal on the board.
+  const convertingRef = useRef<Set<string>>(new Set());
+  const [convertingIds, setConvertingIds] = useState<Set<string>>(new Set());
 
   const handleCreate = async () => {
     if (!form.opportunity_name) return;
@@ -53,6 +59,9 @@ const SalesPipeline = () => {
   };
 
   const handleConvertToDispatch = async (opp: any) => {
+    if (convertingRef.current.has(opp.id)) return;
+    convertingRef.current.add(opp.id);
+    setConvertingIds(new Set(convertingRef.current));
     try {
       const { error } = await supabase.from("dispatches").insert([{
         dispatch_number: `DSP-${Date.now()}`,
@@ -70,6 +79,9 @@ const SalesPipeline = () => {
       queryClient.invalidateQueries({ queryKey: ["ops-dispatches"] });
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      convertingRef.current.delete(opp.id);
+      setConvertingIds(new Set(convertingRef.current));
     }
   };
 
@@ -187,8 +199,8 @@ const SalesPipeline = () => {
                         </div>
                          {o.competitor && <Badge variant="outline" className="text-[9px] mt-1">vs {o.competitor}</Badge>}
                          {s.key === "won" && (
-                           <Button size="sm" variant="outline" className="w-full mt-2 text-[10px] h-7" onClick={() => handleConvertToDispatch(o)}>
-                             <Truck className="w-3 h-3 mr-1" /> Convert to Dispatch
+                           <Button size="sm" variant="outline" className="w-full mt-2 text-[10px] h-7" disabled={convertingIds.has(o.id)} onClick={() => handleConvertToDispatch(o)}>
+                             <Truck className="w-3 h-3 mr-1" /> {convertingIds.has(o.id) ? "Converting..." : "Convert to Dispatch"}
                            </Button>
                          )}
                        </CardContent>

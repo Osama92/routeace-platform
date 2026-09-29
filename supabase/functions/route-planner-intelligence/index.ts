@@ -151,6 +151,7 @@ Deno.serve(async (req) => {
         const km = Number(d.total_distance_km || d.distance_km) || 0;
         const hrs = km / 55;
         return {
+          id: d.id,
           route: `${(d.pickup_address || "Origin").split(",")[0]} → ${(d.delivery_address || "Destination").split(",")[0]} (${Math.round(km)} km)`,
           restStops: Math.max(1, Math.floor(hrs / 4)),
           fuelStops: Math.max(1, Math.floor(km / 400)),
