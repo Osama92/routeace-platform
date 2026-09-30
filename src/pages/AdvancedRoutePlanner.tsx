@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { useRegion } from "@/contexts/RegionContext";
@@ -592,18 +592,6 @@ export default function AdvancedRoutePlanner() {
   // ── Apply Route to Dispatch — modal + actual insert ────────────────────────
   const [applyModalOpen,    setApplyModalOpen]    = useState(false);
   const [applyingToDispatch, setApplyingToDispatch] = useState(false);
-  // A ref, not just `applyingToDispatch` state — state only blocks re-entry
-  // after React commits a re-render, and a fast double-click fires the
-  // handler twice before that commit lands. This is the confirmed source of
-  // the duplicate long-haul routes shown on this page's own KPI panel
-  // ("4 instead of 2"): two dispatches for the same lane, inserted
-  // milliseconds apart.
-  const applyingRef = useRef(false);
-  // Generated once per modal-open, sent with the insert. Backed by a
-  // per-org unique index on dispatches(organization_id, client_request_id)
-  // — a resubmit that slips past applyingRef (two tabs, a retried request)
-  // still gets rejected at the database, not just the UI.
-  const clientRequestIdRef = useRef<string>(crypto.randomUUID());
   const [applyForm, setApplyForm] = useState({
     customer_id: "",
     driver_id:   "",
@@ -619,13 +607,11 @@ export default function AdvancedRoutePlanner() {
       driver_id:   "",
       notes: `Route: ${opt.name} · ${opt.distanceKm} km · Est. ${opt.durationHours}h · ${opt.algorithm}`,
     });
-    clientRequestIdRef.current = crypto.randomUUID();
     setApplyModalOpen(true);
   };
 
   // Called when user confirms inside the modal
   const confirmApplyToDispatch = async () => {
-    if (applyingRef.current) return;
     if (!applyForm.customer_id) {
       toast({ title: "Customer required", description: "Please select a customer before creating the dispatch.", variant: "destructive" });
       return;
@@ -637,12 +623,10 @@ export default function AdvancedRoutePlanner() {
       ? fleetVehicles.find((v: any) => v.id === selectedFleetVehicle)
       : null;
 
-    applyingRef.current = true;
     setApplyingToDispatch(true);
     try {
       const { data, error } = await supabase.from("dispatches").insert({
         organization_id:   organizationId,
-        client_request_id: clientRequestIdRef.current,
         created_by:        user?.id,
         customer_id:       applyForm.customer_id,
         driver_id:         applyForm.driver_id || null,
@@ -681,7 +665,6 @@ export default function AdvancedRoutePlanner() {
       toast({ title: "Couldn't create dispatch", description: friendly, variant: "destructive" });
     } finally {
       setApplyingToDispatch(false);
-      applyingRef.current = false;
     }
   };
 
@@ -1650,7 +1633,7 @@ export default function AdvancedRoutePlanner() {
                   {(liveIntel?.longHaul?.length ?? 0) === 0 ? (
                     <p className="text-xs text-muted-foreground py-4 text-center">No long-haul dispatches (≥200 km) in last 90 days.</p>
                   ) : liveIntel!.longHaul.map((r) => (
-                    <div key={r.id ?? r.route} className="p-3 rounded-lg border border-border/50 text-xs">
+                    <div key={r.route} className="p-3 rounded-lg border border-border/50 text-xs">
                       <p className="font-semibold text-sm mb-2">{r.route}</p>
                       <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
                         <span>🛑 Rest stops: <strong>{r.restStops}</strong></span>

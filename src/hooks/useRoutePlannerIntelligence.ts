@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 export interface RoutePlannerLive {
   empty: boolean;
   heavyKpi: Array<{ label: string; value: number; unit: string; desc: string; color: string }>;
-  longHaul: Array<{ id?: string; route: string; restStops: number; fuelStops: number; overnight: number; borderChecks: number; est: string }>;
+  longHaul: Array<{ route: string; restStops: number; fuelStops: number; overnight: number; borderChecks: number; est: string }>;
   aiScores: Array<{ label: string; desc: string; score: number; color: string }>;
   heavyRoutes: Array<{ label: string; score: number; trips: number; delay: string; mode: string }>;
   whatIfScenarios: Array<{ label: string; impact: string; positive: boolean }>;

@@ -128,71 +128,32 @@ export default function TrialROISummary() {
   // Generated (which SHOULD move with the period) filters this same set
   // client-side below, so there's one query instead of two nearly-identical
   // ones.
-  //
-  // dispatches!inner(status) is here specifically for Revenue At Risk: a
-  // dispatch_financials row survives a later cancellation (the trigger that
-  // creates it on delivery never reverses it), so without this join the
-  // "at risk" total silently includes revenue from cancelled dispatches —
-  // verified against production: 6 Relma rows worth NGN2.91M were exactly
-  // this, all client_revenue=485,000 with no invoice, delivered then later
-  // flipped to cancelled. Revenue At Risk must only ever count DELIVERED
-  // revenue per spec ("Delivered revenue... blocked from being safely
-  // billed") — cancelled business was never really "at risk of being
-  // unbilled," it's just cancelled.
   const { data: dispatchFinancials = [] } = useQuery({
     queryKey: ["impact-dispatch-financials", orgId],
     enabled: !!orgId,
     queryFn: async () => {
       const { data } = await (supabase.from("dispatch_financials") as any)
-        .select("client_revenue, vendor_cost, gross_profit, finance_status, invoice_id, dispatch_id, created_at, dispatches!inner(status)")
+        .select("client_revenue, vendor_cost, gross_profit, finance_status, invoice_id, dispatch_id, created_at")
         .eq("organization_id", orgId!);
       return data ?? [];
     },
   });
 
   // ── Invoices ─────────────────────────────────────────────────────────────
-  // Deliberately UNFILTERED by period (same reasoning as dispatchFinancials
-  // above) — the MoM/WoW/YoY comparison needs both the current period AND
-  // the immediately preceding one of equal length, so both are sliced
-  // client-side from one fetch below rather than issuing two similar
-  // queries.
+  // Filtered by invoice_date — Revenue Protected and Cash Outstanding are
+  // meant to reflect billing activity IN the selected period.
   const { data: invoiceData = [] } = useQuery({
-    queryKey: ["impact-invoices", orgId],
+    queryKey: ["impact-invoices", orgId, periodStartDate],
     enabled: !!orgId,
     queryFn: async () => {
-      const { data } = await supabase.from("invoices")
+      let q = supabase.from("invoices")
         .select("id, status, total_amount, balance_due, dispatch_id, invoice_date, due_date, paid_date")
         .eq("organization_id", orgId!);
+      if (periodStartDate) q = q.gte("invoice_date", periodStartDate);
+      const { data } = await q;
       return data ?? [];
     },
   });
-
-  // Prior period of equal length to the selected window, immediately before
-  // it — the comparison basis for the MoM/WoW/YoY deltas on Tab 1. "All
-  // time" has no meaningful prior period, so it's left undefined and every
-  // delta below renders as "—" rather than inventing one.
-  const priorPeriodRange = useMemo(() => {
-    if (period === "all" || !periodStart) return null;
-    const days = PERIOD_DAYS[period];
-    const priorEnd = periodStart;
-    const priorStart = subDays(priorEnd, days);
-    return { start: priorStart, end: priorEnd };
-  }, [period, periodStart]);
-
-  function calcChangePct(current: number, previous: number): number | null {
-    if (!priorPeriodRange) return null;
-    if (previous === 0) return current > 0 ? 100 : null;
-    return Math.round(((current - previous) / previous) * 100);
-  }
-
-  const invoicesInRange = (start: Date | null, end: Date | null) =>
-    invoiceData.filter((i: any) => {
-      if (!i.invoice_date) return false;
-      const d = new Date(i.invoice_date);
-      if (start && d < start) return false;
-      if (end && d >= end) return false;
-      return true;
-    });
 
   // ── Fuel logs ────────────────────────────────────────────────────────────
   // Same shape and same real System-Est-vs-Actual methodology as
@@ -292,24 +253,6 @@ export default function TrialROISummary() {
     },
   });
 
-  // Utilisation Gained ($) — real for fleets with 2+ owned vehicles of the
-  // same truck_type (needed for the peer-benchmark "additional days" figure
-  // get_fleet_utilization() already computes); shows as unavailable, not a
-  // fabricated benchmark, everywhere else. See get_utilisation_gained()
-  // (migration 20260929130000) for the full formula.
-  const { data: utilisationGained } = useQuery({
-    queryKey: ["impact-utilisation-gained", orgId, utilizationDays],
-    enabled: !!orgId,
-    queryFn: async () => {
-      const { data, error } = await (supabase.rpc as any)("get_utilisation_gained", {
-        p_organization_id: orgId,
-        p_days: utilizationDays,
-      });
-      if (error) throw error;
-      return data;
-    },
-  });
-
   // ── Derived values ───────────────────────────────────────────────────────
   const daysActive   = org?.created_at
     ? Math.max(1, differenceInDays(new Date(), new Date(org.created_at)))
@@ -333,18 +276,6 @@ export default function TrialROISummary() {
   const profitGenerated     = completedFinancials.reduce((s: number, f: any) => s + Number(f.gross_profit ?? 0), 0);
   const profitIsReal        = completedFinancials.length > 0;
 
-  // Prior-period equivalent for the MoM/WoW/YoY delta.
-  const priorFinancials = priorPeriodRange
-    ? dispatchFinancials.filter((f: any) => {
-        if (!f.created_at) return false;
-        const d = new Date(f.created_at);
-        return d >= priorPeriodRange.start && d < priorPeriodRange.end;
-      })
-    : [];
-  const priorProfitGenerated = priorFinancials
-    .filter((f: any) => f.finance_status === "complete")
-    .reduce((s: number, f: any) => s + Number(f.gross_profit ?? 0), 0);
-
   // 2. Revenue Protected — total invoiced value, i.e. every invoice that has
   // actually been issued to a client. Matches the Invoice screen's own
   // total: pending + paid + overdue. 'draft' is excluded — it hasn't been
@@ -355,64 +286,39 @@ export default function TrialROISummary() {
   // is NO 'sent' status in this schema. An earlier version of this file
   // filtered on 'sent', which silently matched zero rows and undercounted
   // both this metric and Cash Outstanding below.
-  //
-  // Sliced client-side to the current period (invoiceData is now fetched
-  // unfiltered — see the note on that query — so the same fetch also
-  // supports the prior-period comparison below without a second query).
-  const currentInvoices = invoicesInRange(periodStart, null);
-  const invoicedRevenue = currentInvoices
+  const invoicedRevenue = invoiceData
     .filter((i: any) => ["pending", "paid", "overdue"].includes(i.status))
     .reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0);
-  const paidCount    = currentInvoices.filter((i: any) => i.status === "paid").length;
-  const pendingCount = currentInvoices.filter((i: any) => i.status === "pending").length;
-  const overdueCount = currentInvoices.filter((i: any) => i.status === "overdue").length;
+  const paidCount    = invoiceData.filter((i: any) => i.status === "paid").length;
+  const pendingCount = invoiceData.filter((i: any) => i.status === "pending").length;
+  const overdueCount = invoiceData.filter((i: any) => i.status === "overdue").length;
 
-  // Prior-period equivalent, for the MoM/WoW/YoY delta shown under each
-  // Tab 1 card. Undefined (both bounds null → empty set) when there is no
-  // prior period ("all time"), so the delta renders as "—".
-  const priorInvoices = priorPeriodRange
-    ? invoicesInRange(priorPeriodRange.start, priorPeriodRange.end)
-    : [];
-  const priorInvoicedRevenue = priorInvoices
-    .filter((i: any) => ["pending", "paid", "overdue"].includes(i.status))
-    .reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0);
-
-  // 3. Revenue At Risk = Delivered Client Revenue (dispatch_financials whose
-  // dispatch actually reached 'delivered' — ignoring the period filter, see
-  // the note on that query) minus Revenue Protected (which DOES respect the
-  // period, since it's what's been billed lately). Deliberately a simple
-  // subtraction, not a per-dispatch unbilled-invoice match: the per-dispatch
-  // version undercounts whenever an invoice exists but isn't linked back to
-  // the dispatch it covers — a real and common gap in this platform's manual
-  // invoicing flow (verified: only 1 of 38 active invoices for this org even
-  // carries a dispatch_id). A flat subtraction can't be fooled by a missing
-  // link. Clamped at 0 — a negative number here would mean "billed more
-  // than delivered," which reads as noise, not a real risk figure.
-  //
-  // The delivered-only filter matters: a dispatch_financials row is never
-  // reversed when its dispatch is later cancelled, so without this filter
-  // cancelled business gets counted as "at risk" too — verified against
-  // production, this alone was a NGN2.91M overcount for Relma.
-  const deliveredFinancials = dispatchFinancials.filter((f: any) => f.dispatches?.status === "delivered");
-  const totalClientRevenue = deliveredFinancials.reduce((s: number, f: any) => s + Number(f.client_revenue ?? 0), 0);
+  // 3. Revenue At Risk = Client Revenue (all dispatch_financials, ignoring
+  // the period filter — see the note on that query) minus Revenue Protected
+  // (which DOES respect the period, since it's what's been billed lately).
+  // This is deliberately a simpler subtraction, not a per-dispatch
+  // unbilled-invoice match: the per-dispatch version undercounts whenever an
+  // invoice exists but isn't linked back to the dispatch it covers — a real
+  // and common gap in this platform's manual invoicing flow. A flat
+  // subtraction can't be fooled by a missing link. Clamped at 0 — a
+  // negative number here would mean "billed more than resolved," which
+  // reads as noise, not a real risk figure.
+  const totalClientRevenue = dispatchFinancials.reduce((s: number, f: any) => s + Number(f.client_revenue ?? 0), 0);
   const revenueAtRisk = Math.max(0, totalClientRevenue - invoicedRevenue);
 
   // 4. Cash Outstanding — invoiced but not yet paid: pending + overdue.
-  const cashOutstanding = currentInvoices
+  const cashOutstanding = invoiceData
     .filter((i: any) => ["pending", "overdue"].includes(i.status))
     .reduce((s: number, i: any) => s + Number(i.balance_due ?? i.total_amount ?? 0), 0);
-  const overdueAmount = currentInvoices
+  const overdueAmount = invoiceData
     .filter((i: any) => i.status === "overdue")
     .reduce((s: number, i: any) => s + Number(i.balance_due ?? i.total_amount ?? 0), 0);
-  const worstDaysOverdue = currentInvoices
+  const worstDaysOverdue = invoiceData
     .filter((i: any) => i.status === "overdue" && i.due_date)
     .reduce((worst: number, i: any) => {
       const days = differenceInDays(new Date(), new Date(i.due_date));
       return Math.max(worst, days);
     }, 0);
-  const priorCashOutstanding = priorInvoices
-    .filter((i: any) => ["pending", "overdue"].includes(i.status))
-    .reduce((s: number, i: any) => s + Number(i.balance_due ?? i.total_amount ?? 0), 0);
 
   // 5. Cash Flow Risk — banded across not-invoiced / overdue / healthy.
   // Revenue At Risk (not-invoiced) is the whole-of-time backlog per its own
@@ -479,14 +385,6 @@ export default function TrialROISummary() {
     : Math.round(vehicleCount * 40_000 * FUEL_WASTE_RATE * monthsActive);
   const fuelSource: DataSource = logsWithDistance.length > 0 ? "real" : "benchmark";
 
-  // Running UNDER the system estimate is a different claim from "recovered":
-  // no waste was ever being lost, so it's never folded into fuelRecovered or
-  // totalSavings — it's an efficiency signal, not cash clawed back. Shown as
-  // its own labeled figure only.
-  const underEstimateLitres = logsWithDistance.length > 0 ? Math.max(0, expectedLitres - totalLitres) : 0;
-  const underEstimateValue  = Math.round(underEstimateLitres * avgCostPerLitre);
-  const underEstimatePct    = expectedLitres > 0 ? Math.round((underEstimateLitres / expectedLitres) * 100) : 0;
-
   // Billing Recovered — placeholder until invoice-revision tracking exists.
   // No fabricated figure: zero until the platform can actually see a correction.
   const billingRecovered = 0;
@@ -540,19 +438,6 @@ export default function TrialROISummary() {
     .slice()
     .sort((a, b) => a.active_days - b.active_days)[0];
 
-  // Utilisation Gained — real only where a peer-benchmark target exists
-  // (2+ owned vehicles of the same truck_type). "vehiclesWithGap === 0 AND
-  // totalOwned > 0" means every owned vehicle already matches its peer —
-  // genuinely nothing to gain, a real ₦0. "totalOwned === vehiclesWithNoPeer"
-  // means no vehicle HAS a peer to compare against — undefined, not zero.
-  const gainedValue      = utilisationGained?.utilisation_gained_value ?? 0;
-  const gainedDays       = utilisationGained?.total_additional_days ?? 0;
-  const gainedRate       = utilisationGained?.contribution_per_day ?? 0;
-  const gainedVehicles   = utilisationGained?.vehicles_with_gap ?? 0;
-  const gainedNoPeer     = utilisationGained?.vehicles_with_no_peer ?? 0;
-  const gainedTotalOwned = utilisationGained?.total_owned_vehicles ?? 0;
-  const gainedHasPeerCoverage = gainedTotalOwned > 0 && gainedNoPeer < gainedTotalOwned;
-
   const savingsCards: SavingsCard[] = [
     {
       icon: Fuel,
@@ -574,13 +459,6 @@ export default function TrialROISummary() {
         { label: "Excess over estimate", value: `${Math.round(excessLitres).toLocaleString()} L` },
         { label: "Avg cost per litre (this fleet)", value: NGN(Math.round(avgCostPerLitre)) },
         { label: "Fuel recovered", value: NGN(fuelRecovered), highlight: true },
-        ...(underEstimateLitres > 0 ? [
-          {
-            label: `Running ${underEstimatePct}% under estimate`,
-            value: NGN(underEstimateValue),
-            note: `${Math.round(underEstimateLitres).toLocaleString()} L not needed vs. the system estimate — a good sign, but not waste recovered, so it's kept out of the total above`,
-          },
-        ] : []),
       ] : [
         { label: "No verified fuel baseline yet", note: "Benchmark: NARTO's 12% average fuel-waste rate applied to an assumed ₦40,000/vehicle/month" },
         { label: "Vehicles", value: String(vehicleCount) },
@@ -589,33 +467,6 @@ export default function TrialROISummary() {
       ],
       actionPrompt: logsWithDistance.length === 0
         ? "Log fuel fill-ups with an odometer reading (or link them to a dispatch) to unlock a real, fleet-specific figure"
-        : undefined,
-    },
-    {
-      icon: Gauge,
-      label: "Utilisation Gained",
-      sublabel: gainedHasPeerCoverage
-        ? `${gainedDays} additional productive day${gainedDays !== 1 ? "s" : ""} vs. this fleet's own busiest truck of the same class`
-        : gainedTotalOwned > 0
-          ? "No owned truck has a same-class peer to compare against yet"
-          : "No owned vehicles to measure",
-      value: gainedHasPeerCoverage ? NGN(gainedValue) : "—",
-      color: "text-cyan-500",
-      border: "border-l-cyan-500",
-      bg: "bg-cyan-500/10",
-      source: "real" as DataSource,
-      derivation: gainedHasPeerCoverage ? [
-        { label: "Owned vehicles with a same-class peer", value: String(gainedTotalOwned - gainedNoPeer) },
-        { label: "Vehicles behind their peer", value: String(gainedVehicles) },
-        { label: "Additional productive days available", value: String(gainedDays) },
-        { label: "Verified contribution per productive day (gross profit ÷ active days, this fleet)", value: NGN(Math.round(gainedRate)) },
-        { label: "Utilisation gained", value: NGN(gainedValue), highlight: true },
-        { label: "Method", note: "\"Additional days\" is this vehicle's own fleet's busiest same-class truck's active days minus its own — never an external assumption. A truck_type with no peer reports —, not a fabricated target." },
-      ] : [
-        { label: gainedTotalOwned > 0 ? "No same-class peer yet" : "No owned vehicles on record", note: "This needs at least 2 owned vehicles of the same truck type before a real comparison is possible — shown as —, not a benchmark guess" },
-      ],
-      actionPrompt: !gainedHasPeerCoverage
-        ? "Add a second owned vehicle of the same truck type to unlock a real utilisation-gained figure"
         : undefined,
     },
     {
@@ -697,33 +548,7 @@ export default function TrialROISummary() {
     },
   ];
 
-  const totalSavings = fuelRecovered + gainedValue + billingRecovered + maintenanceShifted;
-
-  // MoM/WoW/YoY deltas — labeled by the period currently selected (30 days
-  // -> "vs previous 30 days", etc., since "MoM/WoW/YoY" literally only
-  // applies when the window happens to be a month/week/year; this reads
-  // correctly for any window length instead of mislabeling a 90-day
-  // comparison as "MoM"). Revenue At Risk has no delta by design — it's a
-  // whole-of-time backlog, not a period flow, so a period-over-period change
-  // on it would be noise, not signal.
-  const periodDeltaLabel = period === "30" ? "vs previous 30 days"
-    : period === "90" ? "vs previous 90 days"
-    : period === "365" ? "vs previous 12 months"
-    : null;
-  const profitDeltaPct    = calcChangePct(profitGenerated, priorProfitGenerated);
-  const protectedDeltaPct = calcChangePct(invoicedRevenue, priorInvoicedRevenue);
-  const outstandingDeltaPct = calcChangePct(cashOutstanding, priorCashOutstanding);
-
-  const DeltaBadge = ({ pct }: { pct: number | null }) => {
-    if (pct == null || !periodDeltaLabel) return null;
-    const positive = pct > 0;
-    const neutral = pct === 0;
-    return (
-      <span className={`text-[11px] font-medium ${neutral ? "text-muted-foreground" : positive ? "text-emerald-600" : "text-red-500"}`}>
-        {neutral ? "±0%" : `${positive ? "+" : ""}${pct}%`} {periodDeltaLabel}
-      </span>
-    );
-  };
+  const totalSavings = fuelRecovered + billingRecovered + maintenanceShifted;
 
   return (
     <TooltipProvider>
@@ -766,10 +591,7 @@ export default function TrialROISummary() {
                       <TrendingUp className="w-4 h-4 text-emerald-600" />
                       <span className="text-xs font-semibold text-muted-foreground">Profit Generated</span>
                     </div>
-                    <div className="flex items-baseline gap-2 flex-wrap">
-                      <p className="text-2xl font-black text-emerald-600">{NGN(profitGenerated)}</p>
-                      <DeltaBadge pct={profitDeltaPct} />
-                    </div>
+                    <p className="text-2xl font-black text-emerald-600">{NGN(profitGenerated)}</p>
                     <p className="text-[11px] text-muted-foreground mt-1">
                       Gross profit from {completedFinancials.length} fully-costed dispatch{completedFinancials.length !== 1 ? "es" : ""}
                       {pendingFinancials.length > 0 && ` · ${pendingFinancials.length} awaiting finance entry`}
@@ -783,10 +605,7 @@ export default function TrialROISummary() {
                       <ShieldCheck className="w-4 h-4 text-muted-foreground" />
                       <span className="text-xs font-semibold text-muted-foreground">Revenue Protected</span>
                     </div>
-                    <div className="flex items-baseline gap-2 flex-wrap">
-                      <p className="text-2xl font-black">{NGN(invoicedRevenue)}</p>
-                      <DeltaBadge pct={protectedDeltaPct} />
-                    </div>
+                    <p className="text-2xl font-black">{NGN(invoicedRevenue)}</p>
                     <p className="text-[11px] text-muted-foreground mt-1">
                       {pendingCount + paidCount + overdueCount} invoiced — {paidCount} paid, {pendingCount} within terms, {overdueCount} overdue
                     </p>
@@ -801,7 +620,7 @@ export default function TrialROISummary() {
                     </div>
                     <p className="text-2xl font-black text-amber-600">{NGN(revenueAtRisk)}</p>
                     <p className="text-[11px] text-muted-foreground mt-1">
-                      Delivered revenue not yet reflected in an invoice · whole-of-time backlog
+                      Client revenue not yet reflected in an invoice · whole-of-time backlog
                     </p>
                   </CardContent>
                 </Card>
@@ -812,10 +631,7 @@ export default function TrialROISummary() {
                       <Wallet className="w-4 h-4 text-muted-foreground" />
                       <span className="text-xs font-semibold text-muted-foreground">Cash Outstanding</span>
                     </div>
-                    <div className="flex items-baseline gap-2 flex-wrap">
-                      <p className="text-2xl font-black">{NGN(cashOutstanding)}</p>
-                      <DeltaBadge pct={outstandingDeltaPct} />
-                    </div>
+                    <p className="text-2xl font-black">{NGN(cashOutstanding)}</p>
                     <p className="text-[11px] text-muted-foreground mt-1">
                       {pendingCount + overdueCount} invoiced, unpaid
                       {overdueAmount > 0 && ` · ${NGN(overdueAmount)} overdue`}

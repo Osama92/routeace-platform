@@ -3,7 +3,7 @@
  * Multi-select pending outbound requests → group into a single dispatch,
  * assign a 3PL transporter, and email the transporter.
  */
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -50,42 +50,8 @@ export default function ConvertToDispatchDialog({ pendingRequests, onDone }: Pro
     setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
   };
 
-  // React Query's `isPending` has the same commit-timing gap as raw
-  // useState — it only becomes true after the mutation fn is invoked AND
-  // React commits the resulting render, so a fast double-click can call
-  // `create.mutate()` twice before the first render lands. A ref mutation
-  // is synchronous, so it actually closes the race.
-  const submittingRef = useRef(false);
-  // Generated once per dialog-open, sent with the insert. Backed by a
-  // per-org unique index on dispatches(organization_id, client_request_id)
-  // — a resubmit that slips past submittingRef (two tabs, a retried
-  // request) still gets rejected at the database, not just the UI.
-  const clientRequestIdRef = useRef<string>(crypto.randomUUID());
-
   const create = useMutation({
     mutationFn: async () => {
-      if (submittingRef.current) throw new Error("__DOUBLE_SUBMIT_IGNORED__");
-      submittingRef.current = true;
-      try {
-        return await createDispatchInner();
-      } finally {
-        submittingRef.current = false;
-      }
-    },
-    onSuccess: (d) => {
-      toast.success(`Dispatch ${d?.dispatch_number} created - transporter notified by email`);
-      qc.invalidateQueries({ queryKey: ["outbound-requests"] });
-      qc.invalidateQueries({ queryKey: ["waybills-management"] });
-      setOpen(false); setSelectedIds([]); setTransporterId(""); setScheduledPickup(""); setAgreedRate(""); setTotalKm(""); setDieselLiters(""); setExtraDrops([]);
-      onDone?.();
-    },
-    onError: (e: any) => {
-      if (e?.message === "__DOUBLE_SUBMIT_IGNORED__") return;
-      toast.error(e?.message ?? "Failed to create dispatch");
-    },
-  });
-
-  async function createDispatchInner() {
       if (!user) throw new Error("Not authenticated");
       if (selectedIds.length === 0) throw new Error("Select at least one request");
       if (!transporterId) throw new Error("Select a transporter");
@@ -101,7 +67,6 @@ export default function ConvertToDispatchDialog({ pendingRequests, onDone }: Pro
 
       const { data: disp, error: e1 } = await supabase.from("dispatches").insert({
         dispatch_number: dispatchNumber,
-        client_request_id: clientRequestIdRef.current,
         pickup_address: first.origin_address,
         delivery_address: rows.map((r) => r.destination_address).join(" | "),
         cargo_description: cargo.slice(0, 1000),
@@ -170,13 +135,22 @@ export default function ConvertToDispatchDialog({ pendingRequests, onDone }: Pro
       }
 
       return disp;
-  }
+    },
+    onSuccess: (d) => {
+      toast.success(`Dispatch ${d?.dispatch_number} created - transporter notified by email`);
+      qc.invalidateQueries({ queryKey: ["outbound-requests"] });
+      qc.invalidateQueries({ queryKey: ["waybills-management"] });
+      setOpen(false); setSelectedIds([]); setTransporterId(""); setScheduledPickup(""); setAgreedRate(""); setTotalKm(""); setDieselLiters(""); setExtraDrops([]);
+      onDone?.();
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Failed to create dispatch"),
+  });
 
   const eligible = pendingRequests.filter((r) => r.status === "pending");
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button size="sm" variant="outline" onClick={() => { clientRequestIdRef.current = crypto.randomUUID(); setOpen(true); }} disabled={eligible.length === 0}>
+      <Button size="sm" variant="outline" onClick={() => setOpen(true)} disabled={eligible.length === 0}>
         <Truck className="w-4 h-4 mr-1" /> Convert to Dispatch
       </Button>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">

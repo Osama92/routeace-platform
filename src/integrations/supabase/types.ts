@@ -1,4 +1,3 @@
-Initialising login role...
 export type Json =
   | string
   | number
@@ -11,368 +10,10 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
-  }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
+    PostgrestVersion: "14.1"
   }
   public: {
     Tables: {
-      _backup_glyde_dupe_dispatches: {
-        Row: {
-          actual_arrival_time: string | null
-          actual_delivery: string | null
-          actual_delivery_days: number | null
-          actual_fuel_liters: number | null
-          actual_pickup: string | null
-          approval_status: string | null
-          approved_at: string | null
-          approved_by: string | null
-          avg_wait_time_per_drop: number | null
-          cargo_description: string | null
-          cargo_weight_kg: number | null
-          cost: number | null
-          created_at: string | null
-          created_by: string | null
-          customer_id: string | null
-          delivery_address: string | null
-          delivery_lat: number | null
-          delivery_lng: number | null
-          dispatch_date: string | null
-          dispatch_number: string | null
-          distance_km: number | null
-          driver_id: string | null
-          estimated_arrival: string | null
-          estimated_completion_date: string | null
-          estimated_delivery_days: number | null
-          estimated_start_date: string | null
-          eta_met: boolean | null
-          eta_minutes: number | null
-          eta_promised: string | null
-          external_synced_at: string | null
-          finance_status: string | null
-          fuel_variance: number | null
-          id: string | null
-          km_actual: number | null
-          km_deviation_pct: number | null
-          km_planned: number | null
-          load_capacity_pct: number | null
-          notes: string | null
-          on_time_flag: boolean | null
-          organization_id: string | null
-          pickup_address: string | null
-          pickup_lat: number | null
-          pickup_lng: number | null
-          pod_confirmed: boolean | null
-          pod_confirmed_at: string | null
-          pod_notes: string | null
-          pod_photo_url: string | null
-          pod_recipient: string | null
-          priority: string | null
-          rejection_reason: string | null
-          return_distance_km: number | null
-          route_id: string | null
-          scheduled_delivery: string | null
-          scheduled_pickup: string | null
-          sequence_followed: boolean | null
-          sla_contract_id: string | null
-          sla_deadline: string | null
-          sla_policy_id: string | null
-          sla_risk_score: number | null
-          sla_status: string | null
-          source_outbound_ids: string[] | null
-          status: string | null
-          submitted_by: string | null
-          suggested_fuel_liters: number | null
-          total_distance_km: number | null
-          total_drops: number | null
-          transporter_id: string | null
-          transporter_notified_at: string | null
-          unplanned_stops: number | null
-          updated_at: string | null
-          vehicle_id: string | null
-          vendor_rate_card_id: string | null
-        }
-        Insert: {
-          actual_arrival_time?: string | null
-          actual_delivery?: string | null
-          actual_delivery_days?: number | null
-          actual_fuel_liters?: number | null
-          actual_pickup?: string | null
-          approval_status?: string | null
-          approved_at?: string | null
-          approved_by?: string | null
-          avg_wait_time_per_drop?: number | null
-          cargo_description?: string | null
-          cargo_weight_kg?: number | null
-          cost?: number | null
-          created_at?: string | null
-          created_by?: string | null
-          customer_id?: string | null
-          delivery_address?: string | null
-          delivery_lat?: number | null
-          delivery_lng?: number | null
-          dispatch_date?: string | null
-          dispatch_number?: string | null
-          distance_km?: number | null
-          driver_id?: string | null
-          estimated_arrival?: string | null
-          estimated_completion_date?: string | null
-          estimated_delivery_days?: number | null
-          estimated_start_date?: string | null
-          eta_met?: boolean | null
-          eta_minutes?: number | null
-          eta_promised?: string | null
-          external_synced_at?: string | null
-          finance_status?: string | null
-          fuel_variance?: number | null
-          id?: string | null
-          km_actual?: number | null
-          km_deviation_pct?: number | null
-          km_planned?: number | null
-          load_capacity_pct?: number | null
-          notes?: string | null
-          on_time_flag?: boolean | null
-          organization_id?: string | null
-          pickup_address?: string | null
-          pickup_lat?: number | null
-          pickup_lng?: number | null
-          pod_confirmed?: boolean | null
-          pod_confirmed_at?: string | null
-          pod_notes?: string | null
-          pod_photo_url?: string | null
-          pod_recipient?: string | null
-          priority?: string | null
-          rejection_reason?: string | null
-          return_distance_km?: number | null
-          route_id?: string | null
-          scheduled_delivery?: string | null
-          scheduled_pickup?: string | null
-          sequence_followed?: boolean | null
-          sla_contract_id?: string | null
-          sla_deadline?: string | null
-          sla_policy_id?: string | null
-          sla_risk_score?: number | null
-          sla_status?: string | null
-          source_outbound_ids?: string[] | null
-          status?: string | null
-          submitted_by?: string | null
-          suggested_fuel_liters?: number | null
-          total_distance_km?: number | null
-          total_drops?: number | null
-          transporter_id?: string | null
-          transporter_notified_at?: string | null
-          unplanned_stops?: number | null
-          updated_at?: string | null
-          vehicle_id?: string | null
-          vendor_rate_card_id?: string | null
-        }
-        Update: {
-          actual_arrival_time?: string | null
-          actual_delivery?: string | null
-          actual_delivery_days?: number | null
-          actual_fuel_liters?: number | null
-          actual_pickup?: string | null
-          approval_status?: string | null
-          approved_at?: string | null
-          approved_by?: string | null
-          avg_wait_time_per_drop?: number | null
-          cargo_description?: string | null
-          cargo_weight_kg?: number | null
-          cost?: number | null
-          created_at?: string | null
-          created_by?: string | null
-          customer_id?: string | null
-          delivery_address?: string | null
-          delivery_lat?: number | null
-          delivery_lng?: number | null
-          dispatch_date?: string | null
-          dispatch_number?: string | null
-          distance_km?: number | null
-          driver_id?: string | null
-          estimated_arrival?: string | null
-          estimated_completion_date?: string | null
-          estimated_delivery_days?: number | null
-          estimated_start_date?: string | null
-          eta_met?: boolean | null
-          eta_minutes?: number | null
-          eta_promised?: string | null
-          external_synced_at?: string | null
-          finance_status?: string | null
-          fuel_variance?: number | null
-          id?: string | null
-          km_actual?: number | null
-          km_deviation_pct?: number | null
-          km_planned?: number | null
-          load_capacity_pct?: number | null
-          notes?: string | null
-          on_time_flag?: boolean | null
-          organization_id?: string | null
-          pickup_address?: string | null
-          pickup_lat?: number | null
-          pickup_lng?: number | null
-          pod_confirmed?: boolean | null
-          pod_confirmed_at?: string | null
-          pod_notes?: string | null
-          pod_photo_url?: string | null
-          pod_recipient?: string | null
-          priority?: string | null
-          rejection_reason?: string | null
-          return_distance_km?: number | null
-          route_id?: string | null
-          scheduled_delivery?: string | null
-          scheduled_pickup?: string | null
-          sequence_followed?: boolean | null
-          sla_contract_id?: string | null
-          sla_deadline?: string | null
-          sla_policy_id?: string | null
-          sla_risk_score?: number | null
-          sla_status?: string | null
-          source_outbound_ids?: string[] | null
-          status?: string | null
-          submitted_by?: string | null
-          suggested_fuel_liters?: number | null
-          total_distance_km?: number | null
-          total_drops?: number | null
-          transporter_id?: string | null
-          transporter_notified_at?: string | null
-          unplanned_stops?: number | null
-          updated_at?: string | null
-          vehicle_id?: string | null
-          vendor_rate_card_id?: string | null
-        }
-        Relationships: []
-      }
-      _backup_glyde_dupe_vehicles: {
-        Row: {
-          capacity_kg: number | null
-          created_at: string | null
-          current_fuel_level: number | null
-          current_mileage: number | null
-          current_odometer: number | null
-          expected_daily_revenue: number | null
-          fuel_type: string | null
-          health_score: number | null
-          id: string | null
-          image_url: string | null
-          initial_odometer: number | null
-          last_maintenance: string | null
-          last_service_km: number | null
-          lifetime_km: number | null
-          make: string | null
-          max_drops_per_route: number | null
-          max_volume_cbm: number | null
-          max_weight_kg: number | null
-          model: string | null
-          monthly_km: number | null
-          next_maintenance: string | null
-          organization_id: string | null
-          ownership_type: string | null
-          partner_id: string | null
-          registration_number: string | null
-          status: string | null
-          truck_category: string | null
-          truck_type: string | null
-          updated_at: string | null
-          vehicle_category: string | null
-          vehicle_type: string | null
-          weekly_km: number | null
-          year: number | null
-        }
-        Insert: {
-          capacity_kg?: number | null
-          created_at?: string | null
-          current_fuel_level?: number | null
-          current_mileage?: number | null
-          current_odometer?: number | null
-          expected_daily_revenue?: number | null
-          fuel_type?: string | null
-          health_score?: number | null
-          id?: string | null
-          image_url?: string | null
-          initial_odometer?: number | null
-          last_maintenance?: string | null
-          last_service_km?: number | null
-          lifetime_km?: number | null
-          make?: string | null
-          max_drops_per_route?: number | null
-          max_volume_cbm?: number | null
-          max_weight_kg?: number | null
-          model?: string | null
-          monthly_km?: number | null
-          next_maintenance?: string | null
-          organization_id?: string | null
-          ownership_type?: string | null
-          partner_id?: string | null
-          registration_number?: string | null
-          status?: string | null
-          truck_category?: string | null
-          truck_type?: string | null
-          updated_at?: string | null
-          vehicle_category?: string | null
-          vehicle_type?: string | null
-          weekly_km?: number | null
-          year?: number | null
-        }
-        Update: {
-          capacity_kg?: number | null
-          created_at?: string | null
-          current_fuel_level?: number | null
-          current_mileage?: number | null
-          current_odometer?: number | null
-          expected_daily_revenue?: number | null
-          fuel_type?: string | null
-          health_score?: number | null
-          id?: string | null
-          image_url?: string | null
-          initial_odometer?: number | null
-          last_maintenance?: string | null
-          last_service_km?: number | null
-          lifetime_km?: number | null
-          make?: string | null
-          max_drops_per_route?: number | null
-          max_volume_cbm?: number | null
-          max_weight_kg?: number | null
-          model?: string | null
-          monthly_km?: number | null
-          next_maintenance?: string | null
-          organization_id?: string | null
-          ownership_type?: string | null
-          partner_id?: string | null
-          registration_number?: string | null
-          status?: string | null
-          truck_category?: string | null
-          truck_type?: string | null
-          updated_at?: string | null
-          vehicle_category?: string | null
-          vehicle_type?: string | null
-          weekly_km?: number | null
-          year?: number | null
-        }
-        Relationships: []
-      }
       access_governance_log: {
         Row: {
           action: string
@@ -525,7 +166,6 @@ export type Database = {
           amount_due: number
           amount_paid: number
           balance: number
-          bill_id: string | null
           category: string | null
           created_at: string
           created_by: string | null
@@ -544,7 +184,6 @@ export type Database = {
           amount_due?: number
           amount_paid?: number
           balance?: number
-          bill_id?: string | null
           category?: string | null
           created_at?: string
           created_by?: string | null
@@ -563,7 +202,6 @@ export type Database = {
           amount_due?: number
           amount_paid?: number
           balance?: number
-          bill_id?: string | null
           category?: string | null
           created_at?: string
           created_by?: string | null
@@ -578,15 +216,7 @@ export type Database = {
           updated_at?: string
           vendor_name?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "accounts_payable_bill_id_fkey"
-            columns: ["bill_id"]
-            isOneToOne: false
-            referencedRelation: "bills"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       accounts_receivable: {
         Row: {
@@ -1127,36 +757,6 @@ export type Database = {
         }
         Relationships: []
       }
-      ai_insights_cache: {
-        Row: {
-          cache_key: string
-          expires_at: string
-          generated_at: string
-          id: string
-          model_used: string | null
-          org_scope: string
-          payload: Json
-        }
-        Insert: {
-          cache_key: string
-          expires_at: string
-          generated_at?: string
-          id?: string
-          model_used?: string | null
-          org_scope?: string
-          payload: Json
-        }
-        Update: {
-          cache_key?: string
-          expires_at?: string
-          generated_at?: string
-          id?: string
-          model_used?: string | null
-          org_scope?: string
-          payload?: Json
-        }
-        Relationships: []
-      }
       ai_learning_logs: {
         Row: {
           accuracy_after: number | null
@@ -1346,24 +946,6 @@ export type Database = {
           related_entity_id?: string | null
           related_entity_type?: string | null
           subject?: string | null
-        }
-        Relationships: []
-      }
-      analytics_daily_salt: {
-        Row: {
-          created_at: string
-          salt: string
-          salt_date: string
-        }
-        Insert: {
-          created_at?: string
-          salt?: string
-          salt_date?: string
-        }
-        Update: {
-          created_at?: string
-          salt?: string
-          salt_date?: string
         }
         Relationships: []
       }
@@ -2713,9 +2295,7 @@ export type Database = {
           item_details: string
           quantity: number
           rate: number
-          sort_order: number
           tonnage: string | null
-          vat_rate: number
           vat_type: string
         }
         Insert: {
@@ -2728,9 +2308,7 @@ export type Database = {
           item_details?: string
           quantity?: number
           rate?: number
-          sort_order?: number
           tonnage?: string | null
-          vat_rate?: number
           vat_type?: string
         }
         Update: {
@@ -2743,9 +2321,7 @@ export type Database = {
           item_details?: string
           quantity?: number
           rate?: number
-          sort_order?: number
           tonnage?: string | null
-          vat_rate?: number
           vat_type?: string
         }
         Relationships: [
@@ -3026,7 +2602,6 @@ export type Database = {
           created_by: string | null
           currency_code: string | null
           discount_percent: number | null
-          dispatch_id: string | null
           due_date: string | null
           id: string
           linked_asset_id: string | null
@@ -3042,8 +2617,6 @@ export type Database = {
           tax_amount: number
           total_amount: number
           updated_at: string
-          vat_inclusive: boolean
-          vat_type: string
           vendor_name: string
         }
         Insert: {
@@ -3056,7 +2629,6 @@ export type Database = {
           created_by?: string | null
           currency_code?: string | null
           discount_percent?: number | null
-          dispatch_id?: string | null
           due_date?: string | null
           id?: string
           linked_asset_id?: string | null
@@ -3072,8 +2644,6 @@ export type Database = {
           tax_amount?: number
           total_amount?: number
           updated_at?: string
-          vat_inclusive?: boolean
-          vat_type?: string
           vendor_name: string
         }
         Update: {
@@ -3086,7 +2656,6 @@ export type Database = {
           created_by?: string | null
           currency_code?: string | null
           discount_percent?: number | null
-          dispatch_id?: string | null
           due_date?: string | null
           id?: string
           linked_asset_id?: string | null
@@ -3102,26 +2671,9 @@ export type Database = {
           tax_amount?: number
           total_amount?: number
           updated_at?: string
-          vat_inclusive?: boolean
-          vat_type?: string
           vendor_name?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "bills_dispatch_id_fkey"
-            columns: ["dispatch_id"]
-            isOneToOne: false
-            referencedRelation: "dispatch_dead_states"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "bills_dispatch_id_fkey"
-            columns: ["dispatch_id"]
-            isOneToOne: false
-            referencedRelation: "dispatches"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       blocked_orders: {
         Row: {
@@ -3983,22 +3535,7 @@ export type Database = {
           success?: boolean
           triggered_by?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "client_notification_log_dispatch_id_fkey"
-            columns: ["dispatch_id"]
-            isOneToOne: false
-            referencedRelation: "dispatch_dead_states"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "client_notification_log_dispatch_id_fkey"
-            columns: ["dispatch_id"]
-            isOneToOne: false
-            referencedRelation: "dispatches"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       client_profitability: {
         Row: {
@@ -6329,7 +5866,6 @@ export type Database = {
           address: string
           created_at: string | null
           dispatch_id: string | null
-          drop_charge: number | null
           estimated_arrival: string | null
           id: string
           latitude: number | null
@@ -6342,7 +5878,6 @@ export type Database = {
           address: string
           created_at?: string | null
           dispatch_id?: string | null
-          drop_charge?: number | null
           estimated_arrival?: string | null
           id?: string
           latitude?: number | null
@@ -6355,7 +5890,6 @@ export type Database = {
           address?: string
           created_at?: string | null
           dispatch_id?: string | null
-          drop_charge?: number | null
           estimated_arrival?: string | null
           id?: string
           latitude?: number | null
@@ -6376,125 +5910,6 @@ export type Database = {
             columns: ["dispatch_id"]
             isOneToOne: false
             referencedRelation: "dispatches"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      dispatch_financials: {
-        Row: {
-          bill_id: string | null
-          client_rate_card_id: string | null
-          client_revenue: number | null
-          cost_source: string
-          created_at: string
-          currency_code: string
-          dispatch_id: string
-          entered_at: string | null
-          entered_by: string | null
-          finance_status: string
-          gross_profit: number | null
-          id: string
-          invoice_id: string | null
-          notes: string | null
-          organization_id: string
-          revenue_source: string
-          roi_pct: number | null
-          updated_at: string
-          vendor_cost: number | null
-          vendor_rate_card_id: string | null
-        }
-        Insert: {
-          bill_id?: string | null
-          client_rate_card_id?: string | null
-          client_revenue?: number | null
-          cost_source?: string
-          created_at?: string
-          currency_code?: string
-          dispatch_id: string
-          entered_at?: string | null
-          entered_by?: string | null
-          finance_status?: string
-          gross_profit?: number | null
-          id?: string
-          invoice_id?: string | null
-          notes?: string | null
-          organization_id: string
-          revenue_source?: string
-          roi_pct?: number | null
-          updated_at?: string
-          vendor_cost?: number | null
-          vendor_rate_card_id?: string | null
-        }
-        Update: {
-          bill_id?: string | null
-          client_rate_card_id?: string | null
-          client_revenue?: number | null
-          cost_source?: string
-          created_at?: string
-          currency_code?: string
-          dispatch_id?: string
-          entered_at?: string | null
-          entered_by?: string | null
-          finance_status?: string
-          gross_profit?: number | null
-          id?: string
-          invoice_id?: string | null
-          notes?: string | null
-          organization_id?: string
-          revenue_source?: string
-          roi_pct?: number | null
-          updated_at?: string
-          vendor_cost?: number | null
-          vendor_rate_card_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "dispatch_financials_bill_id_fkey"
-            columns: ["bill_id"]
-            isOneToOne: false
-            referencedRelation: "bills"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "dispatch_financials_client_rate_card_id_fkey"
-            columns: ["client_rate_card_id"]
-            isOneToOne: false
-            referencedRelation: "rate_cards"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "dispatch_financials_dispatch_id_fkey"
-            columns: ["dispatch_id"]
-            isOneToOne: true
-            referencedRelation: "dispatch_dead_states"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "dispatch_financials_dispatch_id_fkey"
-            columns: ["dispatch_id"]
-            isOneToOne: true
-            referencedRelation: "dispatches"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "dispatch_financials_invoice_id_fkey"
-            columns: ["invoice_id"]
-            isOneToOne: false
-            referencedRelation: "invoices"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "dispatch_financials_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "dispatch_financials_vendor_rate_card_id_fkey"
-            columns: ["vendor_rate_card_id"]
-            isOneToOne: false
-            referencedRelation: "rate_cards"
             referencedColumns: ["id"]
           },
         ]
@@ -6915,7 +6330,6 @@ export type Database = {
           avg_wait_time_per_drop: number | null
           cargo_description: string | null
           cargo_weight_kg: number | null
-          client_request_id: string | null
           cost: number | null
           created_at: string
           created_by: string | null
@@ -6935,7 +6349,6 @@ export type Database = {
           eta_minutes: number | null
           eta_promised: string | null
           external_synced_at: string | null
-          finance_status: string
           fuel_variance: number | null
           id: string
           km_actual: number | null
@@ -6950,6 +6363,7 @@ export type Database = {
           pickup_lng: number | null
           pod_confirmed: boolean | null
           pod_confirmed_at: string | null
+          pod_confirmed_by: string | null
           pod_notes: string | null
           pod_photo_url: string | null
           pod_recipient: string | null
@@ -6990,7 +6404,6 @@ export type Database = {
           avg_wait_time_per_drop?: number | null
           cargo_description?: string | null
           cargo_weight_kg?: number | null
-          client_request_id?: string | null
           cost?: number | null
           created_at?: string
           created_by?: string | null
@@ -7010,7 +6423,6 @@ export type Database = {
           eta_minutes?: number | null
           eta_promised?: string | null
           external_synced_at?: string | null
-          finance_status?: string
           fuel_variance?: number | null
           id?: string
           km_actual?: number | null
@@ -7025,6 +6437,7 @@ export type Database = {
           pickup_lng?: number | null
           pod_confirmed?: boolean | null
           pod_confirmed_at?: string | null
+          pod_confirmed_by?: string | null
           pod_notes?: string | null
           pod_photo_url?: string | null
           pod_recipient?: string | null
@@ -7065,7 +6478,6 @@ export type Database = {
           avg_wait_time_per_drop?: number | null
           cargo_description?: string | null
           cargo_weight_kg?: number | null
-          client_request_id?: string | null
           cost?: number | null
           created_at?: string
           created_by?: string | null
@@ -7085,7 +6497,6 @@ export type Database = {
           eta_minutes?: number | null
           eta_promised?: string | null
           external_synced_at?: string | null
-          finance_status?: string
           fuel_variance?: number | null
           id?: string
           km_actual?: number | null
@@ -7100,6 +6511,7 @@ export type Database = {
           pickup_lng?: number | null
           pod_confirmed?: boolean | null
           pod_confirmed_at?: string | null
+          pod_confirmed_by?: string | null
           pod_notes?: string | null
           pod_photo_url?: string | null
           pod_recipient?: string | null
@@ -8395,7 +7807,6 @@ export type Database = {
           email_notification_id: string | null
           id: string
           invoice_id: string | null
-          organization_id: string | null
           original_recipient: string
           related_entity_id: string | null
           related_entity_type: string | null
@@ -8410,7 +7821,6 @@ export type Database = {
           email_notification_id?: string | null
           id?: string
           invoice_id?: string | null
-          organization_id?: string | null
           original_recipient: string
           related_entity_id?: string | null
           related_entity_type?: string | null
@@ -8425,7 +7835,6 @@ export type Database = {
           email_notification_id?: string | null
           id?: string
           invoice_id?: string | null
-          organization_id?: string | null
           original_recipient?: string
           related_entity_id?: string | null
           related_entity_type?: string | null
@@ -8462,13 +7871,6 @@ export type Database = {
             referencedRelation: "invoices"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "email_activity_log_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
         ]
       }
       email_notifications: {
@@ -8479,7 +7881,6 @@ export type Database = {
           error_message: string | null
           id: string
           notification_type: string | null
-          organization_id: string | null
           recipient_email: string
           recipient_type: string
           sent_at: string | null
@@ -8497,7 +7898,6 @@ export type Database = {
           error_message?: string | null
           id?: string
           notification_type?: string | null
-          organization_id?: string | null
           recipient_email: string
           recipient_type: string
           sent_at?: string | null
@@ -8515,7 +7915,6 @@ export type Database = {
           error_message?: string | null
           id?: string
           notification_type?: string | null
-          organization_id?: string | null
           recipient_email?: string
           recipient_type?: string
           sent_at?: string | null
@@ -8539,13 +7938,6 @@ export type Database = {
             columns: ["dispatch_id"]
             isOneToOne: false
             referencedRelation: "dispatches"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "email_notifications_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -12205,13 +11597,11 @@ export type Database = {
         Row: {
           cost_per_litre: number | null
           created_at: string
-          dispatch_id: string | null
           driver_id: string | null
           flag_reason: string | null
           fuel_station: string | null
           fuel_type: string | null
           id: string
-          is_dispatch_estimate: boolean
           is_flagged: boolean
           km_per_litre: number | null
           km_since_last_fill: number | null
@@ -12227,13 +11617,11 @@ export type Database = {
         Insert: {
           cost_per_litre?: number | null
           created_at?: string
-          dispatch_id?: string | null
           driver_id?: string | null
           flag_reason?: string | null
           fuel_station?: string | null
           fuel_type?: string | null
           id?: string
-          is_dispatch_estimate?: boolean
           is_flagged?: boolean
           km_per_litre?: number | null
           km_since_last_fill?: number | null
@@ -12249,13 +11637,11 @@ export type Database = {
         Update: {
           cost_per_litre?: number | null
           created_at?: string
-          dispatch_id?: string | null
           driver_id?: string | null
           flag_reason?: string | null
           fuel_station?: string | null
           fuel_type?: string | null
           id?: string
-          is_dispatch_estimate?: boolean
           is_flagged?: boolean
           km_per_litre?: number | null
           km_since_last_fill?: number | null
@@ -12269,20 +11655,6 @@ export type Database = {
           vehicle_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "fuel_logs_dispatch_id_fkey"
-            columns: ["dispatch_id"]
-            isOneToOne: false
-            referencedRelation: "dispatch_dead_states"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "fuel_logs_dispatch_id_fkey"
-            columns: ["dispatch_id"]
-            isOneToOne: false
-            referencedRelation: "dispatches"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "fuel_logs_driver_id_fkey"
             columns: ["driver_id"]
@@ -14515,11 +13887,13 @@ export type Database = {
           created_by: string | null
           id: string
           instance_url: string | null
-          is_active: boolean
+          integration_type: string
+          is_active: boolean | null
           last_sync_at: string | null
           last_sync_status: string | null
+          last_synced_at: string | null
           organization_id: string
-          provider: string
+          provider: string | null
           secrets_vault_id: string | null
           sync_cursor: Json | null
           sync_interval_seconds: number
@@ -14535,11 +13909,13 @@ export type Database = {
           created_by?: string | null
           id?: string
           instance_url?: string | null
-          is_active?: boolean
+          integration_type: string
+          is_active?: boolean | null
           last_sync_at?: string | null
           last_sync_status?: string | null
+          last_synced_at?: string | null
           organization_id: string
-          provider: string
+          provider?: string | null
           secrets_vault_id?: string | null
           sync_cursor?: Json | null
           sync_interval_seconds?: number
@@ -14555,18 +13931,28 @@ export type Database = {
           created_by?: string | null
           id?: string
           instance_url?: string | null
-          is_active?: boolean
+          integration_type?: string
+          is_active?: boolean | null
           last_sync_at?: string | null
           last_sync_status?: string | null
+          last_synced_at?: string | null
           organization_id?: string
-          provider?: string
+          provider?: string | null
           secrets_vault_id?: string | null
           sync_cursor?: Json | null
           sync_interval_seconds?: number
           token_expires_at?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "integration_configs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       integration_oauth_states: {
         Row: {
@@ -15115,7 +14501,6 @@ export type Database = {
           total_amount: number
           updated_at: string
           vendor_rate_card_id: string | null
-          waybill_number: string | null
           zoho_invoice_id: string | null
           zoho_synced_at: string | null
         }
@@ -15168,7 +14553,6 @@ export type Database = {
           total_amount: number
           updated_at?: string
           vendor_rate_card_id?: string | null
-          waybill_number?: string | null
           zoho_invoice_id?: string | null
           zoho_synced_at?: string | null
         }
@@ -15221,7 +14605,6 @@ export type Database = {
           total_amount?: number
           updated_at?: string
           vendor_rate_card_id?: string | null
-          waybill_number?: string | null
           zoho_invoice_id?: string | null
           zoho_synced_at?: string | null
         }
@@ -15547,7 +14930,7 @@ export type Database = {
           metadata: Json | null
           metric_name: string
           metric_type: string
-          metric_value: number | null
+          metric_value: number
           period_end: string
           period_start: string
           role: string
@@ -15563,7 +14946,7 @@ export type Database = {
           metadata?: Json | null
           metric_name: string
           metric_type: string
-          metric_value?: number | null
+          metric_value?: number
           period_end: string
           period_start: string
           role: string
@@ -15579,7 +14962,7 @@ export type Database = {
           metadata?: Json | null
           metric_name?: string
           metric_type?: string
-          metric_value?: number | null
+          metric_value?: number
           period_end?: string
           period_start?: string
           role?: string
@@ -18178,6 +17561,7 @@ export type Database = {
           joined_at: string | null
           organization_id: string
           role: Database["public"]["Enums"]["app_role"]
+          suspended_at: string | null
           updated_at: string | null
           user_id: string
         }
@@ -18190,6 +17574,7 @@ export type Database = {
           joined_at?: string | null
           organization_id: string
           role: Database["public"]["Enums"]["app_role"]
+          suspended_at?: string | null
           updated_at?: string | null
           user_id: string
         }
@@ -18202,6 +17587,7 @@ export type Database = {
           joined_at?: string | null
           organization_id?: string
           role?: Database["public"]["Enums"]["app_role"]
+          suspended_at?: string | null
           updated_at?: string | null
           user_id?: string
         }
@@ -18288,7 +17674,6 @@ export type Database = {
           dept_plan: string | null
           dept_team_size: number | null
           fleet_size: string | null
-          has_used_trial: boolean
           id: string
           industry: string | null
           is_active: boolean
@@ -18320,7 +17705,6 @@ export type Database = {
           dept_plan?: string | null
           dept_team_size?: number | null
           fleet_size?: string | null
-          has_used_trial?: boolean
           id?: string
           industry?: string | null
           is_active?: boolean
@@ -18352,7 +17736,6 @@ export type Database = {
           dept_plan?: string | null
           dept_team_size?: number | null
           fleet_size?: string | null
-          has_used_trial?: boolean
           id?: string
           industry?: string | null
           is_active?: boolean
@@ -18405,6 +17788,7 @@ export type Database = {
           pod_uploaded_by: string | null
           pod_uploaded_url: string | null
           priority: string
+          request_direction: string
           request_number: string
           requested_date: string
           sku: string | null
@@ -18441,6 +17825,7 @@ export type Database = {
           pod_uploaded_by?: string | null
           pod_uploaded_url?: string | null
           priority?: string
+          request_direction?: string
           request_number?: string
           requested_date: string
           sku?: string | null
@@ -18477,6 +17862,7 @@ export type Database = {
           pod_uploaded_by?: string | null
           pod_uploaded_url?: string | null
           priority?: string
+          request_direction?: string
           request_number?: string
           requested_date?: string
           sku?: string | null
@@ -20234,65 +19620,6 @@ export type Database = {
         }
         Relationships: []
       }
-      platform_errors: {
-        Row: {
-          component: string | null
-          created_at: string
-          error_type: string
-          extra: Json | null
-          id: string
-          message: string
-          occurred_at: string
-          organization_id: string | null
-          page_url: string | null
-          route: string | null
-          severity: string
-          stack: string | null
-          user_email: string | null
-          user_id: string | null
-        }
-        Insert: {
-          component?: string | null
-          created_at?: string
-          error_type?: string
-          extra?: Json | null
-          id?: string
-          message: string
-          occurred_at?: string
-          organization_id?: string | null
-          page_url?: string | null
-          route?: string | null
-          severity?: string
-          stack?: string | null
-          user_email?: string | null
-          user_id?: string | null
-        }
-        Update: {
-          component?: string | null
-          created_at?: string
-          error_type?: string
-          extra?: Json | null
-          id?: string
-          message?: string
-          occurred_at?: string
-          organization_id?: string | null
-          page_url?: string | null
-          route?: string | null
-          severity?: string
-          stack?: string | null
-          user_email?: string | null
-          user_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "platform_errors_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       platform_events: {
         Row: {
           created_at: string
@@ -20750,137 +20077,6 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
-      }
-      rate_cards: {
-        Row: {
-          approved_at: string | null
-          approved_by: string | null
-          card_type: string
-          created_at: string
-          customer_id: string | null
-          description: string | null
-          destination_address: string
-          destination_lat: number | null
-          destination_lng: number | null
-          diesel_litres: number | null
-          distance_confidence: string | null
-          distance_km: number | null
-          distance_source: string | null
-          id: string
-          is_net: boolean
-          organization_id: string
-          partner_id: string | null
-          pickup_address: string
-          pickup_lat: number | null
-          pickup_lng: number | null
-          rate_amount: number
-          rejected_at: string | null
-          rejected_by: string | null
-          review_note: string | null
-          status: string
-          submitted_at: string | null
-          submitted_by: string | null
-          supersedes_id: string | null
-          truck_type: string
-          updated_at: string
-          version: number
-        }
-        Insert: {
-          approved_at?: string | null
-          approved_by?: string | null
-          card_type: string
-          created_at?: string
-          customer_id?: string | null
-          description?: string | null
-          destination_address: string
-          destination_lat?: number | null
-          destination_lng?: number | null
-          diesel_litres?: number | null
-          distance_confidence?: string | null
-          distance_km?: number | null
-          distance_source?: string | null
-          id?: string
-          is_net?: boolean
-          organization_id: string
-          partner_id?: string | null
-          pickup_address: string
-          pickup_lat?: number | null
-          pickup_lng?: number | null
-          rate_amount: number
-          rejected_at?: string | null
-          rejected_by?: string | null
-          review_note?: string | null
-          status?: string
-          submitted_at?: string | null
-          submitted_by?: string | null
-          supersedes_id?: string | null
-          truck_type: string
-          updated_at?: string
-          version?: number
-        }
-        Update: {
-          approved_at?: string | null
-          approved_by?: string | null
-          card_type?: string
-          created_at?: string
-          customer_id?: string | null
-          description?: string | null
-          destination_address?: string
-          destination_lat?: number | null
-          destination_lng?: number | null
-          diesel_litres?: number | null
-          distance_confidence?: string | null
-          distance_km?: number | null
-          distance_source?: string | null
-          id?: string
-          is_net?: boolean
-          organization_id?: string
-          partner_id?: string | null
-          pickup_address?: string
-          pickup_lat?: number | null
-          pickup_lng?: number | null
-          rate_amount?: number
-          rejected_at?: string | null
-          rejected_by?: string | null
-          review_note?: string | null
-          status?: string
-          submitted_at?: string | null
-          submitted_by?: string | null
-          supersedes_id?: string | null
-          truck_type?: string
-          updated_at?: string
-          version?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "rate_cards_customer_id_fkey"
-            columns: ["customer_id"]
-            isOneToOne: false
-            referencedRelation: "customers"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "rate_cards_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "rate_cards_partner_id_fkey"
-            columns: ["partner_id"]
-            isOneToOne: false
-            referencedRelation: "partners"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "rate_cards_supersedes_id_fkey"
-            columns: ["supersedes_id"]
-            isOneToOne: false
-            referencedRelation: "rate_cards"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       rate_change_recipients: {
         Row: {
@@ -22395,44 +21591,6 @@ export type Database = {
         }
         Relationships: []
       }
-      route_profitability_settings: {
-        Row: {
-          created_at: string
-          min_margin_percent: number | null
-          min_naira_per_km: number | null
-          min_profit_per_trip: number | null
-          organization_id: string
-          updated_at: string
-          updated_by: string | null
-        }
-        Insert: {
-          created_at?: string
-          min_margin_percent?: number | null
-          min_naira_per_km?: number | null
-          min_profit_per_trip?: number | null
-          organization_id: string
-          updated_at?: string
-          updated_by?: string | null
-        }
-        Update: {
-          created_at?: string
-          min_margin_percent?: number | null
-          min_naira_per_km?: number | null
-          min_profit_per_trip?: number | null
-          organization_id?: string
-          updated_at?: string
-          updated_by?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "route_profitability_settings_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: true
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       route_risk_register: {
         Row: {
           created_at: string
@@ -22564,11 +21722,9 @@ export type Database = {
           id: string
           is_active: boolean | null
           name: string
-          organization_id: string | null
           origin: string
           origin_lat: number | null
           origin_lng: number | null
-          sla_hours: number | null
           updated_at: string
           waypoints: Json | null
         }
@@ -22583,11 +21739,9 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           name: string
-          organization_id?: string | null
           origin: string
           origin_lat?: number | null
           origin_lng?: number | null
-          sla_hours?: number | null
           updated_at?: string
           waypoints?: Json | null
         }
@@ -22602,23 +21756,13 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           name?: string
-          organization_id?: string | null
           origin?: string
           origin_lat?: number | null
           origin_lng?: number | null
-          sla_hours?: number | null
           updated_at?: string
           waypoints?: Json | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "routes_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       sales_accounts: {
         Row: {
@@ -24332,7 +23476,6 @@ export type Database = {
           notification_sent_at: string | null
           notification_status: string | null
           notification_type: string
-          organization_id: string | null
           risk_factors: Json | null
           risk_level: string
           risk_score: number
@@ -24350,7 +23493,6 @@ export type Database = {
           notification_sent_at?: string | null
           notification_status?: string | null
           notification_type: string
-          organization_id?: string | null
           risk_factors?: Json | null
           risk_level: string
           risk_score: number
@@ -24368,7 +23510,6 @@ export type Database = {
           notification_sent_at?: string | null
           notification_status?: string | null
           notification_type?: string
-          organization_id?: string | null
           risk_factors?: Json | null
           risk_level?: string
           risk_score?: number
@@ -24393,13 +23534,6 @@ export type Database = {
             columns: ["dispatch_id"]
             isOneToOne: false
             referencedRelation: "dispatches"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "sla_risk_notifications_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -25369,47 +24503,6 @@ export type Database = {
           },
         ]
       }
-      subscription_grant_log: {
-        Row: {
-          granted_at: string
-          id: string
-          new_expires_at: string | null
-          new_status: string | null
-          organization_id: string
-          previous_expires_at: string | null
-          previous_status: string | null
-          reason: string
-        }
-        Insert: {
-          granted_at?: string
-          id?: string
-          new_expires_at?: string | null
-          new_status?: string | null
-          organization_id: string
-          previous_expires_at?: string | null
-          previous_status?: string | null
-          reason: string
-        }
-        Update: {
-          granted_at?: string
-          id?: string
-          new_expires_at?: string | null
-          new_status?: string | null
-          organization_id?: string
-          previous_expires_at?: string | null
-          previous_status?: string | null
-          reason?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "subscription_grant_log_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       subscription_invoices: {
         Row: {
           amount: number
@@ -25746,6 +24839,7 @@ export type Database = {
           subject: string
           submitted_via: string
           tag: string
+          ticket_category: string | null
           updated_at: string
         }
         Insert: {
@@ -25776,6 +24870,7 @@ export type Database = {
           subject: string
           submitted_via?: string
           tag?: string
+          ticket_category?: string | null
           updated_at?: string
         }
         Update: {
@@ -25806,23 +24901,10 @@ export type Database = {
           subject?: string
           submitted_via?: string
           tag?: string
+          ticket_category?: string | null
           updated_at?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "support_tickets_dispatch_id_fkey"
-            columns: ["dispatch_id"]
-            isOneToOne: false
-            referencedRelation: "dispatch_dead_states"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "support_tickets_dispatch_id_fkey"
-            columns: ["dispatch_id"]
-            isOneToOne: false
-            referencedRelation: "dispatches"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "support_tickets_organization_id_fkey"
             columns: ["organization_id"]
@@ -27486,32 +26568,6 @@ export type Database = {
         }
         Relationships: []
       }
-      trial_notifications: {
-        Row: {
-          notification_type: string
-          organization_id: string
-          sent_at: string
-        }
-        Insert: {
-          notification_type: string
-          organization_id: string
-          sent_at?: string
-        }
-        Update: {
-          notification_type?: string
-          organization_id?: string
-          sent_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "trial_notifications_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       trip_profitability: {
         Row: {
           created_at: string | null
@@ -27622,81 +26678,48 @@ export type Database = {
       }
       trip_rate_config: {
         Row: {
-          approved_at: string | null
-          approved_by: string | null
           created_at: string | null
           customer_id: string | null
           description: string | null
           driver_type: string | null
           id: string
           is_net: boolean | null
-          organization_id: string
           partner_id: string | null
           pickup_location: string | null
           rate_amount: number
-          rejected_at: string | null
-          rejected_by: string | null
-          review_note: string | null
           route_id: string | null
-          status: string
-          submitted_at: string | null
-          submitted_by: string | null
-          supersedes_id: string | null
           truck_type: string
           updated_at: string | null
-          version: number
           zone: string
         }
         Insert: {
-          approved_at?: string | null
-          approved_by?: string | null
           created_at?: string | null
           customer_id?: string | null
           description?: string | null
           driver_type?: string | null
           id?: string
           is_net?: boolean | null
-          organization_id: string
           partner_id?: string | null
           pickup_location?: string | null
           rate_amount?: number
-          rejected_at?: string | null
-          rejected_by?: string | null
-          review_note?: string | null
           route_id?: string | null
-          status?: string
-          submitted_at?: string | null
-          submitted_by?: string | null
-          supersedes_id?: string | null
           truck_type: string
           updated_at?: string | null
-          version?: number
           zone: string
         }
         Update: {
-          approved_at?: string | null
-          approved_by?: string | null
           created_at?: string | null
           customer_id?: string | null
           description?: string | null
           driver_type?: string | null
           id?: string
           is_net?: boolean | null
-          organization_id?: string
           partner_id?: string | null
           pickup_location?: string | null
           rate_amount?: number
-          rejected_at?: string | null
-          rejected_by?: string | null
-          review_note?: string | null
           route_id?: string | null
-          status?: string
-          submitted_at?: string | null
-          submitted_by?: string | null
-          supersedes_id?: string | null
           truck_type?: string
           updated_at?: string | null
-          version?: number
           zone?: string
         }
         Relationships: [
@@ -27705,13 +26728,6 @@ export type Database = {
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "customers"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "trip_rate_config_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
           {
@@ -27726,13 +26742,6 @@ export type Database = {
             columns: ["route_id"]
             isOneToOne: false
             referencedRelation: "routes"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "trip_rate_config_supersedes_id_fkey"
-            columns: ["supersedes_id"]
-            isOneToOne: false
-            referencedRelation: "trip_rate_config"
             referencedColumns: ["id"]
           },
         ]
@@ -27805,7 +26814,6 @@ export type Database = {
           exit_timestamp: string | null
           id: string
           loading_timestamp: string | null
-          organization_id: string | null
           site_name: string | null
           updated_at: string
           vehicle_id: string | null
@@ -27821,7 +26829,6 @@ export type Database = {
           exit_timestamp?: string | null
           id?: string
           loading_timestamp?: string | null
-          organization_id?: string | null
           site_name?: string | null
           updated_at?: string
           vehicle_id?: string | null
@@ -27837,7 +26844,6 @@ export type Database = {
           exit_timestamp?: string | null
           id?: string
           loading_timestamp?: string | null
-          organization_id?: string | null
           site_name?: string | null
           updated_at?: string
           vehicle_id?: string | null
@@ -27865,13 +26871,6 @@ export type Database = {
             columns: ["dispatch_id"]
             isOneToOne: false
             referencedRelation: "dispatches"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "truck_wait_tracking_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
           {
@@ -28725,20 +27724,14 @@ export type Database = {
           blocked_dispatch: boolean | null
           completed_at: string | null
           created_at: string
-          diesel_litres_actual: number | null
-          diesel_litres_planned: number | null
           dispatch_id: string | null
           driver_id: string | null
           id: string
           inspection_type: string
           inspector_id: string | null
           inspector_notes: string | null
-          odometer_reading: number | null
           organization_id: string | null
           overall_score: number | null
-          release_reason: string | null
-          released_at: string | null
-          released_by: string | null
           status: string
           updated_at: string
           vehicle_id: string
@@ -28747,20 +27740,14 @@ export type Database = {
           blocked_dispatch?: boolean | null
           completed_at?: string | null
           created_at?: string
-          diesel_litres_actual?: number | null
-          diesel_litres_planned?: number | null
           dispatch_id?: string | null
           driver_id?: string | null
           id?: string
           inspection_type: string
           inspector_id?: string | null
           inspector_notes?: string | null
-          odometer_reading?: number | null
           organization_id?: string | null
           overall_score?: number | null
-          release_reason?: string | null
-          released_at?: string | null
-          released_by?: string | null
           status?: string
           updated_at?: string
           vehicle_id: string
@@ -28769,20 +27756,14 @@ export type Database = {
           blocked_dispatch?: boolean | null
           completed_at?: string | null
           created_at?: string
-          diesel_litres_actual?: number | null
-          diesel_litres_planned?: number | null
           dispatch_id?: string | null
           driver_id?: string | null
           id?: string
           inspection_type?: string
           inspector_id?: string | null
           inspector_notes?: string | null
-          odometer_reading?: number | null
           organization_id?: string | null
           overall_score?: number | null
-          release_reason?: string | null
-          released_at?: string | null
-          released_by?: string | null
           status?: string
           updated_at?: string
           vehicle_id?: string
@@ -28936,139 +27917,45 @@ export type Database = {
       }
       vehicle_repairs: {
         Row: {
-          approved_at: string | null
-          approved_by: string | null
           cost: number | null
           created_at: string | null
           created_by: string | null
           description: string | null
-          downtime_days: number | null
-          expense_id: string | null
-          finance_note: string | null
-          finance_reviewed_at: string | null
-          finance_reviewed_by: string | null
           id: string
-          is_breakdown: boolean
-          labour_cost: number | null
-          logged_by: string | null
           mileage_at_repair: number | null
           notes: string | null
-          organization_id: string
-          original_cost: number | null
-          original_labour_cost: number | null
-          original_parts_cost: number | null
-          parts_cost: number | null
-          parts_replaced: string | null
           performed_by: string | null
-          prediction_id: string | null
-          rejected_at: string | null
-          rejected_by: string | null
           repair_date: string
           repair_type: string
-          review_note: string | null
-          schedule_id: string | null
-          status: string
           vehicle_id: string
         }
         Insert: {
-          approved_at?: string | null
-          approved_by?: string | null
           cost?: number | null
           created_at?: string | null
           created_by?: string | null
           description?: string | null
-          downtime_days?: number | null
-          expense_id?: string | null
-          finance_note?: string | null
-          finance_reviewed_at?: string | null
-          finance_reviewed_by?: string | null
           id?: string
-          is_breakdown?: boolean
-          labour_cost?: number | null
-          logged_by?: string | null
           mileage_at_repair?: number | null
           notes?: string | null
-          organization_id: string
-          original_cost?: number | null
-          original_labour_cost?: number | null
-          original_parts_cost?: number | null
-          parts_cost?: number | null
-          parts_replaced?: string | null
           performed_by?: string | null
-          prediction_id?: string | null
-          rejected_at?: string | null
-          rejected_by?: string | null
           repair_date?: string
           repair_type: string
-          review_note?: string | null
-          schedule_id?: string | null
-          status?: string
           vehicle_id: string
         }
         Update: {
-          approved_at?: string | null
-          approved_by?: string | null
           cost?: number | null
           created_at?: string | null
           created_by?: string | null
           description?: string | null
-          downtime_days?: number | null
-          expense_id?: string | null
-          finance_note?: string | null
-          finance_reviewed_at?: string | null
-          finance_reviewed_by?: string | null
           id?: string
-          is_breakdown?: boolean
-          labour_cost?: number | null
-          logged_by?: string | null
           mileage_at_repair?: number | null
           notes?: string | null
-          organization_id?: string
-          original_cost?: number | null
-          original_labour_cost?: number | null
-          original_parts_cost?: number | null
-          parts_cost?: number | null
-          parts_replaced?: string | null
           performed_by?: string | null
-          prediction_id?: string | null
-          rejected_at?: string | null
-          rejected_by?: string | null
           repair_date?: string
           repair_type?: string
-          review_note?: string | null
-          schedule_id?: string | null
-          status?: string
           vehicle_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "vehicle_repairs_expense_id_fkey"
-            columns: ["expense_id"]
-            isOneToOne: false
-            referencedRelation: "expenses"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "vehicle_repairs_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "vehicle_repairs_prediction_id_fkey"
-            columns: ["prediction_id"]
-            isOneToOne: false
-            referencedRelation: "maintenance_predictions"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "vehicle_repairs_schedule_id_fkey"
-            columns: ["schedule_id"]
-            isOneToOne: false
-            referencedRelation: "maintenance_schedules"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "vehicle_repairs_vehicle_id_fkey"
             columns: ["vehicle_id"]
@@ -29132,7 +28019,6 @@ export type Database = {
           health_score: number | null
           id: string
           image_url: string | null
-          initial_odometer: number | null
           last_maintenance: string | null
           last_service_km: number | null
           lifetime_km: number | null
@@ -29167,7 +28053,6 @@ export type Database = {
           health_score?: number | null
           id?: string
           image_url?: string | null
-          initial_odometer?: number | null
           last_maintenance?: string | null
           last_service_km?: number | null
           lifetime_km?: number | null
@@ -29202,7 +28087,6 @@ export type Database = {
           health_score?: number | null
           id?: string
           image_url?: string | null
-          initial_odometer?: number | null
           last_maintenance?: string | null
           last_service_km?: number | null
           lifetime_km?: number | null
@@ -29637,7 +28521,6 @@ export type Database = {
           email_sent: boolean | null
           email_sent_at: string | null
           id: string
-          organization_id: string | null
           snapshot_month: number
           snapshot_week: number
           snapshot_year: number
@@ -29651,7 +28534,6 @@ export type Database = {
           email_sent?: boolean | null
           email_sent_at?: string | null
           id?: string
-          organization_id?: string | null
           snapshot_month: number
           snapshot_week: number
           snapshot_year: number
@@ -29665,7 +28547,6 @@ export type Database = {
           email_sent?: boolean | null
           email_sent_at?: string | null
           id?: string
-          organization_id?: string | null
           snapshot_month?: number
           snapshot_week?: number
           snapshot_year?: number
@@ -29673,13 +28554,6 @@ export type Database = {
           vendor_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "vendor_performance_snapshots_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "vendor_performance_snapshots_vendor_id_fkey"
             columns: ["vendor_id"]
@@ -29692,56 +28566,67 @@ export type Database = {
       vendor_rate_cards: {
         Row: {
           created_at: string
-          created_by: string | null
-          effective_from: string | null
-          effective_to: string | null
           id: string
-          notes: string | null
           organization_id: string
           rate_ngn: number
           route_from: string
           route_to: string
+          sla_days: number
+          special_terms: string | null
           status: string
           updated_at: string
+          uploaded_by: string | null
+          valid_from: string
+          valid_until: string | null
           vehicle_type: string
+          vendor_id: string | null
           vendor_name: string
-          vendor_partner_id: string | null
         }
         Insert: {
           created_at?: string
-          created_by?: string | null
-          effective_from?: string | null
-          effective_to?: string | null
           id?: string
-          notes?: string | null
           organization_id: string
           rate_ngn: number
           route_from: string
           route_to: string
+          sla_days?: number
+          special_terms?: string | null
           status?: string
           updated_at?: string
+          uploaded_by?: string | null
+          valid_from?: string
+          valid_until?: string | null
           vehicle_type: string
+          vendor_id?: string | null
           vendor_name: string
-          vendor_partner_id?: string | null
         }
         Update: {
           created_at?: string
-          created_by?: string | null
-          effective_from?: string | null
-          effective_to?: string | null
           id?: string
-          notes?: string | null
           organization_id?: string
           rate_ngn?: number
           route_from?: string
           route_to?: string
+          sla_days?: number
+          special_terms?: string | null
           status?: string
           updated_at?: string
+          uploaded_by?: string | null
+          valid_from?: string
+          valid_until?: string | null
           vehicle_type?: string
+          vendor_id?: string | null
           vendor_name?: string
-          vendor_partner_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "vendor_rate_cards_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       vendor_rate_comparisons: {
         Row: {
@@ -30745,45 +29630,6 @@ export type Database = {
           },
         ]
       }
-      website_pageviews: {
-        Row: {
-          country_code: string | null
-          created_at: string
-          device_type: string | null
-          id: string
-          path: string
-          referrer_host: string | null
-          referrer_type: string | null
-          view_date: string | null
-          viewed_at: string
-          visitor_hash: string
-        }
-        Insert: {
-          country_code?: string | null
-          created_at?: string
-          device_type?: string | null
-          id?: string
-          path: string
-          referrer_host?: string | null
-          referrer_type?: string | null
-          view_date?: string | null
-          viewed_at?: string
-          visitor_hash: string
-        }
-        Update: {
-          country_code?: string | null
-          created_at?: string
-          device_type?: string | null
-          id?: string
-          path?: string
-          referrer_host?: string | null
-          referrer_type?: string | null
-          view_date?: string | null
-          viewed_at?: string
-          visitor_hash?: string
-        }
-        Relationships: []
-      }
       whatsapp_orders: {
         Row: {
           ai_confidence: number | null
@@ -31134,44 +29980,6 @@ export type Database = {
         }
         Relationships: []
       }
-      zaza_conversations: {
-        Row: {
-          content: string
-          conversation_id: string
-          created_at: string
-          id: string
-          organization_id: string | null
-          role: string
-          user_id: string
-        }
-        Insert: {
-          content: string
-          conversation_id: string
-          created_at?: string
-          id?: string
-          organization_id?: string | null
-          role: string
-          user_id: string
-        }
-        Update: {
-          content?: string
-          conversation_id?: string
-          created_at?: string
-          id?: string
-          organization_id?: string | null
-          role?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "zaza_conversations_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       zoho_sync_logs: {
         Row: {
           completed_at: string | null
@@ -31267,6 +30075,7 @@ export type Database = {
       }
       integration_configs_public: {
         Row: {
+          auto_sync_enabled: boolean | null
           client_id: string | null
           created_at: string | null
           created_by: string | null
@@ -31276,11 +30085,14 @@ export type Database = {
           is_active: boolean | null
           last_sync_at: string | null
           last_sync_status: string | null
+          last_synced_at: string | null
           organization_id: string | null
           provider: string | null
+          sync_interval_seconds: number | null
           updated_at: string | null
         }
         Insert: {
+          auto_sync_enabled?: boolean | null
           client_id?: string | null
           created_at?: string | null
           created_by?: string | null
@@ -31290,11 +30102,14 @@ export type Database = {
           is_active?: boolean | null
           last_sync_at?: string | null
           last_sync_status?: string | null
+          last_synced_at?: string | null
           organization_id?: string | null
           provider?: string | null
+          sync_interval_seconds?: number | null
           updated_at?: string | null
         }
         Update: {
+          auto_sync_enabled?: boolean | null
           client_id?: string | null
           created_at?: string | null
           created_by?: string | null
@@ -31304,11 +30119,21 @@ export type Database = {
           is_active?: boolean | null
           last_sync_at?: string | null
           last_sync_status?: string | null
+          last_synced_at?: string | null
           organization_id?: string | null
           provider?: string | null
+          sync_interval_seconds?: number | null
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "integration_configs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       partner_webhooks_public: {
         Row: {
@@ -31453,19 +30278,7 @@ export type Database = {
           sequence_number: number
         }[]
       }
-      approve_rate_card: {
-        Args: { p_note?: string; p_rate_id: string }
-        Returns: Json
-      }
-      approve_trip_rate: {
-        Args: { p_note?: string; p_rate_id: string }
-        Returns: Json
-      }
       approve_user_profile: { Args: { p_user_id: string }; Returns: boolean }
-      approve_vehicle_repair: {
-        Args: { p_note?: string; p_repair_id: string }
-        Returns: Json
-      }
       assert_no_open_rls_policies: {
         Args: never
         Returns: {
@@ -31496,14 +30309,6 @@ export type Database = {
           routeace_amount: number
         }[]
       }
-      calculate_kpi_metrics: {
-        Args: {
-          p_org_id?: string
-          p_period_end?: string
-          p_period_start?: string
-        }
-        Returns: Json
-      }
       calculate_sla_deadline: {
         Args: { p_dispatch_date: string; p_sla_duration_days: number }
         Returns: string
@@ -31522,11 +30327,14 @@ export type Database = {
         Args: { _actor_id: string; _target_user_id: string }
         Returns: boolean
       }
+      check_single_tenant_mode: {
+        Args: { p_user_id: string }
+        Returns: boolean
+      }
       check_super_admin_ip: {
         Args: { _ip_address: unknown; _user_id: string }
         Returns: boolean
       }
-      check_vehicle_trip_gate: { Args: { p_vehicle_id: string }; Returns: Json }
       compute_user_kpis: {
         Args: {
           p_period_end?: string
@@ -31593,27 +30401,9 @@ export type Database = {
         }
         Returns: Json
       }
-      finance_reject_repair: {
-        Args: { p_note?: string; p_repair_id: string }
-        Returns: Json
-      }
-      finance_review_repair: {
-        Args: {
-          p_labour_cost?: number
-          p_note?: string
-          p_parts_cost?: number
-          p_repair_id: string
-        }
-        Returns: Json
-      }
-      find_open_pretrip: { Args: { p_vehicle_id: string }; Returns: string }
       force_approve_user_profile: {
         Args: { p_user_id: string }
         Returns: boolean
-      }
-      generate_cashflow_forecasts: {
-        Args: { p_horizon_days?: number; p_org_id?: string }
-        Returns: Json
       }
       generate_recommendations: { Args: { p_user_id: string }; Returns: Json }
       generate_transporter_billing: {
@@ -31639,7 +30429,6 @@ export type Database = {
           used_at: string
         }[]
       }
-      get_daily_analytics_salt: { Args: never; Returns: string }
       get_delivery_csat_context: {
         Args: { p_token: string }
         Returns: {
@@ -31650,67 +30439,8 @@ export type Database = {
           organization_name: string
         }[]
       }
-      get_dispatch_lanes: {
-        Args: { p_customer_id?: string; p_organization_id: string }
-        Returns: {
-          destination_address: string
-          destination_lat: number
-          destination_lng: number
-          distance_km: number
-          pickup_address: string
-          pickup_lat: number
-          pickup_lng: number
-          truck_type: string
-        }[]
-      }
-      get_dispatch_rate: {
-        Args: {
-          p_customer_id?: string
-          p_driver_type?: string
-          p_organization_id: string
-          p_partner_id?: string
-          p_truck_type: string
-          p_zone: string
-        }
-        Returns: {
-          is_net: boolean
-          match_level: string
-          rate_amount: number
-          rate_id: string
-        }[]
-      }
       get_erp_connection_secrets: {
         Args: { _connection_id: string }
-        Returns: Json
-      }
-      get_fleet_repair_leaderboard: {
-        Args: { p_organization_id: string }
-        Returns: {
-          breakdown_count: number
-          cost_per_km: number
-          last_repair: string
-          registration_number: string
-          repair_count: number
-          total_downtime_days: number
-          total_spend: number
-          truck_type: string
-          vehicle_id: string
-        }[]
-      }
-      get_fleet_utilization: {
-        Args: { p_days?: number; p_organization_id: string }
-        Returns: {
-          active_days: number
-          is_benchmark_vehicle: boolean
-          recommended_days: number
-          registration_number: string
-          truck_type: string
-          utilization_pct: number
-          vehicle_id: string
-        }[]
-      }
-      get_fleet_utilization_summary: {
-        Args: { p_days?: number; p_organization_id: string }
         Returns: Json
       }
       get_integration_config_secrets: {
@@ -31720,26 +30450,6 @@ export type Database = {
       get_integration_secrets: {
         Args: { _integration_id: string }
         Returns: Json
-      }
-      get_lane_diesel_litres: {
-        Args: {
-          p_customer_id: string
-          p_destination: string
-          p_organization_id: string
-          p_pickup: string
-          p_truck_type: string
-        }
-        Returns: number
-      }
-      get_lane_distance_km: {
-        Args: {
-          p_customer_id: string
-          p_destination: string
-          p_organization_id: string
-          p_pickup: string
-          p_truck_type: string
-        }
-        Returns: number
       }
       get_org_member_identities: {
         Args: { _user_ids: string[] }
@@ -31752,22 +30462,6 @@ export type Database = {
       get_partner_webhook_secret: {
         Args: { _webhook_id: string }
         Returns: string
-      }
-      get_plan_limits: {
-        Args: { tier: string }
-        Returns: {
-          ai_credits_total: number
-          max_api_calls: number
-          max_branches: number
-          max_integrations: number
-          max_monthly_dispatches: number
-          max_users: number
-          max_vehicles: number
-        }[]
-      }
-      get_predicted_maintenance_savings: {
-        Args: { p_days?: number; p_organization_id: string }
-        Returns: Json
       }
       get_public_org_by_slug: {
         Args: { p_slug: string }
@@ -31815,55 +30509,11 @@ export type Database = {
           verdict: string
         }[]
       }
-      get_trip_compliance: {
-        Args: { p_organization_id: string }
-        Returns: {
-          dispatches_30d: number
-          gate_allowed: boolean
-          gate_message: string
-          gate_reason: string
-          last_inspection: string
-          missing_post_trips: number
-          open_dispatch_number: string
-          overrides_30d: number
-          post_trips_30d: number
-          pre_trips_30d: number
-          registration_number: string
-          truck_type: string
-          vehicle_id: string
-        }[]
-      }
       get_user_organization: { Args: { p_user_id: string }; Returns: string }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]
       }
-      get_vehicle_repair_insights: {
-        Args: { p_vehicle_id: string }
-        Returns: Json
-      }
-      get_vehicle_subscription_charges: {
-        Args: { p_org_id: string; p_ref_date?: string }
-        Returns: {
-          days_active: number
-          days_in_month: number
-          is_prorated: boolean
-          month_end: string
-          month_start: string
-          monthly_rate: number
-          next_renewal: string
-          prorated_charge: number
-          registered_on: string
-          registration_number: string
-          vehicle_id: string
-          vehicle_type: string
-        }[]
-      }
-      get_vehicle_subscription_total: {
-        Args: { p_org_id: string; p_ref_date?: string }
-        Returns: number
-      }
-      get_website_analytics: { Args: { p_days?: number }; Returns: Json }
       has_any_role: { Args: { _user_id: string }; Returns: boolean }
       has_role: {
         Args: {
@@ -31880,10 +30530,6 @@ export type Database = {
         }
         Returns: boolean
       }
-      increment_rate_limit_bucket: {
-        Args: { p_api_key_id: string; p_bucket_window: string; p_limit: number }
-        Returns: number
-      }
       is_core_team: { Args: { _user_id: string }; Returns: boolean }
       is_customer_user_for_customer: {
         Args: { _customer_id: string; _user_id: string }
@@ -31898,7 +30544,6 @@ export type Database = {
         Returns: boolean
       }
       is_finance_manager: { Args: { _user_id: string }; Returns: boolean }
-      is_glyde_internal: { Args: { p_user_id: string }; Returns: boolean }
       is_internal_team: { Args: { _user_id: string }; Returns: boolean }
       is_ops_manager: { Args: { _user_id: string }; Returns: boolean }
       is_org_admin: { Args: { _user_id: string }; Returns: boolean }
@@ -31970,42 +30615,6 @@ export type Database = {
         }
         Returns: undefined
       }
-      log_vehicle_repair:
-        | {
-            Args: {
-              p_book_expense?: boolean
-              p_description?: string
-              p_downtime_days?: number
-              p_is_breakdown?: boolean
-              p_labour_cost?: number
-              p_mileage?: number
-              p_parts_cost?: number
-              p_parts_replaced?: string
-              p_performed_by?: string
-              p_repair_date: string
-              p_repair_type: string
-              p_vehicle_id: string
-            }
-            Returns: Json
-          }
-        | {
-            Args: {
-              p_book_expense?: boolean
-              p_description?: string
-              p_downtime_days?: number
-              p_is_breakdown?: boolean
-              p_labour_cost?: number
-              p_mileage?: number
-              p_parts_cost?: number
-              p_parts_replaced?: string
-              p_performed_by?: string
-              p_repair_date: string
-              p_repair_type: string
-              p_schedule_id?: string
-              p_vehicle_id: string
-            }
-            Returns: Json
-          }
       mark_csat_reminder_sent: {
         Args: { p_ticket_id: string }
         Returns: undefined
@@ -32020,34 +30629,9 @@ export type Database = {
         }
         Returns: number
       }
-      org_subscription_active: { Args: { org_id: string }; Returns: boolean }
-      post_ledger_entry: {
-        Args: {
-          p_account: string
-          p_acct_type: string
-          p_credit: number
-          p_date: string
-          p_debit: number
-          p_description: string
-          p_org_id: string
-          p_ref_id: string
-          p_ref_type: string
-        }
-        Returns: undefined
-      }
-      process_trial_lifecycle: { Args: never; Returns: Json }
       profile_picture_error_category: {
         Args: { _message: string }
         Returns: string
-      }
-      prompt_daily_wait_time_entry: { Args: never; Returns: Json }
-      propose_rate_card_change: {
-        Args: { p_new_amount: number; p_note?: string; p_rate_id: string }
-        Returns: Json
-      }
-      propose_trip_rate_change: {
-        Args: { p_new_amount: number; p_note?: string; p_rate_id: string }
-        Returns: Json
       }
       rate_delivery_csat: {
         Args: {
@@ -32065,10 +30649,6 @@ export type Database = {
           msg_id: number
           read_ct: number
         }[]
-      }
-      recalculate_vehicle_health: {
-        Args: { p_org_id: string; p_vehicle_id: string }
-        Returns: number
       }
       record_intel_scope_violation: {
         Args: {
@@ -32105,43 +30685,6 @@ export type Database = {
       refresh_staff_status_for_user: {
         Args: { _organization_id?: string; _user_id: string }
         Returns: undefined
-      }
-      reject_rate_card: {
-        Args: { p_note?: string; p_rate_id: string }
-        Returns: Json
-      }
-      reject_trip_rate: {
-        Args: { p_note?: string; p_rate_id: string }
-        Returns: Json
-      }
-      reject_vehicle_repair: {
-        Args: { p_note?: string; p_repair_id: string }
-        Returns: Json
-      }
-      release_vehicle_trip_block: {
-        Args: { p_reason: string; p_vehicle_id: string }
-        Returns: Json
-      }
-      render_trial_email: {
-        Args: {
-          p_days_left: number
-          p_expires_at: string
-          p_org_name: string
-          p_template: string
-          p_user_name: string
-        }
-        Returns: string
-      }
-      resolve_dispatch_rates: {
-        Args: {
-          p_customer_id: string
-          p_destination: string
-          p_organization_id: string
-          p_pickup: string
-          p_truck_type: string
-          p_vehicle_id: string
-        }
-        Returns: Json
       }
       resolve_kpi_target: {
         Args: { p_metric_key: string; p_org_id: string; p_role_tag: string }
@@ -32360,7 +30903,6 @@ export type Database = {
           owner: string
         }[]
       }
-      vehicle_monthly_rate_naira: { Args: never; Returns: number }
     }
     Enums: {
       app_role:
@@ -32433,12 +30975,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends (DefaultSchemaTableNameOrOptions extends {
+  TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never) = never,
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -32462,11 +31004,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends (DefaultSchemaTableNameOrOptions extends {
+  TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never) = never,
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -32487,11 +31029,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends (DefaultSchemaTableNameOrOptions extends {
+  TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never) = never,
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -32512,11 +31054,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never) = never,
+    : never = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -32529,11 +31071,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never) = never,
+    : never = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -32543,9 +31085,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       app_role: [
@@ -32610,5 +31149,3 @@ export const Constants = {
     },
   },
 } as const
-A new version of Supabase CLI is available: v2.118.0 (currently installed v)
-We recommend updating regularly for new features and bug fixes: https://supabase.com/docs/guides/cli/getting-started#updating-the-supabase-cli

@@ -218,18 +218,6 @@ const DispatchPage = () => {
   const [defaultSlaPolicy, setDefaultSlaPolicy] = useState<{ id: string; sla_duration_days: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  // A ref, not just `saving` state: state only blocks re-entry after React
-  // commits a re-render, and a fast double-click fires the handler twice
-  // before that commit lands — both calls then sail past a disabled button
-  // check. A ref mutation is synchronous, so it actually closes the race.
-  // Confirmed in production: duplicate dispatches on the same lane inserted
-  // milliseconds apart, traced back to exactly this gap.
-  const creatingDispatchRef = useRef(false);
-  // Generated once per dialog-open, sent with the insert. Backed by a
-  // per-org unique index on dispatches(organization_id, client_request_id)
-  // — a resubmit that slips past creatingDispatchRef (two tabs, a retried
-  // request) still gets rejected at the database, not just the UI.
-  const clientRequestIdRef = useRef<string>(crypto.randomUUID());
   const [activeTab, setActiveTab] = useState("all");
   const [isApprovalDialogOpen, setIsApprovalDialogOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
@@ -749,8 +737,6 @@ const DispatchPage = () => {
   };
 
   const handleCreateDispatch = async () => {
-    if (creatingDispatchRef.current) return;
-
     if (!formData.customer_id || !formData.pickup_address || !formData.delivery_address) {
       toast({
         title: "Validation Error",
@@ -760,7 +746,6 @@ const DispatchPage = () => {
       return;
     }
 
-    creatingDispatchRef.current = true;
     setSaving(true);
     try {
       const distanceKm = formData.distance_km ? parseFloat(formData.distance_km) : null;
@@ -827,7 +812,6 @@ const DispatchPage = () => {
 
       const insertData = {
         dispatch_number: `DSP-${Date.now()}`,
-        client_request_id: clientRequestIdRef.current,
         organization_id: organizationId ?? null,
         customer_id: formData.customer_id,
         route_id: formData.route_id || null,
@@ -982,7 +966,6 @@ const DispatchPage = () => {
       toast({ title: "Couldn't create dispatch", description: friendly, variant: "destructive" });
     } finally {
       setSaving(false);
-      creatingDispatchRef.current = false;
     }
   };
 
@@ -1405,7 +1388,7 @@ const DispatchPage = () => {
         </div>
 
         {canManage && (
-          <Dialog open={isDialogOpen} onOpenChange={(v) => { setIsDialogOpen(v); if (v) clientRequestIdRef.current = crypto.randomUUID(); }}>
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
               <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
                 <Plus className="w-4 h-4 mr-2" />
