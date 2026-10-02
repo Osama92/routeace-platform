@@ -39,12 +39,27 @@ interface Vehicle {
   registration_number: string;
   vehicle_type: string;
   capacity_kg: number | null;
+  truck_type: string | null;
 }
 
+// capacity_kg is NULL for most vehicles platform-wide (verified: 70.6% null
+// across all orgs, 100% null for Relma) — every one of those has truck_type
+// populated instead ('15T', '20T', '30T', etc., per the vehicles_truck_type_check
+// constraint), so this was silently defaulting every vehicle missing
+// capacity_kg to the lightest bracket regardless of its real size. Same
+// numeric-extraction approach already used by normalizeTruckType()
+// (src/pages/Dispatch.tsx) and mapVehicleTypeToMode() (AdvancedRoutePlanner.tsx)
+// for the same truck_type values, just returning a number instead of a category.
+const tonnageFromTruckType = (truckType: string | null): number | null => {
+  if (!truckType) return null;
+  const match = truckType.match(/(\d+)\s*T/i);
+  return match ? parseInt(match[1], 10) : null;
+};
+
 // Fuel consumption factors by tonnage (L/km)
-const getFuelFactor = (capacityKg: number | null, vehicleType: string): number => {
-  const tonnage = (capacityKg || 0) / 1000;
-  
+const getFuelFactor = (capacityKg: number | null, vehicleType: string, truckType: string | null): number => {
+  const tonnage = capacityKg ? capacityKg / 1000 : (tonnageFromTruckType(truckType) ?? 0);
+
   // Based on user requirements:
   // 15-20 tonnes: 0.35 L/km
   // 30 tonnes: 0.47 L/km
@@ -52,7 +67,7 @@ const getFuelFactor = (capacityKg: number | null, vehicleType: string): number =
   if (tonnage >= 45) return 0.55;
   if (tonnage >= 25) return 0.47;
   if (tonnage >= 15) return 0.35;
-  
+
   // Default for lighter vehicles based on type
   switch (vehicleType) {
     case "heavy_truck":
@@ -140,7 +155,7 @@ const FuelPlanningCard = ({ dispatchId, distanceKm, vehicleId, pickupAddress, de
   const fetchVehicle = async (id: string) => {
     const { data: vehicleData } = await supabase
       .from("vehicles")
-      .select("id, registration_number, vehicle_type, capacity_kg")
+      .select("id, registration_number, vehicle_type, capacity_kg, truck_type")
       .eq("id", id)
       .maybeSingle();
     
@@ -151,7 +166,7 @@ const FuelPlanningCard = ({ dispatchId, distanceKm, vehicleId, pickupAddress, de
 
   const calculateFuel = () => {
     const totalDistance = data.toDistance + data.returnDistance;
-    const factor = vehicle ? getFuelFactor(vehicle.capacity_kg, vehicle.vehicle_type) : 0.35;
+    const factor = vehicle ? getFuelFactor(vehicle.capacity_kg, vehicle.vehicle_type, vehicle.truck_type) : 0.35;
     const suggestedFuel = totalDistance * factor;
     const variance = data.actualFuel > 0 ? data.actualFuel - suggestedFuel : 0;
 
@@ -231,8 +246,10 @@ const FuelPlanningCard = ({ dispatchId, distanceKm, vehicleId, pickupAddress, de
     }
   };
 
-  const tonnage = vehicle ? (vehicle.capacity_kg || 0) / 1000 : 0;
-  const factor = vehicle ? getFuelFactor(vehicle.capacity_kg, vehicle.vehicle_type) : 0.35;
+  const tonnage = vehicle
+    ? (vehicle.capacity_kg ? vehicle.capacity_kg / 1000 : (tonnageFromTruckType(vehicle.truck_type) ?? 0))
+    : 0;
+  const factor = vehicle ? getFuelFactor(vehicle.capacity_kg, vehicle.vehicle_type, vehicle.truck_type) : 0.35;
 
   const formatNumber = (num: number) => {
     return new Intl.NumberFormat("en-NG", {
