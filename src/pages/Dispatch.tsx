@@ -851,11 +851,27 @@ const DispatchPage = () => {
       // finance to complete and the operation still goes ahead.
       if (data && formData.vehicle_id && formData.customer_id) {
         try {
-          const selected = vehicles.find((v) => v.id === formData.vehicle_id);
+          // Was looking this up in the local `vehicles` state, which is
+          // fetched filtered to status='available' — the vehicle just
+          // assigned to THIS dispatch has very plausibly left that status by
+          // the time this runs, so the lookup silently misses, truckType
+          // comes back null, and the rate call is skipped with no error
+          // shown anywhere. Verified against production: a real dispatch
+          // with client_revenue stuck null resolved correctly (₦387,000)
+          // when resolve_dispatch_rates() was called by hand with its exact
+          // stored parameters — the RPC and the rate card were never the
+          // problem. Fetching the vehicle fresh, unfiltered by status,
+          // closes that gap.
+          //
           // vehicles.truck_type holds exactly the values the Rate Card uses
           // ("15T", "20T", "30T"). normalizeTruckType() is NOT used here: it
           // reads vehicle_type, which holds "heavy_truck"/"medium_truck" and
           // would collapse every vehicle to "10t" — silently matching no rate.
+          const { data: selected } = await supabase
+            .from("vehicles")
+            .select("truck_type")
+            .eq("id", formData.vehicle_id)
+            .maybeSingle();
           const truckType = (selected as any)?.truck_type ?? null;
           if (!truckType) {
             console.warn("Vehicle has no truck_type; cannot resolve a rate", formData.vehicle_id);

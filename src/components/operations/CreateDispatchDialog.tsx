@@ -507,7 +507,22 @@ const CreateDispatchDialog = () => {
       // never fail to create because a rate is missing.
       if (disp?.id && form.vehicle_id && resolvedCustomerId) {
         try {
-          const sv = vehicles?.find((x: any) => x.id === form.vehicle_id);
+          // Was looking this up in the local `vehicles` list, which is
+          // fetched filtered to status='available' — the vehicle just
+          // assigned to THIS dispatch has very plausibly left that status by
+          // the time this runs, so the lookup silently misses, truckType
+          // comes back null, and the rate call is skipped with no error
+          // shown anywhere. Verified against production: a real dispatch
+          // with client_revenue stuck null resolved correctly (₦387,000)
+          // when resolve_dispatch_rates() was called by hand with its exact
+          // stored parameters — the RPC and the rate card were never the
+          // problem. Fetching the vehicle fresh, unfiltered by status,
+          // closes that gap.
+          const { data: sv } = await supabase
+            .from("vehicles")
+            .select("truck_type")
+            .eq("id", form.vehicle_id)
+            .maybeSingle();
           const truckType = (sv as any)?.truck_type ?? null;
           if (!truckType) {
             console.warn("Vehicle has no truck_type; cannot resolve a rate", form.vehicle_id);
