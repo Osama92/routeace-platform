@@ -128,32 +128,51 @@ export default function TrialROISummary() {
   // Generated (which SHOULD move with the period) filters this same set
   // client-side below, so there's one query instead of two nearly-identical
   // ones.
+  //
+  // dispatches!inner(status) is here specifically for Revenue At Risk: a
+  // dispatch_financials row survives a later cancellation (the trigger that
+  // creates it on delivery never reverses it), so without this join the
+  // "at risk" total silently includes revenue from cancelled dispatches —
+  // verified against production: 6 Relma rows worth NGN2.91M were exactly
+  // this, all client_revenue=485,000 with no invoice, delivered then later
+  // flipped to cancelled.
   const { data: dispatchFinancials = [] } = useQuery({
     queryKey: ["impact-dispatch-financials", orgId],
     enabled: !!orgId,
     queryFn: async () => {
       const { data } = await (supabase.from("dispatch_financials") as any)
-        .select("client_revenue, vendor_cost, gross_profit, finance_status, invoice_id, dispatch_id, created_at")
+        .select("client_revenue, vendor_cost, gross_profit, finance_status, invoice_id, dispatch_id, created_at, dispatches!inner(status)")
         .eq("organization_id", orgId!);
       return data ?? [];
     },
   });
 
   // ── Invoices ─────────────────────────────────────────────────────────────
-  // Filtered by invoice_date — Revenue Protected and Cash Outstanding are
-  // meant to reflect billing activity IN the selected period.
+  // Deliberately UNFILTERED by period (same reasoning as dispatchFinancials
+  // above). Revenue Protected / Cash Outstanding still need to reflect
+  // billing activity IN the selected period, so they're sliced client-side
+  // below from this one fetch — but Revenue At Risk needs the WHOLE-OF-TIME
+  // invoiced figure to subtract against, since it's a backlog, not a flow.
+  // A prior version of this file filtered this query server-side by
+  // periodStartDate, which silently fed a period-scoped invoicedRevenue into
+  // the Revenue At Risk subtraction — correct only on "All time" (no
+  // filter), producing a wildly inflated figure under any other period
+  // (verified: a fabricated ~NGN54M swing under "Last 30 days" for Relma,
+  // against a true value of NGN0).
   const { data: invoiceData = [] } = useQuery({
-    queryKey: ["impact-invoices", orgId, periodStartDate],
+    queryKey: ["impact-invoices", orgId],
     enabled: !!orgId,
     queryFn: async () => {
-      let q = supabase.from("invoices")
+      const { data } = await supabase.from("invoices")
         .select("id, status, total_amount, balance_due, dispatch_id, invoice_date, due_date, paid_date")
         .eq("organization_id", orgId!);
-      if (periodStartDate) q = q.gte("invoice_date", periodStartDate);
-      const { data } = await q;
       return data ?? [];
     },
   });
+
+  const currentInvoices = (periodStart
+    ? invoiceData.filter((i: any) => i.invoice_date && new Date(i.invoice_date) >= periodStart)
+    : invoiceData);
 
   // ── Fuel logs ────────────────────────────────────────────────────────────
   // Same shape and same real System-Est-vs-Actual methodology as
@@ -286,34 +305,45 @@ export default function TrialROISummary() {
   // is NO 'sent' status in this schema. An earlier version of this file
   // filtered on 'sent', which silently matched zero rows and undercounted
   // both this metric and Cash Outstanding below.
-  const invoicedRevenue = invoiceData
+  const invoicedRevenue = currentInvoices
     .filter((i: any) => ["pending", "paid", "overdue"].includes(i.status))
     .reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0);
-  const paidCount    = invoiceData.filter((i: any) => i.status === "paid").length;
-  const pendingCount = invoiceData.filter((i: any) => i.status === "pending").length;
-  const overdueCount = invoiceData.filter((i: any) => i.status === "overdue").length;
+  const paidCount    = currentInvoices.filter((i: any) => i.status === "paid").length;
+  const pendingCount = currentInvoices.filter((i: any) => i.status === "pending").length;
+  const overdueCount = currentInvoices.filter((i: any) => i.status === "overdue").length;
 
-  // 3. Revenue At Risk = Client Revenue (all dispatch_financials, ignoring
-  // the period filter — see the note on that query) minus Revenue Protected
-  // (which DOES respect the period, since it's what's been billed lately).
-  // This is deliberately a simpler subtraction, not a per-dispatch
-  // unbilled-invoice match: the per-dispatch version undercounts whenever an
-  // invoice exists but isn't linked back to the dispatch it covers — a real
-  // and common gap in this platform's manual invoicing flow. A flat
-  // subtraction can't be fooled by a missing link. Clamped at 0 — a
-  // negative number here would mean "billed more than resolved," which
-  // reads as noise, not a real risk figure.
-  const totalClientRevenue = dispatchFinancials.reduce((s: number, f: any) => s + Number(f.client_revenue ?? 0), 0);
-  const revenueAtRisk = Math.max(0, totalClientRevenue - invoicedRevenue);
+  // 3. Revenue At Risk = DELIVERED Client Revenue (dispatch_financials whose
+  // dispatch actually reached 'delivered' — whole-of-time, ignoring the
+  // period filter) minus WHOLE-OF-TIME invoiced revenue (from invoiceData,
+  // NOT currentInvoices — both sides of this subtraction must be
+  // whole-of-time, or the result is meaningless under any period other than
+  // "All time"). This is deliberately a simpler subtraction, not a
+  // per-dispatch unbilled-invoice match: the per-dispatch version
+  // undercounts whenever an invoice exists but isn't linked back to the
+  // dispatch it covers — a real and common gap in this platform's manual
+  // invoicing flow. A flat subtraction can't be fooled by a missing link.
+  // Clamped at 0 — a negative number here would mean "billed more than
+  // delivered," which reads as noise, not a real risk figure.
+  //
+  // The delivered-only filter matters too: a dispatch_financials row is
+  // never reversed when its dispatch is later cancelled, so without this
+  // filter cancelled business gets counted as "at risk" — verified against
+  // production, this alone was a NGN2.91M overcount for Relma.
+  const deliveredFinancials = dispatchFinancials.filter((f: any) => f.dispatches?.status === "delivered");
+  const totalClientRevenue = deliveredFinancials.reduce((s: number, f: any) => s + Number(f.client_revenue ?? 0), 0);
+  const invoicedRevenueWholeOfTime = invoiceData
+    .filter((i: any) => ["pending", "paid", "overdue"].includes(i.status))
+    .reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0);
+  const revenueAtRisk = Math.max(0, totalClientRevenue - invoicedRevenueWholeOfTime);
 
   // 4. Cash Outstanding — invoiced but not yet paid: pending + overdue.
-  const cashOutstanding = invoiceData
+  const cashOutstanding = currentInvoices
     .filter((i: any) => ["pending", "overdue"].includes(i.status))
     .reduce((s: number, i: any) => s + Number(i.balance_due ?? i.total_amount ?? 0), 0);
-  const overdueAmount = invoiceData
+  const overdueAmount = currentInvoices
     .filter((i: any) => i.status === "overdue")
     .reduce((s: number, i: any) => s + Number(i.balance_due ?? i.total_amount ?? 0), 0);
-  const worstDaysOverdue = invoiceData
+  const worstDaysOverdue = currentInvoices
     .filter((i: any) => i.status === "overdue" && i.due_date)
     .reduce((worst: number, i: any) => {
       const days = differenceInDays(new Date(), new Date(i.due_date));
@@ -325,10 +355,10 @@ export default function TrialROISummary() {
   // definition above, so this band mixes a period-scoped healthy/overdue
   // figure against a whole-of-time risk figure by design — the backlog
   // doesn't shrink just because you're looking at "this month".
-  const paidAmount    = invoiceData
+  const paidAmount    = currentInvoices
     .filter((i: any) => i.status === "paid")
     .reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0);
-  const healthyAmount = paidAmount + invoiceData
+  const healthyAmount = paidAmount + currentInvoices
     .filter((i: any) => i.status === "pending")
     .reduce((s: number, i: any) => s + Number(i.balance_due ?? i.total_amount ?? 0), 0);
   const riskTotal       = revenueAtRisk + overdueAmount + healthyAmount;
@@ -620,7 +650,7 @@ export default function TrialROISummary() {
                     </div>
                     <p className="text-2xl font-black text-amber-600">{NGN(revenueAtRisk)}</p>
                     <p className="text-[11px] text-muted-foreground mt-1">
-                      Client revenue not yet reflected in an invoice · whole-of-time backlog
+                      Delivered revenue not yet reflected in an invoice · whole-of-time backlog
                     </p>
                   </CardContent>
                 </Card>
