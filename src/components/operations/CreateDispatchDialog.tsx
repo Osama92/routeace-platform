@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Plus, Loader2, Route, ArrowLeftRight, ArrowRight, ChevronsUpDown, Check } from "lucide-react";
 import { isQuotaError, emitQuotaExceeded, resourceFromError } from "@/lib/quotaErrors";
 import { AddressAutocomplete } from "@/components/shared/AddressAutocomplete";
+
+const formatNGN = (n: number) =>
+  new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(n);
 
 const CreateDispatchDialog = () => {
   const { toast } = useToast();
@@ -65,8 +68,77 @@ const CreateDispatchDialog = () => {
     vendor_id: "",
     distance_km: "",
     diesel_liters: "",
-    cost: "",
   });
+
+  // Client Rate / Vendor Cost are read-only, resolved live from the rate
+  // card — no free-text cost field to type into. Previously "Trip Cost"
+  // was a manual number input with zero connection to rate_cards; the
+  // dispatch got created first, and resolve_dispatch_rates() only ran
+  // silently afterward in the background to populate dispatch_financials,
+  // invisible to the operator at the point of creation. This surfaces the
+  // same resolution live, as soon as the lane is fully specified.
+  const [rateResolution, setRateResolution] = useState<{
+    loading: boolean;
+    clientRevenue: number | null;
+    vendorCost: number | null;
+    missingClientRate: boolean;
+    missingVendorRate: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    const { customer_id, pickup_address, delivery_address, vehicle_id } = form;
+    if (!customer_id || !pickup_address || !delivery_address || !vehicle_id || !organizationId) {
+      setRateResolution(null);
+      return;
+    }
+    // A "partner_"-prefixed id is a 3PL partner being offered as a dispatch
+    // customer, not yet a real customers row — handleSubmit only creates
+    // (or finds) that row at actual submission time. Resolving a rate
+    // against it here would mean duplicating that create-or-find logic in
+    // an effect that re-runs on every keystroke, which risks creating
+    // spurious customer rows. Simplest correct behaviour: no live preview
+    // for a partner-as-customer selection — it resolves once the dispatch
+    // is actually submitted, same as before this change.
+    if (customer_id.startsWith("partner_")) {
+      setRateResolution(null);
+      return;
+    }
+
+    const sv = vehicles?.find((x: any) => x.id === vehicle_id);
+    const truckType = (sv as any)?.truck_type ?? null;
+    if (!truckType) {
+      setRateResolution({ loading: false, clientRevenue: null, vendorCost: null, missingClientRate: true, missingVendorRate: true });
+      return;
+    }
+
+    let cancelled = false;
+    setRateResolution((prev) => ({ loading: true, clientRevenue: prev?.clientRevenue ?? null, vendorCost: prev?.vendorCost ?? null, missingClientRate: false, missingVendorRate: false }));
+
+    (async () => {
+      const { data: resolved, error } = await (supabase.rpc as any)("resolve_dispatch_rates", {
+        p_organization_id: organizationId,
+        p_customer_id: customer_id,
+        p_vehicle_id: vehicle_id,
+        p_pickup: pickup_address,
+        p_destination: delivery_address,
+        p_truck_type: truckType,
+      });
+      if (cancelled) return;
+      if (error) {
+        setRateResolution({ loading: false, clientRevenue: null, vendorCost: null, missingClientRate: true, missingVendorRate: true });
+        return;
+      }
+      setRateResolution({
+        loading: false,
+        clientRevenue: resolved?.client_revenue ?? null,
+        vendorCost: resolved?.vendor_cost ?? null,
+        missingClientRate: !!resolved?.missing_client_rate,
+        missingVendorRate: !!resolved?.missing_vendor_rate,
+      });
+    })();
+
+    return () => { cancelled = true; };
+  }, [form.customer_id, form.pickup_address, form.delivery_address, form.vehicle_id, organizationId, vehicles]);
 
   // ── Routes ───────────────────────────────────────────────────────────────
   // Single OR query: matches org-scoped routes AND legacy NULL-org routes
@@ -236,8 +308,9 @@ const CreateDispatchDialog = () => {
       delivery_address: "", delivery_lat: null, delivery_lng: null,
       cargo_description: "", cargo_weight_kg: "", priority: "normal",
       scheduled_pickup: "", vehicle_id: "", driver_id: "", transporter_id: "", vendor_id: "",
-      distance_km: "", diesel_liters: "", cost: "",
+      distance_km: "", diesel_liters: "",
     });
+    setRateResolution(null);
     setReturnTrip(false);
     setExtraDrops([]);
   };
@@ -292,7 +365,12 @@ const CreateDispatchDialog = () => {
 
     setSaving(true);
     try {
-      const costValue = form.cost ? parseFloat(form.cost) : null;
+      // Client Rate is now read-only, resolved live by the effect above —
+      // whatever it resolved to at submit time is what's used here. If
+      // nothing resolved (no matching rate card), the dispatch still goes
+      // ahead with no cost attached, same as before — finance completes it
+      // later, exactly like the background resolution already did.
+      const costValue = rateResolution?.clientRevenue ?? null;
       const dieselNum = form.diesel_liters ? parseFloat(form.diesel_liters) : null;
 
       // If user picked a partner (prefixed id), resolve or create a matching customers row
@@ -597,12 +675,16 @@ const CreateDispatchDialog = () => {
 
       if (form.transporter_id) {
         try {
+          // Was agreed_rate: costValue (the old client-typed "Trip Cost") —
+          // that was the amount owed BY the client, not TO the transporter.
+          // Now that the rate card resolves both sides separately, the
+          // transporter's agreed rate should be the resolved vendor cost.
           const { data: job } = await (supabase.from("ld_transporter_jobs" as any) as any).insert({
             organization_id: organizationId,
             transporter_id: form.transporter_id,
             dispatch_id: disp!.id,
             status: "assigned",
-            agreed_rate: costValue,
+            agreed_rate: rateResolution?.vendorCost ?? null,
           }).select("id").single();
           await supabase.functions.invoke("notify-transporter-dispatch", {
             body: { dispatch_id: disp!.id, transporter_id: form.transporter_id, job_id: job?.id },
@@ -807,9 +889,40 @@ const CreateDispatchDialog = () => {
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          {/* ── Rate Card (Client Rate / Vendor Cost) ────────────────────── */}
+          {/* Read-only, resolved from rate_cards once customer + pickup +
+              delivery + vehicle are all picked — no free-text cost to type.
+              Previously a manual "Trip Cost" input had no connection to the
+              rate card at all; the rate only ever resolved silently in the
+              background after the dispatch was already created. */}
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>Trip Cost (₦)</Label>
-              <Input type="number" value={form.cost} onChange={(e) => setForm((p) => ({ ...p, cost: e.target.value }))} placeholder="e.g. 150000" />
+              <Label>Client Rate (₦)</Label>
+              <div className="h-10 flex items-center px-3 rounded-md border bg-muted/40 text-sm">
+                {!form.customer_id || !form.pickup_address || !form.delivery_address || !form.vehicle_id
+                  ? <span className="text-muted-foreground">Pick customer, pickup, delivery & vehicle</span>
+                  : rateResolution?.loading
+                    ? <span className="text-muted-foreground">Resolving…</span>
+                    : rateResolution?.clientRevenue != null
+                      ? formatNGN(rateResolution.clientRevenue)
+                      : <span className="text-amber-600">No matching rate card</span>}
+              </div>
+            </div>
+            <div>
+              <Label>Vendor Cost (₦)</Label>
+              <div className="h-10 flex items-center px-3 rounded-md border bg-muted/40 text-sm">
+                {!form.customer_id || !form.pickup_address || !form.delivery_address || !form.vehicle_id
+                  ? <span className="text-muted-foreground">—</span>
+                  : rateResolution?.loading
+                    ? <span className="text-muted-foreground">Resolving…</span>
+                    : rateResolution?.vendorCost != null
+                      ? formatNGN(rateResolution.vendorCost)
+                      : <span className="text-muted-foreground">
+                          {rateResolution?.missingVendorRate ? "No matching vendor rate" : "Owned truck — no vendor cost"}
+                        </span>}
+              </div>
             </div>
           </div>
 
