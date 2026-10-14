@@ -366,14 +366,22 @@ export const UPSELL_MESSAGES: Partial<Record<LogisticsModule, { title: string; u
 
 // ─── Helper Functions ────────────────────────────────────────────
 
-export function isModuleAccessible(plan: PlanTier, module: LogisticsModule): boolean {
-  return PLAN_MODULES[plan]?.[module] ?? false;
+// Plan-tier module/route locking is OFF for all users/orgs — explicit
+// instruction, not a tier bug. A real customer (Relma) hit this gate after
+// their trial expired, a manual tenant_config.plan_tier override got
+// silently reset back to 'free' by a since-identified resync once the trial
+// window lapsed, and the same lock then reportedly blocked dispatch
+// creation entirely for some users. Rather than patch subscription state
+// per-org indefinitely, the gate itself is disabled here so nothing is
+// locked regardless of plan_tier, while the plan/module data model (PLAN_MODULES,
+// PLAN_LIMITS, UPSELL_MESSAGES) is left intact for whenever billing
+// enforcement comes back.
+export function isModuleAccessible(_plan: PlanTier, _module: LogisticsModule): boolean {
+  return true;
 }
 
-export function isRouteAccessible(plan: PlanTier, route: string): boolean {
-  const module = ROUTE_TO_MODULE[route];
-  if (!module) return true; // Routes not mapped are accessible (e.g., admin-only pages)
-  return isModuleAccessible(plan, module);
+export function isRouteAccessible(_plan: PlanTier, _route: string): boolean {
+  return true;
 }
 
 export function getModuleUpsell(module: LogisticsModule): { title: string; upgrade_to: PlanTier } | null {
