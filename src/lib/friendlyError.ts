@@ -55,6 +55,18 @@ const ERROR_MAP: [RegExp, string][] = [
   // ── Dispatch domain ──────────────────────────────────────────────────────
   [/dispatch.*already.*delivered|already.*delivered/i, "This dispatch has already been marked as delivered."],
   [/sla.*breach|breach.*sla/i,                   "An SLA breach was detected during this update."],
+
+  // ── Pre-trip / safety gate (check_vehicle_trip_gate) ─────────────────────
+  // These RAISE EXCEPTION with their own already-specific message (which
+  // names the vehicle), so the pattern here only needs to NOT swallow it —
+  // match-and-pass-through, not replace with a generic string, unlike every
+  // other entry in this map. Previously these fell straight to FALLBACK,
+  // discarding an actionable reason ("FST590YL needs a pre-trip check...")
+  // in favour of "Something went wrong" — confirmed live in platform_errors
+  // for a real org blocked on exactly this.
+  [/needs a pre-trip check/i,                    "__PASSTHROUGH__"],
+  [/failed a safety-critical check/i,             "__PASSTHROUGH__"],
+  [/outstanding post-trip check/i,                "__PASSTHROUGH__"],
 ];
 
 const FALLBACK = "Something went wrong. Please try again or contact support if the problem persists.";
@@ -69,7 +81,12 @@ export function friendlyError(err: unknown): FriendlyErrorResult {
 
   for (const [pattern, friendly] of ERROR_MAP) {
     if (pattern.test(technical)) {
-      return { friendly, technical };
+      // Sentinel for entries whose own raw message IS already the right
+      // thing to show a user (e.g. the pre-trip gate's own specific,
+      // vehicle-named message) — pass it through as-is instead of
+      // replacing it with a generic string, which is what every other
+      // entry in ERROR_MAP does.
+      return { friendly: friendly === "__PASSTHROUGH__" ? technical : friendly, technical };
     }
   }
 

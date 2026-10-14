@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { Target, Plus, ArrowLeft, DollarSign, AlertTriangle, Calendar, Building2, Truck } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { isQuotaError, emitQuotaExceeded, resourceFromError } from "@/lib/quotaErrors";
 
 const stages = [
   { key: "lead", label: "Lead", color: "border-blue-400 bg-blue-50" },
@@ -69,7 +70,14 @@ const SalesPipeline = () => {
       toast({ title: "Dispatch Created", description: `Order "${opp.opportunity_name}" converted to dispatch` });
       queryClient.invalidateQueries({ queryKey: ["ops-dispatches"] });
     } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      // Same quota trigger every other dispatch-creation flow can hit —
+      // route it to the proper upgrade dialog instead of a plain toast
+      // with the raw Postgres message.
+      if (isQuotaError(err)) {
+        emitQuotaExceeded({ resource: resourceFromError(err.message ?? ""), message: err.message ?? "" });
+      } else {
+        toast({ title: "Error", description: err.message, variant: "destructive" });
+      }
     }
   };
 

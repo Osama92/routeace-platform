@@ -27,6 +27,7 @@ import useTenantMode from "@/hooks/useTenantMode";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRoutePlannerIntelligence } from "@/hooks/useRoutePlannerIntelligence";
 import { friendlyError } from "@/lib/friendlyError";
+import { isQuotaError, emitQuotaExceeded, resourceFromError } from "@/lib/quotaErrors";
 import {
   MapPin, Navigation, Plus, Trash2, Calculator, Fuel, Clock,
   AlertTriangle, Wrench, DollarSign, Route, Loader2, Star,
@@ -660,9 +661,17 @@ export default function AdvancedRoutePlanner() {
         description: `${data?.dispatch_number ?? "New dispatch"} is ready on the Dispatch board.`,
       });
     } catch (err: any) {
-      const { friendly, technical } = friendlyError(err);
-      console.error("[route apply-to-dispatch]", technical);
-      toast({ title: "Couldn't create dispatch", description: friendly, variant: "destructive" });
+      // Same P0001 sources as every other dispatch-creation flow: the
+      // monthly quota trigger (gets the proper upgrade dialog) and the
+      // pre-trip safety gate (its own message now passes through
+      // friendlyError unchanged instead of the generic fallback).
+      if (isQuotaError(err)) {
+        emitQuotaExceeded({ resource: resourceFromError(err.message ?? ""), message: err.message ?? "" });
+      } else {
+        const { friendly, technical } = friendlyError(err);
+        console.error("[route apply-to-dispatch]", technical);
+        toast({ title: "Couldn't create dispatch", description: friendly, variant: "destructive" });
+      }
     } finally {
       setApplyingToDispatch(false);
     }

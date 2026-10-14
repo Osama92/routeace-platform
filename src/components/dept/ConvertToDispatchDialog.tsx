@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Truck } from "lucide-react";
 import { toast } from "@/lib/toast";
+import { isQuotaError, emitQuotaExceeded, resourceFromError } from "@/lib/quotaErrors";
 
 interface Props {
   pendingRequests: any[];
@@ -143,7 +144,16 @@ export default function ConvertToDispatchDialog({ pendingRequests, onDone }: Pro
       setOpen(false); setSelectedIds([]); setTransporterId(""); setScheduledPickup(""); setAgreedRate(""); setTotalKm(""); setDieselLiters(""); setExtraDrops([]);
       onDone?.();
     },
-    onError: (e: any) => toast.error(e?.message ?? "Failed to create dispatch"),
+    onError: (e: any) => {
+      // Same quota trigger every other dispatch-creation flow can hit —
+      // route it to the proper upgrade dialog instead of a plain toast
+      // with the raw Postgres message.
+      if (isQuotaError(e)) {
+        emitQuotaExceeded({ resource: resourceFromError(e.message ?? ""), message: e.message ?? "" });
+      } else {
+        toast.error(e?.message ?? "Failed to create dispatch");
+      }
+    },
   });
 
   const eligible = pendingRequests.filter((r) => r.status === "pending");

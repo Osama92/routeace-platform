@@ -74,6 +74,7 @@ import PricingRecommendation from "@/components/dispatch/PricingRecommendation";
 import { ResendClientEmailButton } from "@/components/notifications/ResendClientEmailButton";
 import { AddressAutocomplete } from "@/components/shared/AddressAutocomplete";
 import { friendlyError } from "@/lib/friendlyError";
+import { isQuotaError, emitQuotaExceeded, resourceFromError } from "@/lib/quotaErrors";
 
 interface Dropoff {
   id: string;
@@ -977,9 +978,20 @@ const DispatchPage = () => {
       setDropoffs([]);
       fetchData();
     } catch (error: any) {
-      const { friendly, technical } = friendlyError(error);
-      console.error("[dispatch create]", technical);
-      toast({ title: "Couldn't create dispatch", description: friendly, variant: "destructive" });
+      // A monthly-dispatch-quota trigger and the pre-trip safety gate both
+      // raise P0001 on this insert. Quota errors get the proper upgrade
+      // dialog (same path CreateDispatchDialog.tsx already uses); the gate's
+      // own message now passes through friendlyError unchanged instead of
+      // being swallowed by its generic fallback — confirmed live via
+      // platform_errors that both were landing on "Something went wrong"
+      // with the real, actionable reason discarded.
+      if (isQuotaError(error)) {
+        emitQuotaExceeded({ resource: resourceFromError(error.message ?? ""), message: error.message ?? "" });
+      } else {
+        const { friendly, technical } = friendlyError(error);
+        console.error("[dispatch create]", technical);
+        toast({ title: "Couldn't create dispatch", description: friendly, variant: "destructive" });
+      }
     } finally {
       setSaving(false);
     }
