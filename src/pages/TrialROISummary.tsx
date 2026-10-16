@@ -174,6 +174,33 @@ export default function TrialROISummary() {
     ? invoiceData.filter((i: any) => i.invoice_date && new Date(i.invoice_date) >= periodStart)
     : invoiceData);
 
+  // Prior period of equal length to the selected window, immediately before
+  // it — the comparison basis for the MoM/WoW/YoY deltas on Tab 1. "All
+  // time" has no meaningful prior period, so it's left undefined and every
+  // delta below renders as nothing (DeltaBadge returns null) rather than
+  // inventing one.
+  const priorPeriodRange = useMemo(() => {
+    if (period === "all" || !periodStart) return null;
+    const days = PERIOD_DAYS[period];
+    const priorEnd = periodStart;
+    const priorStart = subDays(priorEnd, days);
+    return { start: priorStart, end: priorEnd };
+  }, [period, periodStart]);
+
+  function calcChangePct(current: number, previous: number): number | null {
+    if (!priorPeriodRange) return null;
+    if (previous === 0) return current > 0 ? 100 : null;
+    return Math.round(((current - previous) / previous) * 100);
+  }
+
+  const priorInvoices = priorPeriodRange
+    ? invoiceData.filter((i: any) => {
+        if (!i.invoice_date) return false;
+        const d = new Date(i.invoice_date);
+        return d >= priorPeriodRange.start && d < priorPeriodRange.end;
+      })
+    : [];
+
   // ── Fuel logs ────────────────────────────────────────────────────────────
   // Same shape and same real System-Est-vs-Actual methodology as
   // FuelIntelligence.tsx: distance / per-vehicle-type km/L baseline
@@ -314,6 +341,18 @@ export default function TrialROISummary() {
   const profitGenerated     = completedFinancials.reduce((s: number, f: any) => s + Number(f.gross_profit ?? 0), 0);
   const profitIsReal        = completedFinancials.length > 0;
 
+  // Prior-period equivalent for the MoM/WoW/YoY delta.
+  const priorFinancials = priorPeriodRange
+    ? dispatchFinancials.filter((f: any) => {
+        if (!f.created_at) return false;
+        const d = new Date(f.created_at);
+        return d >= priorPeriodRange.start && d < priorPeriodRange.end;
+      })
+    : [];
+  const priorProfitGenerated = priorFinancials
+    .filter((f: any) => f.finance_status === "complete")
+    .reduce((s: number, f: any) => s + Number(f.gross_profit ?? 0), 0);
+
   // 2. Revenue Protected — total invoiced value, i.e. every invoice that has
   // actually been issued to a client. Matches the Invoice screen's own
   // total: pending + paid + overdue. 'draft' is excluded — it hasn't been
@@ -330,6 +369,13 @@ export default function TrialROISummary() {
   const paidCount    = currentInvoices.filter((i: any) => i.status === "paid").length;
   const pendingCount = currentInvoices.filter((i: any) => i.status === "pending").length;
   const overdueCount = currentInvoices.filter((i: any) => i.status === "overdue").length;
+
+  // Prior-period equivalent, for the MoM/WoW/YoY delta shown under each
+  // Tab 1 card. Undefined (empty set) when there is no prior period ("all
+  // time"), so the delta renders as nothing rather than inventing one.
+  const priorInvoicedRevenue = priorInvoices
+    .filter((i: any) => ["pending", "paid", "overdue"].includes(i.status))
+    .reduce((s: number, i: any) => s + Number(i.total_amount ?? 0), 0);
 
   // 3. Revenue At Risk = DELIVERED Client Revenue (dispatch_financials whose
   // dispatch actually reached 'delivered' — whole-of-time, ignoring the
@@ -368,6 +414,9 @@ export default function TrialROISummary() {
       const days = differenceInDays(new Date(), new Date(i.due_date));
       return Math.max(worst, days);
     }, 0);
+  const priorCashOutstanding = priorInvoices
+    .filter((i: any) => ["pending", "overdue"].includes(i.status))
+    .reduce((s: number, i: any) => s + Number(i.balance_due ?? i.total_amount ?? 0), 0);
 
   // 5. Cash Flow Risk — banded across not-invoiced / overdue / healthy.
   // Revenue At Risk (not-invoiced) is the whole-of-time backlog per its own
@@ -671,6 +720,32 @@ export default function TrialROISummary() {
 
   const totalSavings = fuelRecovered + gainedValue + billingRecovered + maintenanceShifted;
 
+  // MoM/WoW/YoY deltas — labeled by the period currently selected (30 days
+  // -> "vs previous 30 days", etc., since "MoM/WoW/YoY" literally only
+  // applies when the window happens to be a month/week/year; this reads
+  // correctly for any window length instead of mislabeling a 90-day
+  // comparison as "MoM"). Revenue At Risk has no delta by design — it's a
+  // whole-of-time backlog, not a period flow, so a period-over-period change
+  // on it would be noise, not signal.
+  const periodDeltaLabel = period === "30" ? "vs previous 30 days"
+    : period === "90" ? "vs previous 90 days"
+    : period === "365" ? "vs previous 12 months"
+    : null;
+  const profitDeltaPct    = calcChangePct(profitGenerated, priorProfitGenerated);
+  const protectedDeltaPct = calcChangePct(invoicedRevenue, priorInvoicedRevenue);
+  const outstandingDeltaPct = calcChangePct(cashOutstanding, priorCashOutstanding);
+
+  const DeltaBadge = ({ pct }: { pct: number | null }) => {
+    if (pct == null || !periodDeltaLabel) return null;
+    const positive = pct > 0;
+    const neutral = pct === 0;
+    return (
+      <span className={`text-[11px] font-medium ${neutral ? "text-muted-foreground" : positive ? "text-emerald-600" : "text-red-500"}`}>
+        {neutral ? "±0%" : `${positive ? "+" : ""}${pct}%`} {periodDeltaLabel}
+      </span>
+    );
+  };
+
   return (
     <TooltipProvider>
       <DashboardLayout
@@ -712,7 +787,10 @@ export default function TrialROISummary() {
                       <TrendingUp className="w-4 h-4 text-emerald-600" />
                       <span className="text-xs font-semibold text-muted-foreground">Profit Generated</span>
                     </div>
-                    <p className="text-2xl font-black text-emerald-600">{NGN(profitGenerated)}</p>
+                    <div className="flex items-baseline gap-2 flex-wrap">
+                      <p className="text-2xl font-black text-emerald-600">{NGN(profitGenerated)}</p>
+                      <DeltaBadge pct={profitDeltaPct} />
+                    </div>
                     <p className="text-[11px] text-muted-foreground mt-1">
                       Gross profit from {completedFinancials.length} fully-costed dispatch{completedFinancials.length !== 1 ? "es" : ""}
                       {pendingFinancials.length > 0 && ` · ${pendingFinancials.length} awaiting finance entry`}
@@ -726,7 +804,10 @@ export default function TrialROISummary() {
                       <ShieldCheck className="w-4 h-4 text-muted-foreground" />
                       <span className="text-xs font-semibold text-muted-foreground">Revenue Protected</span>
                     </div>
-                    <p className="text-2xl font-black">{NGN(invoicedRevenue)}</p>
+                    <div className="flex items-baseline gap-2 flex-wrap">
+                      <p className="text-2xl font-black">{NGN(invoicedRevenue)}</p>
+                      <DeltaBadge pct={protectedDeltaPct} />
+                    </div>
                     <p className="text-[11px] text-muted-foreground mt-1">
                       {pendingCount + paidCount + overdueCount} invoiced — {paidCount} paid, {pendingCount} within terms, {overdueCount} overdue
                     </p>
@@ -752,7 +833,10 @@ export default function TrialROISummary() {
                       <Wallet className="w-4 h-4 text-muted-foreground" />
                       <span className="text-xs font-semibold text-muted-foreground">Cash Outstanding</span>
                     </div>
-                    <p className="text-2xl font-black">{NGN(cashOutstanding)}</p>
+                    <div className="flex items-baseline gap-2 flex-wrap">
+                      <p className="text-2xl font-black">{NGN(cashOutstanding)}</p>
+                      <DeltaBadge pct={outstandingDeltaPct} />
+                    </div>
                     <p className="text-[11px] text-muted-foreground mt-1">
                       {pendingCount + overdueCount} invoiced, unpaid
                       {overdueAmount > 0 && ` · ${NGN(overdueAmount)} overdue`}
