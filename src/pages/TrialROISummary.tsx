@@ -272,6 +272,25 @@ export default function TrialROISummary() {
     },
   });
 
+  // Utilisation Gained ($) — real for fleets with 2+ owned vehicles of the
+  // same truck_type (needed for the peer-benchmark "additional days" figure
+  // get_fleet_utilization() already computes); shows as unavailable, not a
+  // fabricated benchmark, everywhere else. The RPC and its migration were
+  // briefly orphaned by a mislabeled revert (the DB function stayed live
+  // the whole time, only this frontend wiring was lost) — re-added here.
+  const { data: utilisationGained } = useQuery({
+    queryKey: ["impact-utilisation-gained", orgId, utilizationDays],
+    enabled: !!orgId,
+    queryFn: async () => {
+      const { data, error } = await (supabase.rpc as any)("get_utilisation_gained", {
+        p_organization_id: orgId,
+        p_days: utilizationDays,
+      });
+      if (error) throw error;
+      return data;
+    },
+  });
+
   // ── Derived values ───────────────────────────────────────────────────────
   const daysActive   = org?.created_at
     ? Math.max(1, differenceInDays(new Date(), new Date(org.created_at)))
@@ -403,17 +422,39 @@ export default function TrialROISummary() {
   const actualFuelLogs   = fuelLogs.filter(isActualFuelLog);
   const totalFuelSpend   = actualFuelLogs.reduce((s: number, f: any) => s + Number(f.total_cost ?? 0), 0);
   const totalLitres      = actualFuelLogs.reduce((s: number, f: any) => s + Number(f.litres_dispensed ?? 0), 0);
+  const avgCostPerLitre  = totalLitres > 0 ? totalFuelSpend / totalLitres : 0;
   const logsWithDistance = actualFuelLogs.filter((f: any) => effectiveKm(f) > 0);
+  // Both sides of the excess calc must be scoped to the SAME log set — only
+  // logs with a resolvable distance even have an "expected" figure to
+  // compare against. Summing actual litres over ALL logs (including ones
+  // with no distance, and therefore no expectation) while summing expected
+  // over only the distance-resolvable subset compares two different
+  // populations, not a real "actual vs. expected" delta — verified against
+  // production this was inflating Fuel Recovered for Relma by ~₦76,900
+  // (counting 4 distance-less logs' litres as pure "excess" with nothing to
+  // net them against).
+  const litresWithDistance = logsWithDistance.reduce((s: number, f: any) => s + Number(f.litres_dispensed ?? 0), 0);
   const expectedLitres   = logsWithDistance.reduce((sum: number, f: any) => {
     const kmpl = vKmplMap[f.vehicle_id] ?? DEFAULT_KMPL;
     return sum + (effectiveKm(f) / kmpl);
   }, 0);
-  const avgCostPerLitre  = totalLitres > 0 ? totalFuelSpend / totalLitres : 0;
-  const excessLitres     = logsWithDistance.length > 0 ? Math.max(0, totalLitres - expectedLitres) : 0;
+  const excessLitres     = logsWithDistance.length > 0 ? Math.max(0, litresWithDistance - expectedLitres) : 0;
   const fuelRecovered    = logsWithDistance.length > 0
     ? Math.round(excessLitres * avgCostPerLitre)
     : Math.round(vehicleCount * 40_000 * FUEL_WASTE_RATE * monthsActive);
   const fuelSource: DataSource = logsWithDistance.length > 0 ? "real" : "benchmark";
+
+  // Running UNDER the system estimate is a different claim from "recovered":
+  // no waste was ever being lost, so it's never folded into fuelRecovered or
+  // totalSavings — it's an efficiency signal, not cash clawed back. Shown as
+  // its own labeled figure only. Uses litresWithDistance (not totalLitres)
+  // as the "actual" side — same distance-matched population as excessLitres
+  // above, for the same reason: comparing against the whole fleet's litres
+  // (including logs with no expected figure to net against) would silently
+  // reintroduce the population-mismatch bug this fix just closed.
+  const underEstimateLitres = logsWithDistance.length > 0 ? Math.max(0, expectedLitres - litresWithDistance) : 0;
+  const underEstimateValue  = Math.round(underEstimateLitres * avgCostPerLitre);
+  const underEstimatePct    = expectedLitres > 0 ? Math.round((underEstimateLitres / expectedLitres) * 100) : 0;
 
   // Billing Recovered — placeholder until invoice-revision tracking exists.
   // No fabricated figure: zero until the platform can actually see a correction.
@@ -468,6 +509,19 @@ export default function TrialROISummary() {
     .slice()
     .sort((a, b) => a.active_days - b.active_days)[0];
 
+  // Utilisation Gained — real only where a peer-benchmark target exists
+  // (2+ owned vehicles of the same truck_type). "vehiclesWithGap === 0 AND
+  // totalOwned > 0" means every owned vehicle already matches its peer —
+  // genuinely nothing to gain, a real ₦0. "totalOwned === vehiclesWithNoPeer"
+  // means no vehicle HAS a peer to compare against — undefined, not zero.
+  const gainedValue      = utilisationGained?.utilisation_gained_value ?? 0;
+  const gainedDays       = utilisationGained?.total_additional_days ?? 0;
+  const gainedRate       = utilisationGained?.contribution_per_day ?? 0;
+  const gainedVehicles   = utilisationGained?.vehicles_with_gap ?? 0;
+  const gainedNoPeer     = utilisationGained?.vehicles_with_no_peer ?? 0;
+  const gainedTotalOwned = utilisationGained?.total_owned_vehicles ?? 0;
+  const gainedHasPeerCoverage = gainedTotalOwned > 0 && gainedNoPeer < gainedTotalOwned;
+
   const savingsCards: SavingsCard[] = [
     {
       icon: Fuel,
@@ -483,12 +537,22 @@ export default function TrialROISummary() {
       bg: "bg-blue-500/10",
       source: fuelSource,
       derivation: logsWithDistance.length > 0 ? [
-        { label: "Actual litres dispensed", value: `${Math.round(totalLitres).toLocaleString()} L` },
-        { label: "System-estimated litres (distance ÷ vehicle-type km/L)", value: `${Math.round(expectedLitres).toLocaleString()} L` },
         { label: "Logs with a resolvable distance", value: `${logsWithDistance.length} of ${actualFuelLogs.length}` },
+        { label: "Actual litres dispensed (those logs only)", value: `${Math.round(litresWithDistance).toLocaleString()} L` },
+        { label: "System-estimated litres (distance ÷ vehicle-type km/L)", value: `${Math.round(expectedLitres).toLocaleString()} L` },
         { label: "Excess over estimate", value: `${Math.round(excessLitres).toLocaleString()} L` },
-        { label: "Avg cost per litre (this fleet)", value: NGN(Math.round(avgCostPerLitre)) },
+        { label: "Avg cost per litre (this fleet, all logs)", value: NGN(Math.round(avgCostPerLitre)) },
         { label: "Fuel recovered", value: NGN(fuelRecovered), highlight: true },
+        ...(underEstimateLitres > 0 ? [
+          {
+            label: `Running ${underEstimatePct}% under estimate`,
+            value: NGN(underEstimateValue),
+            note: `${Math.round(underEstimateLitres).toLocaleString()} L not needed vs. the system estimate — a good sign, but not waste recovered, so it's kept out of the total above`,
+          },
+        ] : []),
+        ...(actualFuelLogs.length > logsWithDistance.length ? [
+          { label: `${actualFuelLogs.length - logsWithDistance.length} other log${actualFuelLogs.length - logsWithDistance.length !== 1 ? "s" : ""} with no distance on file`, note: "Not counted either way — no distance means no system estimate to compare against" },
+        ] : []),
       ] : [
         { label: "No verified fuel baseline yet", note: "Benchmark: NARTO's 12% average fuel-waste rate applied to an assumed ₦40,000/vehicle/month" },
         { label: "Vehicles", value: String(vehicleCount) },
@@ -497,6 +561,33 @@ export default function TrialROISummary() {
       ],
       actionPrompt: logsWithDistance.length === 0
         ? "Log fuel fill-ups with an odometer reading (or link them to a dispatch) to unlock a real, fleet-specific figure"
+        : undefined,
+    },
+    {
+      icon: Gauge,
+      label: "Utilisation Gained",
+      sublabel: gainedHasPeerCoverage
+        ? `${gainedDays} additional productive day${gainedDays !== 1 ? "s" : ""} vs. this fleet's own busiest truck of the same class`
+        : gainedTotalOwned > 0
+          ? "No owned truck has a same-class peer to compare against yet"
+          : "No owned vehicles to measure",
+      value: gainedHasPeerCoverage ? NGN(gainedValue) : "—",
+      color: "text-cyan-500",
+      border: "border-l-cyan-500",
+      bg: "bg-cyan-500/10",
+      source: "real" as DataSource,
+      derivation: gainedHasPeerCoverage ? [
+        { label: "Owned vehicles with a same-class peer", value: String(gainedTotalOwned - gainedNoPeer) },
+        { label: "Vehicles behind their peer", value: String(gainedVehicles) },
+        { label: "Additional productive days available", value: String(gainedDays) },
+        { label: "Verified contribution per productive day (gross profit ÷ active days, this fleet)", value: NGN(Math.round(gainedRate)) },
+        { label: "Utilisation gained", value: NGN(gainedValue), highlight: true },
+        { label: "Method", note: "\"Additional days\" is this vehicle's own fleet's busiest same-class truck's active days minus its own — never an external assumption. A truck_type with no peer reports —, not a fabricated target." },
+      ] : [
+        { label: gainedTotalOwned > 0 ? "No same-class peer yet" : "No owned vehicles on record", note: "This needs at least 2 owned vehicles of the same truck type before a real comparison is possible — shown as —, not a benchmark guess" },
+      ],
+      actionPrompt: !gainedHasPeerCoverage
+        ? "Add a second owned vehicle of the same truck type to unlock a real utilisation-gained figure"
         : undefined,
     },
     {
@@ -578,7 +669,7 @@ export default function TrialROISummary() {
     },
   ];
 
-  const totalSavings = fuelRecovered + billingRecovered + maintenanceShifted;
+  const totalSavings = fuelRecovered + gainedValue + billingRecovered + maintenanceShifted;
 
   return (
     <TooltipProvider>
