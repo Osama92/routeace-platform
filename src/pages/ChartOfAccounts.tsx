@@ -14,15 +14,21 @@ import { BookOpen, Plus, Search, Edit, Trash2, ChevronRight, Download } from "lu
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
+// Matches chart_of_accounts_account_type_check (migration 20261021120000) —
+// widened from the old 8 broad categories to the new standard chart's 10
+// exact types, since it distinguishes current vs fixed assets and current
+// vs long-term liabilities, which the old taxonomy couldn't express.
 const ACCOUNT_TYPES = [
-  { value: "asset", label: "Asset", color: "bg-blue-500/15 text-blue-600" },
-  { value: "liability", label: "Liability", color: "bg-red-500/15 text-red-600" },
+  { value: "current_asset", label: "Current Asset", color: "bg-blue-500/15 text-blue-600" },
+  { value: "fixed_asset", label: "Fixed Asset", color: "bg-sky-500/15 text-sky-600" },
+  { value: "current_liability", label: "Current Liability", color: "bg-red-500/15 text-red-600" },
+  { value: "long_term_liability", label: "Long-term Liability", color: "bg-rose-500/15 text-rose-600" },
   { value: "equity", label: "Equity", color: "bg-purple-500/15 text-purple-600" },
-  { value: "revenue", label: "Revenue", color: "bg-green-500/15 text-green-600" },
+  { value: "income", label: "Income", color: "bg-green-500/15 text-green-600" },
   { value: "cogs", label: "COGS", color: "bg-orange-500/15 text-orange-600" },
-  { value: "expense", label: "Expense", color: "bg-amber-500/15 text-amber-600" },
-  { value: "other_income", label: "Other Income", color: "bg-emerald-500/15 text-emerald-600" },
-  { value: "other_expense", label: "Other Expense", color: "bg-rose-500/15 text-rose-600" },
+  { value: "operating_expense", label: "Operating Expense", color: "bg-amber-500/15 text-amber-600" },
+  { value: "finance_cost", label: "Finance Cost", color: "bg-fuchsia-500/15 text-fuchsia-600" },
+  { value: "tax", label: "Tax", color: "bg-slate-500/15 text-slate-600" },
 ];
 
 const typeBadge = (type: string) => {
@@ -37,7 +43,7 @@ export default function ChartOfAccounts() {
   const [filterType, setFilterType] = useState("all");
   const [dialog, setDialog] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const [form, setForm] = useState({ account_code: "", account_name: "", account_type: "asset", account_group: "", normal_balance: "Dr", description: "", parent_account_id: "none" });
+  const [form, setForm] = useState({ account_code: "", account_name: "", account_type: "current_asset", account_group: "", normal_balance: "Dr", description: "", parent_account_id: "none" });
 
   const { data: accounts = [], isLoading } = useQuery({
     queryKey: ["chart-of-accounts"],
@@ -89,7 +95,7 @@ export default function ChartOfAccounts() {
   const closeDialog = () => {
     setDialog(false);
     setEditing(null);
-    setForm({ account_code: "", account_name: "", account_type: "asset", account_group: "", normal_balance: "Dr", description: "", parent_account_id: "none" });
+    setForm({ account_code: "", account_name: "", account_type: "current_asset", account_group: "", normal_balance: "Dr", description: "", parent_account_id: "none" });
   };
 
   const openEdit = (acct: any) => {
