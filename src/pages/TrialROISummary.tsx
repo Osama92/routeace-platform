@@ -299,25 +299,6 @@ export default function TrialROISummary() {
     },
   });
 
-  // Utilisation Gained ($) — real for fleets with 2+ owned vehicles of the
-  // same truck_type (needed for the peer-benchmark "additional days" figure
-  // get_fleet_utilization() already computes); shows as unavailable, not a
-  // fabricated benchmark, everywhere else. The RPC and its migration were
-  // briefly orphaned by a mislabeled revert (the DB function stayed live
-  // the whole time, only this frontend wiring was lost) — re-added here.
-  const { data: utilisationGained } = useQuery({
-    queryKey: ["impact-utilisation-gained", orgId, utilizationDays],
-    enabled: !!orgId,
-    queryFn: async () => {
-      const { data, error } = await (supabase.rpc as any)("get_utilisation_gained", {
-        p_organization_id: orgId,
-        p_days: utilizationDays,
-      });
-      if (error) throw error;
-      return data;
-    },
-  });
-
   // ── Derived values ───────────────────────────────────────────────────────
   const daysActive   = org?.created_at
     ? Math.max(1, differenceInDays(new Date(), new Date(org.created_at)))
@@ -558,19 +539,6 @@ export default function TrialROISummary() {
     .slice()
     .sort((a, b) => a.active_days - b.active_days)[0];
 
-  // Utilisation Gained — real only where a peer-benchmark target exists
-  // (2+ owned vehicles of the same truck_type). "vehiclesWithGap === 0 AND
-  // totalOwned > 0" means every owned vehicle already matches its peer —
-  // genuinely nothing to gain, a real ₦0. "totalOwned === vehiclesWithNoPeer"
-  // means no vehicle HAS a peer to compare against — undefined, not zero.
-  const gainedValue      = utilisationGained?.utilisation_gained_value ?? 0;
-  const gainedDays       = utilisationGained?.total_additional_days ?? 0;
-  const gainedRate       = utilisationGained?.contribution_per_day ?? 0;
-  const gainedVehicles   = utilisationGained?.vehicles_with_gap ?? 0;
-  const gainedNoPeer     = utilisationGained?.vehicles_with_no_peer ?? 0;
-  const gainedTotalOwned = utilisationGained?.total_owned_vehicles ?? 0;
-  const gainedHasPeerCoverage = gainedTotalOwned > 0 && gainedNoPeer < gainedTotalOwned;
-
   const savingsCards: SavingsCard[] = [
     {
       icon: Fuel,
@@ -610,33 +578,6 @@ export default function TrialROISummary() {
       ],
       actionPrompt: logsWithDistance.length === 0
         ? "Log fuel fill-ups with an odometer reading (or link them to a dispatch) to unlock a real, fleet-specific figure"
-        : undefined,
-    },
-    {
-      icon: Gauge,
-      label: "Utilisation Gained",
-      sublabel: gainedHasPeerCoverage
-        ? `${gainedDays} additional productive day${gainedDays !== 1 ? "s" : ""} vs. this fleet's own busiest truck of the same class`
-        : gainedTotalOwned > 0
-          ? "No owned truck has a same-class peer to compare against yet"
-          : "No owned vehicles to measure",
-      value: gainedHasPeerCoverage ? NGN(gainedValue) : "—",
-      color: "text-cyan-500",
-      border: "border-l-cyan-500",
-      bg: "bg-cyan-500/10",
-      source: "real" as DataSource,
-      derivation: gainedHasPeerCoverage ? [
-        { label: "Owned vehicles with a same-class peer", value: String(gainedTotalOwned - gainedNoPeer) },
-        { label: "Vehicles behind their peer", value: String(gainedVehicles) },
-        { label: "Additional productive days available", value: String(gainedDays) },
-        { label: "Verified contribution per productive day (gross profit ÷ active days, this fleet)", value: NGN(Math.round(gainedRate)) },
-        { label: "Utilisation gained", value: NGN(gainedValue), highlight: true },
-        { label: "Method", note: "\"Additional days\" is this vehicle's own fleet's busiest same-class truck's active days minus its own — never an external assumption. A truck_type with no peer reports —, not a fabricated target." },
-      ] : [
-        { label: gainedTotalOwned > 0 ? "No same-class peer yet" : "No owned vehicles on record", note: "This needs at least 2 owned vehicles of the same truck type before a real comparison is possible — shown as —, not a benchmark guess" },
-      ],
-      actionPrompt: !gainedHasPeerCoverage
-        ? "Add a second owned vehicle of the same truck type to unlock a real utilisation-gained figure"
         : undefined,
     },
     {
@@ -718,7 +659,7 @@ export default function TrialROISummary() {
     },
   ];
 
-  const totalSavings = fuelRecovered + gainedValue + billingRecovered + maintenanceShifted;
+  const totalSavings = fuelRecovered + billingRecovered + maintenanceShifted;
 
   // MoM/WoW/YoY deltas — labeled by the period currently selected (30 days
   // -> "vs previous 30 days", etc., since "MoM/WoW/YoY" literally only
