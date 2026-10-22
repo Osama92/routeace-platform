@@ -31769,6 +31769,14 @@ export type Database = {
         Args: { p_days?: number; p_organization_id: string }
         Returns: Json
       }
+      get_profit_loss_breakdown: {
+        Args: {
+          p_organization_id: string
+          p_period_end?: string
+          p_period_start?: string
+        }
+        Returns: Json
+      }
       get_public_org_by_slug: {
         Args: { p_slug: string }
         Returns: {

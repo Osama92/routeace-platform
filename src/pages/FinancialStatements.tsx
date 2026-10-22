@@ -21,6 +21,41 @@ const fmt = (n: number, sym = "₦") =>
 // Do NOT reintroduce a hardcoded category list here: it would silently disagree
 // with every other P&L surface in the product.
 
+interface ChannelBreakdown {
+  revenue: number;
+  cost: number;
+  gross_profit: number;
+  dispatch_count: number;
+  pending_count: number;
+}
+
+interface CogsLine {
+  category: string;
+  label: string;
+  amount: number;
+}
+
+interface OpexLine {
+  category: string;
+  amount: number;
+}
+
+interface ProfitLossBreakdown {
+  own_truck: ChannelBreakdown;
+  third_party: ChannelBreakdown;
+  cogs_breakdown: CogsLine[];
+  own_truck_cogs_total: number;
+  cost_of_sales_3pl: number;
+  invoice_revenue: number;
+  dispatch_revenue_total: number;
+  revenue_reconciliation_delta: number;
+  output_vat: number;
+  input_vat: number;
+  tax_expense: number;
+  opex_total: number;
+  opex_breakdown: OpexLine[];
+}
+
 export default function FinancialStatements() {
   const [period, setPeriod] = useState("all");
   const { organizationId } = useAuth();
@@ -65,19 +100,6 @@ export default function FinancialStatements() {
     },
   });
 
-  const { data: expenses = [] } = useQuery({
-    queryKey: ["fs-expenses", organizationId],
-    enabled: !!organizationId,
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("expenses")
-        .select("id, amount, category, expense_date, description, is_cogs")
-        .eq("organization_id", organizationId)
-        .eq("approval_status", "approved");
-      return data || [];
-    },
-  });
-
   // Filter by selected period
   const filteredInvoices = useMemo(() => invoices.filter((inv: any) => {
     if (!periodStart) return true;
@@ -89,23 +111,39 @@ export default function FinancialStatements() {
     return new Date(b.bill_date || b.created_at) >= periodStart;
   }), [bills, periodStart]);
 
-  const filteredExpenses = useMemo(() => expenses.filter((e: any) => {
-    if (!periodStart) return true;
-    return new Date(e.expense_date) >= periodStart;
-  }), [expenses, periodStart]);
+  // ── P&L — own-truck vs 3PL channel breakdown ──────────────────────
+  // Revenue/COGS/Gross Profit/Net Profit now come from get_profit_loss_breakdown,
+  // which splits dispatch_financials by vehicles.ownership_type (owned -> own
+  // truck, vendor/leased -> 3PL) and itemizes Own Truck COGS from expenses.is_cogs.
+  // See supabase/migrations/20261021130000_get_profit_loss_breakdown.sql.
+  const { data: pl } = useQuery({
+    queryKey: ["fs-pl-breakdown", organizationId, periodStart?.toISOString()],
+    enabled: !!organizationId,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("get_profit_loss_breakdown", {
+        p_organization_id: organizationId as string,
+        p_period_start: periodStart ? periodStart.toISOString() : undefined,
+        p_period_end: undefined,
+      });
+      if (error) throw error;
+      return data as unknown as ProfitLossBreakdown;
+    },
+  });
 
-  // ── P&L ──────────────────────────────────────────────────────────
-  const totalRevenue = filteredInvoices.reduce((s, inv: any) => s + (inv.subtotal || 0), 0);
-  const cogsExpenses = filteredExpenses.filter((e: any) => e.is_cogs === true);
-  const opexExpenses = filteredExpenses.filter((e: any) => e.is_cogs !== true);
-  const totalCogs = cogsExpenses.reduce((s: number, e: any) => s + Number(e.amount || 0), 0);
+  const ownTruck = pl?.own_truck ?? { revenue: 0, cost: 0, gross_profit: 0, dispatch_count: 0, pending_count: 0 };
+  const thirdParty = pl?.third_party ?? { revenue: 0, cost: 0, gross_profit: 0, dispatch_count: 0, pending_count: 0 };
+  const cogsBreakdown = pl?.cogs_breakdown ?? [];
+  const ownTruckCogsTotal = pl?.own_truck_cogs_total ?? 0;
+  const costOfSales3pl = pl?.cost_of_sales_3pl ?? 0;
+  const totalRevenue = pl?.invoice_revenue ?? 0;
+  const dispatchRevenueTotal = pl?.dispatch_revenue_total ?? 0;
+  const revenueReconciliationDelta = pl?.revenue_reconciliation_delta ?? 0;
+  const totalCogs = ownTruckCogsTotal + costOfSales3pl;
   const grossProfit = totalRevenue - totalCogs;
-  const totalOpex = opexExpenses.reduce((s: number, e: any) => s + Number(e.amount || 0), 0);
+  const opexBreakdown = pl?.opex_breakdown ?? [];
+  const totalOpex = pl?.opex_total ?? 0;
   const operatingProfit = grossProfit - totalOpex;
-  // Tax expense = net VAT payable for the period (output VAT - input VAT, floored at 0)
-  const outputVat = filteredInvoices.reduce((s, inv: any) => s + (inv.tax_amount || 0) + (inv.shipping_vat_amount || 0), 0);
-  const inputVat = filteredBills.reduce((s, b: any) => s + (b.tax_amount || 0), 0);
-  const taxExpense = Math.max(0, outputVat - inputVat);
+  const taxExpense = pl?.tax_expense ?? 0;
   const netProfit = operatingProfit - taxExpense;
 
   // ── Balance Sheet (partial — only items with a live data source) ──
@@ -121,7 +159,8 @@ export default function FinancialStatements() {
     { name: "Accounts Receivable", debit: accountsReceivable, credit: 0 },
     { name: "Accounts Payable", debit: 0, credit: accountsPayable },
     { name: "Revenue", debit: 0, credit: totalRevenue },
-    { name: "Cost of Goods Sold", debit: totalCogs, credit: 0 },
+    { name: "Own Truck COGS", debit: ownTruckCogsTotal, credit: 0 },
+    { name: "Cost of Sales — 3PL", debit: costOfSales3pl, credit: 0 },
     { name: "Operating Expenses", debit: totalOpex, credit: 0 },
     { name: "VAT Payable (Net)", debit: 0, credit: taxExpense },
   ].filter(r => r.debit > 0 || r.credit > 0);
@@ -175,21 +214,103 @@ export default function FinancialStatements() {
         </TabsList>
 
         {/* P&L */}
-        <TabsContent value="pnl">
+        <TabsContent value="pnl" className="space-y-4">
+          {/* 1. Revenue by Channel */}
           <Card className="border-border/50">
-            <CardHeader><CardTitle className="text-sm">Profit & Loss Statement</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-sm">Revenue by Channel — Own Truck vs 3PL</CardTitle></CardHeader>
+            <CardContent>
+              <Table>
+                <TableBody>
+                  <TableRow className="bg-green-500/5 font-semibold">
+                    <TableCell colSpan={2}>Own-Truck Revenue ({ownTruck.dispatch_count} dispatches)</TableCell>
+                    <TableCell className="text-right text-green-600">{fmt(ownTruck.revenue)}</TableCell>
+                  </TableRow>
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell className="pl-8 text-sm text-muted-foreground" colSpan={2}>Own-Truck Cost (dispatch-level estimate — see Own Truck COGS below for the accounting figure)</TableCell>
+                    <TableCell className="text-right text-sm text-muted-foreground">({fmt(ownTruck.cost)})</TableCell>
+                  </TableRow>
+                  <TableRow className="bg-blue-500/5 font-semibold">
+                    <TableCell colSpan={2}>
+                      3PL Revenue ({thirdParty.dispatch_count} dispatches)
+                      {thirdParty.pending_count > 0 && (
+                        <Badge variant="outline" className="ml-2 text-xs">{thirdParty.pending_count} pending finance review</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right text-blue-600">{fmt(thirdParty.revenue)}</TableCell>
+                  </TableRow>
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell className="pl-8 text-sm text-muted-foreground" colSpan={2}>3PL Cost (paid to vendor)</TableCell>
+                    <TableCell className="text-right text-sm text-muted-foreground">({fmt(thirdParty.cost)})</TableCell>
+                  </TableRow>
+                  <TableRow className="bg-primary/5 font-bold border-t-2">
+                    <TableCell colSpan={2}>Combined Dispatch Revenue / Cost</TableCell>
+                    <TableCell className="text-right">{fmt(dispatchRevenueTotal)} / ({fmt(ownTruck.cost + thirdParty.cost)})</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* 2. Own Truck COGS */}
+          <Card className="border-border/50">
+            <CardHeader><CardTitle className="text-sm">Own Truck COGS</CardTitle></CardHeader>
+            <CardContent>
+              <Table>
+                <TableBody>
+                  {cogsBreakdown.length === 0 ? (
+                    <TableRow><TableCell colSpan={2} className="text-center py-6 text-muted-foreground">No owned-fleet COGS entries yet</TableCell></TableRow>
+                  ) : cogsBreakdown.map((line) => (
+                    <TableRow key={line.category} className="hover:bg-transparent">
+                      <TableCell className="pl-4 text-sm">{line.label}</TableCell>
+                      <TableCell className="text-right text-sm">{fmt(line.amount)}</TableCell>
+                    </TableRow>
+                  ))}
+                  <TableRow className="bg-orange-500/5 font-bold border-t-2">
+                    <TableCell>Own Truck COGS</TableCell>
+                    <TableCell className="text-right text-orange-600">({fmt(ownTruckCogsTotal)})</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* 3. Cost of Sales (3PL) */}
+          <Card className="border-border/50">
+            <CardHeader><CardTitle className="text-sm">Cost of Sales (3PL)</CardTitle></CardHeader>
+            <CardContent>
+              <Table>
+                <TableBody>
+                  <TableRow className="bg-orange-500/5 font-bold">
+                    <TableCell>Amount Paid to 3PL Vendors</TableCell>
+                    <TableCell className="text-right text-orange-600">({fmt(costOfSales3pl)})</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* 4. Consolidated Totals */}
+          <Card className="border-border/50">
+            <CardHeader><CardTitle className="text-sm">Profit & Loss Statement — Consolidated</CardTitle></CardHeader>
             <CardContent>
               <Table>
                 <TableBody>
                   <TableRow className="bg-green-500/5 font-semibold"><TableCell colSpan={2}>Revenue ({filteredInvoices.length} invoices)</TableCell><TableCell className="text-right text-green-600">{fmt(totalRevenue)}</TableCell></TableRow>
-                  <TableRow className="bg-orange-500/5 font-semibold"><TableCell colSpan={2}>Cost of Goods Sold ({cogsExpenses.length} entries — fuel, maintenance, driver pay, tolls, repairs)</TableCell><TableCell className="text-right text-orange-600">({fmt(totalCogs)})</TableCell></TableRow>
+                  <TableRow className="bg-orange-500/5 font-semibold"><TableCell colSpan={2}>Own Truck COGS</TableCell><TableCell className="text-right text-orange-600">({fmt(ownTruckCogsTotal)})</TableCell></TableRow>
+                  <TableRow className="bg-orange-500/5 font-semibold"><TableCell colSpan={2}>Cost of Sales — 3PL</TableCell><TableCell className="text-right text-orange-600">({fmt(costOfSales3pl)})</TableCell></TableRow>
                   <TableRow className="bg-primary/5 font-bold border-t-2"><TableCell colSpan={2}>Gross Profit</TableCell><TableCell className="text-right">{fmt(grossProfit)}</TableCell></TableRow>
-                  <TableRow className="bg-amber-500/5 font-semibold"><TableCell colSpan={2}>Operating Expenses ({opexExpenses.length} entries — admin, rent, insurance, etc.)</TableCell><TableCell className="text-right text-amber-600">({fmt(totalOpex)})</TableCell></TableRow>
+                  <TableRow className="bg-amber-500/5 font-semibold"><TableCell colSpan={2}>Operating Expenses ({opexBreakdown.length} categories — admin, rent, insurance, etc.)</TableCell><TableCell className="text-right text-amber-600">({fmt(totalOpex)})</TableCell></TableRow>
                   <TableRow className="bg-primary/5 font-bold border-t-2"><TableCell colSpan={2}>Operating Profit</TableCell><TableCell className="text-right">{fmt(operatingProfit)}</TableCell></TableRow>
                   <TableRow><TableCell colSpan={2} className="text-muted-foreground">Tax Expense (Net VAT Payable)</TableCell><TableCell className="text-right">({fmt(taxExpense)})</TableCell></TableRow>
                   <TableRow className="bg-primary/10 font-bold text-lg border-t-2"><TableCell colSpan={2}>Net Profit</TableCell><TableCell className={`text-right ${netProfit >= 0 ? "text-green-600" : "text-destructive"}`}>{fmt(netProfit)}</TableCell></TableRow>
                 </TableBody>
               </Table>
+              <p className="text-xs text-muted-foreground mt-3">
+                Revenue above is invoiced (ex-VAT) revenue. Combined dispatch revenue (own-truck + 3PL, from finance-entered
+                dispatch records) is {fmt(dispatchRevenueTotal)} — a {revenueReconciliationDelta >= 0 ? "surplus" : "shortfall"} of{" "}
+                {fmt(Math.abs(revenueReconciliationDelta))} vs. invoiced revenue, reflecting timing differences between
+                dispatch completion and billing.
+              </p>
               {totalRevenue === 0 && <p className="text-center py-6 text-muted-foreground text-sm">Post invoices and record expenses to generate P&L.</p>}
             </CardContent>
           </Card>

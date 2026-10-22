@@ -51,6 +51,21 @@ interface ExpenseBreakdown {
   amount: number;
 }
 
+interface ChannelBreakdown {
+  revenue: number;
+  cost: number;
+  gross_profit: number;
+  dispatch_count: number;
+  pending_count: number;
+}
+
+// Own-truck vs 3PL channel split comes from get_profit_loss_breakdown — see
+// supabase/migrations/20261021130000_get_profit_loss_breakdown.sql. Shared
+// with src/pages/FinancialStatements.tsx so both P&L surfaces agree on the
+// same revenue/COGS split instead of duplicating the dispatch_financials ->
+// vehicles.ownership_type join independently.
+const emptyChannel: ChannelBreakdown = { revenue: 0, cost: 0, gross_profit: 0, dispatch_count: 0, pending_count: 0 };
+
 const ProfitLossPage = () => {
   const { organizationId } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -64,6 +79,9 @@ const ProfitLossPage = () => {
     grossMargin: 0,
     netMargin: 0,
   });
+  const [ownTruck, setOwnTruck] = useState<ChannelBreakdown>(emptyChannel);
+  const [thirdParty, setThirdParty] = useState<ChannelBreakdown>(emptyChannel);
+  const [costOfSales3pl, setCostOfSales3pl] = useState(0);
   const [expenseBreakdown, setExpenseBreakdown] = useState<ExpenseBreakdown[]>([]);
   const [monthlyData, setMonthlyData] = useState<MonthlyPL[]>([]);
   const [dispatches, setDispatches] = useState(0);
@@ -126,12 +144,30 @@ const ProfitLossPage = () => {
         .gte("created_at", start.toISOString())
         .lte("created_at", end.toISOString());
 
+      // Own-truck vs 3PL channel split + itemized COGS/Cost of Sales — same
+      // RPC as FinancialStatements.tsx, so both P&L surfaces agree.
+      const { data: plBreakdown, error: plError } = await supabase.rpc("get_profit_loss_breakdown", {
+        p_organization_id: organizationId,
+        p_period_start: start.toISOString(),
+        p_period_end: end.toISOString(),
+      });
+      if (plError) throw plError;
+      const breakdownResult = plBreakdown as any;
+
+      const ownTruckData: ChannelBreakdown = breakdownResult?.own_truck ?? emptyChannel;
+      const thirdPartyData: ChannelBreakdown = breakdownResult?.third_party ?? emptyChannel;
+      const ownTruckCogsTotal = Number(breakdownResult?.own_truck_cogs_total ?? 0);
+      const costOfSales3plAmount = Number(breakdownResult?.cost_of_sales_3pl ?? 0);
+      setOwnTruck(ownTruckData);
+      setThirdParty(thirdPartyData);
+      setCostOfSales3pl(costOfSales3plAmount);
+
       // Calculate P&L
       // Use subtotal (ex-VAT). Falling back to total_amount only for legacy rows
       // that predate the subtotal column being populated.
       const revenue = (invoices || []).reduce(
         (sum, inv: any) => sum + Number(inv.subtotal ?? inv.total_amount ?? 0), 0);
-      const cogs = (expenses || []).filter(e => e.is_cogs).reduce((sum, e) => sum + Number(e.amount || 0), 0);
+      const cogs = ownTruckCogsTotal + costOfSales3plAmount;
       const operatingExpenses = (expenses || []).filter(e => !e.is_cogs).reduce((sum, e) => sum + Number(e.amount || 0), 0);
       const grossProfit = revenue - cogs;
       const netProfit = grossProfit - operatingExpenses;
@@ -169,10 +205,15 @@ const ProfitLossPage = () => {
         const monthStart = startOfMonth(subMonths(new Date(), i));
         const monthEnd = endOfMonth(subMonths(new Date(), i));
 
+        // Same ex-VAT subtotal basis and cancelled/draft exclusion as the
+        // headline revenue figure above — previously this trend used raw
+        // total_amount (VAT-inclusive) and included cancelled/draft invoices,
+        // disagreeing with the Income Statement card right next to it.
         const { data: monthInvoices } = await supabase
           .from("invoices")
-          .select("total_amount")
+          .select("subtotal, total_amount, status")
           .eq("organization_id", organizationId)
+          .not("status", "in", '("cancelled","draft")')
           .gte("created_at", monthStart.toISOString())
           .lte("created_at", monthEnd.toISOString());
 
@@ -183,7 +224,8 @@ const ProfitLossPage = () => {
           .gte("expense_date", format(monthStart, "yyyy-MM-dd"))
           .lte("expense_date", format(monthEnd, "yyyy-MM-dd"));
 
-        const monthRevenue = (monthInvoices || []).reduce((sum, inv) => sum + Number(inv.total_amount || 0), 0);
+        const monthRevenue = (monthInvoices || []).reduce(
+          (sum, inv: any) => sum + Number(inv.subtotal ?? inv.total_amount ?? 0), 0);
         const monthCogs = (monthExpenses || []).filter(e => e.is_cogs).reduce((sum, e) => sum + Number(e.amount || 0), 0);
         const monthOpex = (monthExpenses || []).filter(e => !e.is_cogs).reduce((sum, e) => sum + Number(e.amount || 0), 0);
         const monthGrossProfit = monthRevenue - monthCogs;
@@ -234,7 +276,7 @@ const ProfitLossPage = () => {
 
     const tableData = [
       ["Revenue", formatCurrency(plData.revenue)],
-      ["Cost of Goods Sold (COGS)", `(${formatCurrency(plData.cogs)})`],
+      ["Own Truck COGS + Cost of Sales (3PL)", `(${formatCurrency(plData.cogs)})`],
       ["Gross Profit", formatCurrency(plData.grossProfit)],
       ["Operating Expenses", `(${formatCurrency(plData.operatingExpenses)})`],
       ["Net Profit", formatCurrency(plData.netProfit)],
@@ -328,6 +370,38 @@ const ProfitLossPage = () => {
         </motion.div>
       </div>
 
+      {/* By Channel — Own Truck vs 3PL */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="mb-6"
+      >
+        <Card className="glass-card border-border/50">
+          <CardHeader>
+            <CardTitle className="text-sm font-heading">By Channel — Own Truck vs 3PL</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-3 rounded-lg bg-secondary/20">
+                <p className="text-xs text-muted-foreground mb-1">Own Truck ({ownTruck.dispatch_count} dispatches)</p>
+                <p className="text-lg font-bold text-success">{formatCurrency(ownTruck.revenue)}</p>
+                <p className="text-xs text-muted-foreground">Cost: {formatCurrency(ownTruck.cost)}</p>
+              </div>
+              <div className="p-3 rounded-lg bg-secondary/20">
+                <p className="text-xs text-muted-foreground mb-1 flex items-center gap-2">
+                  3PL ({thirdParty.dispatch_count} dispatches)
+                  {thirdParty.pending_count > 0 && (
+                    <Badge variant="outline" className="text-xs">{thirdParty.pending_count} pending</Badge>
+                  )}
+                </p>
+                <p className="text-lg font-bold text-success">{formatCurrency(thirdParty.revenue)}</p>
+                <p className="text-xs text-muted-foreground">Cost of Sales (paid to vendor): {formatCurrency(costOfSales3pl)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
       {/* P&L Statement */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         <motion.div
@@ -349,7 +423,7 @@ const ProfitLossPage = () => {
                     </TableCell>
                   </TableRow>
                   <TableRow className="border-border/50 hover:bg-transparent">
-                    <TableCell className="pl-8 text-muted-foreground">Cost of Goods Sold (COGS)</TableCell>
+                    <TableCell className="pl-8 text-muted-foreground">Own Truck COGS + Cost of Sales (3PL)</TableCell>
                     <TableCell className="text-right text-warning">
                       ({formatCurrency(plData.cogs)})
                     </TableCell>
