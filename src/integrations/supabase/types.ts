@@ -31713,6 +31713,26 @@ export type Database = {
         Args: { p_days?: number; p_organization_id: string }
         Returns: Json
       }
+      get_general_ledger: {
+        Args: {
+          p_organization_id: string
+          p_period_end?: string
+          p_period_start?: string
+        }
+        Returns: {
+          account_code: string
+          account_name: string
+          credit: number
+          customer: string
+          debit: number
+          dispatch: string
+          entry_date: string
+          entry_number: string
+          entry_type: string
+          ownership: string
+          vehicle: string
+        }[]
+      }
       get_integration_config_secrets: {
         Args: { _integration_config_id: string }
         Returns: Json
@@ -32622,5 +32642,5 @@ export const Constants = {
     },
   },
 } as const
-A new version of Supabase CLI is available: v2.121.0 (currently installed v)
+A new version of Supabase CLI is available: v2.122.0 (currently installed v)
 We recommend updating regularly for new features and bug fixes: https://supabase.com/docs/guides/cli/getting-started#updating-the-supabase-cli

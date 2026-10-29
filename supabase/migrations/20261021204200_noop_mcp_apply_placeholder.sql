@@ -1,0 +1,18 @@
+-- ============================================================
+-- No-op placeholder: reconciles migration history with an out-of-band apply
+-- ============================================================
+-- get_profit_loss_breakdown (full logic in 20261021130000_get_profit_loss_
+-- breakdown.sql, which was dry-run verified and applied to production the
+-- same day) was applied directly via the Supabase MCP `apply_migration`
+-- tool rather than `supabase db push`. The MCP tool recorded this
+-- different timestamp (20261021204200) in supabase_migrations.schema_
+-- migrations, orphaning it from the local migrations directory and
+-- blocking later `db push` runs with "Remote migration versions not found
+-- in local migrations directory."
+--
+-- The function itself is already live and correct (confirmed via direct
+-- query against pg_proc before creating this file) — this file exists
+-- only so `supabase migration repair --status applied 20261021204200`
+-- has a local file to point at, reconciling history without re-running or
+-- altering any schema. Intentionally empty.
+-- ============================================================

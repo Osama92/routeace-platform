@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,6 +27,29 @@ import { format } from "date-fns";
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", minimumFractionDigits: 2 }).format(amount);
+
+interface GeneralLedgerRow {
+  entry_number: string;
+  entry_date: string;
+  entry_type: string;
+  account_code: string;
+  account_name: string;
+  debit: number;
+  credit: number;
+  vehicle: string | null;
+  customer: string | null;
+  dispatch: string | null;
+  ownership: string;
+}
+
+const ownershipBadge = (ownership: string) => {
+  const map: Record<string, string> = {
+    Owned: "bg-primary/15 text-primary",
+    "3PL": "bg-info/15 text-info",
+    Unlinked: "bg-muted text-muted-foreground",
+  };
+  return <Badge className={map[ownership] || map.Unlinked}>{ownership}</Badge>;
+};
 
 const statusBadge = (status: string) => {
   const map: Record<string, string> = {
@@ -125,78 +149,33 @@ const AccountsLedger = () => {
     },
   ];
 
-  // ── Full GL entries — one row per transaction, sorted by date ascending ──
-  // AR entries: each invoice = Debit (Dr) AR; each paid invoice = Credit (Cr) AR
-  const arEntries: { date: string; ref: string; description: string; debit: number; credit: number }[] = [];
-  [...invoices]
-    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-    .forEach((inv) => {
-      // Invoice raised → Debit AR (asset increases)
-      arEntries.push({
-        date: inv.created_at,
-        ref: inv.invoice_number || inv.id.slice(0, 8),
-        description: `Invoice raised — ${inv.customers?.company_name || "Customer"}`,
-        debit: inv.total_amount || 0,
-        credit: 0,
+  // ── General Ledger — real double-entry journal from accounting_ledger ──
+  // Replaces the old AR/AP-only synthesized-from-invoices/bills view with
+  // the actual posting-engine data, paired into journal entries (JE-00N),
+  // coded against the chart of accounts, and tagged with vehicle/customer/
+  // dispatch/ownership dimensions where derivable. See
+  // supabase/migrations/20261029120000_get_general_ledger.sql for the
+  // grouping/coding/dimension logic and its documented caveats (Unlinked
+  // dimension on invoice/bill rows; a known small data-balance gap in
+  // live production, surfaced via the Difference row below rather than
+  // hidden).
+  const { data: glEntries = [], isLoading: glLoading } = useQuery({
+    queryKey: ["gl-entries", organizationId],
+    enabled: !!organizationId,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("get_general_ledger", {
+        p_organization_id: organizationId as string,
+        p_period_start: undefined,
+        p_period_end: undefined,
       });
-      // Payment received → Credit AR (asset decreases)
-      if (inv.status === "paid") {
-        arEntries.push({
-          date: inv.paid_date || inv.status_updated_at || inv.created_at,
-          ref: inv.invoice_number || inv.id.slice(0, 8),
-          description: `Payment received — ${inv.customers?.company_name || "Customer"}`,
-          debit: 0,
-          credit: inv.total_amount || 0,
-        });
-      }
-    });
-  arEntries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      if (error) throw error;
+      return (data ?? []) as GeneralLedgerRow[];
+    },
+  });
 
-  // AP entries: each bill = Credit (Cr) AP; each paid bill = Debit (Dr) AP
-  const apEntries: { date: string; ref: string; description: string; debit: number; credit: number }[] = [];
-  [...bills]
-    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-    .forEach((bill) => {
-      const amt = bill.total_amount || bill.amount || 0;
-      // Bill received → Credit AP (liability increases)
-      apEntries.push({
-        date: bill.bill_date || bill.created_at,
-        ref: bill.bill_number || bill.id.slice(0, 8),
-        description: `Bill received — ${bill.vendor_name || "Vendor"}`,
-        debit: 0,
-        credit: amt,
-      });
-      // Payment made → Debit AP (liability decreases)
-      if (bill.payment_status === "paid") {
-        apEntries.push({
-          date: bill.payment_date || bill.updated_at || bill.created_at,
-          ref: bill.bill_number || bill.id.slice(0, 8),
-          description: `Payment made — ${bill.vendor_name || "Vendor"}`,
-          debit: amt,
-          credit: 0,
-        });
-      }
-    });
-  apEntries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-  // Attach running balance to each entry
-  const withRunningBalance = (
-    entries: typeof arEntries,
-    normalSide: "debit" | "credit"
-  ) => {
-    let balance = 0;
-    return entries.map((e) => {
-      balance += normalSide === "debit"
-        ? e.debit - e.credit   // asset: Dr increases, Cr decreases
-        : e.credit - e.debit;  // liability: Cr increases, Dr decreases
-      return { ...e, runningBalance: balance };
-    });
-  };
-
-  const arLedgerEntries = withRunningBalance(arEntries, "debit");
-  const apLedgerEntries = withRunningBalance(apEntries, "credit");
-
-  const [glAccount, setGlAccount] = useState<"ar" | "ap">("ar");
+  const glTotalDebit = glEntries.reduce((s, r) => s + Number(r.debit || 0), 0);
+  const glTotalCredit = glEntries.reduce((s, r) => s + Number(r.credit || 0), 0);
+  const glDifference = glTotalDebit - glTotalCredit;
 
   const arFiltered = invoices.filter(i =>
     !searchQuery ||
@@ -512,221 +491,92 @@ const AccountsLedger = () => {
             ))}
           </div>
         </TabsContent>
-        {/* Full General Ledger Tab — transaction-level breakdown with running balance */}
+        {/* Full General Ledger Tab — real double-entry journal from accounting_ledger */}
         <TabsContent value="gl">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">
-                Every individual transaction posted to the control account, in date order, with a running balance.
+          <Card className="glass-card border-border/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-heading flex items-center gap-2">
+                <BookMarked className="w-4 h-4 text-primary" />
+                General Ledger
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                The spine. Every operational event posts a balanced journal here. Debits = Credits on every entry.
+                Dimensions link each line to a truck / customer / dispatch where that link exists in the source data.
               </p>
-              <div className="flex rounded-lg overflow-hidden border border-border/50 text-sm">
-                <button
-                  onClick={() => setGlAccount("ar")}
-                  className={`px-4 py-1.5 transition-colors ${glAccount === "ar" ? "bg-primary text-primary-foreground font-semibold" : "text-muted-foreground hover:bg-secondary/50"}`}
-                >
-                  Accounts Receivable
-                </button>
-                <button
-                  onClick={() => setGlAccount("ap")}
-                  className={`px-4 py-1.5 transition-colors ${glAccount === "ap" ? "bg-warning text-warning-foreground font-semibold" : "text-muted-foreground hover:bg-secondary/50"}`}
-                >
-                  Accounts Payable
-                </button>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-border/50 bg-secondary/30">
+                      <TableHead className="w-[100px]">Date</TableHead>
+                      <TableHead className="w-[80px]">Entry #</TableHead>
+                      <TableHead className="w-[130px]">Entry Type</TableHead>
+                      <TableHead className="w-[70px]">Code</TableHead>
+                      <TableHead>Account Name</TableHead>
+                      <TableHead className="text-right w-[130px]">Debit (₦)</TableHead>
+                      <TableHead className="text-right w-[130px]">Credit (₦)</TableHead>
+                      <TableHead className="w-[100px]">Vehicle</TableHead>
+                      <TableHead className="w-[150px]">Customer</TableHead>
+                      <TableHead className="w-[100px]">Dispatch</TableHead>
+                      <TableHead className="w-[90px]">Ownership</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {glLoading ? (
+                      <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">Loading ledger…</TableCell></TableRow>
+                    ) : glEntries.length === 0 ? (
+                      <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">No ledger entries found</TableCell></TableRow>
+                    ) : glEntries.map((row, idx) => (
+                      <TableRow key={`${row.entry_number}-${idx}`} className="border-border/50 text-sm">
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                          {format(new Date(row.entry_date), "yyyy-MM-dd")}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs text-primary">{row.entry_number}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{row.entry_type}</TableCell>
+                        <TableCell className="font-mono text-xs">{row.account_code}</TableCell>
+                        <TableCell className="text-sm">{row.account_name}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {row.debit > 0 ? formatCurrency(row.debit) : <span className="text-muted-foreground">-</span>}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {row.credit > 0 ? formatCurrency(row.credit) : <span className="text-muted-foreground">-</span>}
+                        </TableCell>
+                        <TableCell className="text-xs">{row.vehicle || <span className="text-muted-foreground">-</span>}</TableCell>
+                        <TableCell className="text-xs">{row.customer || <span className="text-muted-foreground">-</span>}</TableCell>
+                        <TableCell className="text-xs">{row.dispatch || <span className="text-muted-foreground">-</span>}</TableCell>
+                        <TableCell>{ownershipBadge(row.ownership)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                  {glEntries.length > 0 && (
+                    <TableRow className="border-t-2 border-border bg-secondary/30 font-bold text-sm">
+                      <TableCell colSpan={5}>TOTAL — must balance</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatCurrency(glTotalDebit)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatCurrency(glTotalCredit)}</TableCell>
+                      <TableCell colSpan={4} />
+                    </TableRow>
+                  )}
+                  {glEntries.length > 0 && (
+                    <TableRow className="text-xs">
+                      <TableCell colSpan={5} className="text-muted-foreground italic">Difference (must be 0)</TableCell>
+                      <TableCell colSpan={2} className={`text-right tabular-nums font-semibold ${Math.abs(glDifference) < 0.01 ? "text-success" : "text-destructive"}`}>
+                        {formatCurrency(glDifference)}
+                      </TableCell>
+                      <TableCell colSpan={4} />
+                    </TableRow>
+                  )}
+                </Table>
               </div>
-            </div>
-
-            {glAccount === "ar" && (
-              <Card className="glass-card border-border/50">
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <CardTitle className="text-base font-heading flex items-center gap-2">
-                        <FileText className="w-4 h-4 text-primary" />
-                        Accounts Receivable Control Account
-                      </CardTitle>
-                      <p className="text-xs text-muted-foreground mt-0.5">Asset · Normal Debit Balance — Subledger: Customer Invoices</p>
-                    </div>
-                    <div className="text-right text-xs text-muted-foreground">
-                      <p>{arLedgerEntries.length} entries</p>
-                      <p className="font-bold text-primary text-base mt-0.5">
-                        {formatCurrency(arLedgerEntries.at(-1)?.runningBalance ?? 0)}
-                      </p>
-                      <p>Ending Balance</p>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="border-border/50 bg-secondary/30">
-                          <TableHead className="w-[110px]">Date</TableHead>
-                          <TableHead className="w-[120px]">Reference</TableHead>
-                          <TableHead>Description</TableHead>
-                          <TableHead className="text-right w-[140px]">Debit (Dr)</TableHead>
-                          <TableHead className="text-right w-[140px]">Credit (Cr)</TableHead>
-                          <TableHead className="text-right w-[150px]">Running Balance</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {/* Opening balance */}
-                        <TableRow className="border-border/50 text-muted-foreground text-xs italic">
-                          <TableCell>—</TableCell>
-                          <TableCell>—</TableCell>
-                          <TableCell>Opening Balance</TableCell>
-                          <TableCell className="text-right tabular-nums">—</TableCell>
-                          <TableCell className="text-right tabular-nums">—</TableCell>
-                          <TableCell className="text-right tabular-nums font-medium">{formatCurrency(0)}</TableCell>
-                        </TableRow>
-
-                        {arLedgerEntries.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No transactions found</TableCell>
-                          </TableRow>
-                        ) : arLedgerEntries.map((e, idx) => (
-                          <TableRow
-                            key={idx}
-                            className={`border-border/50 text-sm ${e.debit > 0 ? "bg-primary/3" : "bg-secondary/10"}`}
-                          >
-                            <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                              {format(new Date(e.date), "dd MMM yyyy")}
-                            </TableCell>
-                            <TableCell className="font-mono text-xs">{e.ref}</TableCell>
-                            <TableCell className="text-sm">{e.description}</TableCell>
-                            <TableCell className="text-right tabular-nums">
-                              {e.debit > 0
-                                ? <span className="font-semibold text-primary">{formatCurrency(e.debit)}</span>
-                                : <span className="text-muted-foreground text-xs">—</span>}
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums">
-                              {e.credit > 0
-                                ? <span className="font-semibold text-success">{formatCurrency(e.credit)}</span>
-                                : <span className="text-muted-foreground text-xs">—</span>}
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums font-medium">
-                              {formatCurrency(e.runningBalance)}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-
-                        {/* Totals footer */}
-                        {arLedgerEntries.length > 0 && (
-                          <TableRow className="border-t-2 border-border bg-secondary/30 font-bold text-sm">
-                            <TableCell colSpan={3}>Totals</TableCell>
-                            <TableCell className="text-right tabular-nums text-primary">
-                              {formatCurrency(arLedgerEntries.reduce((s, e) => s + e.debit, 0))}
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums text-success">
-                              {formatCurrency(arLedgerEntries.reduce((s, e) => s + e.credit, 0))}
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums text-primary text-base">
-                              {formatCurrency(arLedgerEntries.at(-1)?.runningBalance ?? 0)}
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {glAccount === "ap" && (
-              <Card className="glass-card border-border/50">
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <CardTitle className="text-base font-heading flex items-center gap-2">
-                        <Receipt className="w-4 h-4 text-warning" />
-                        Accounts Payable Control Account
-                      </CardTitle>
-                      <p className="text-xs text-muted-foreground mt-0.5">Liability · Normal Credit Balance — Subledger: Vendor Bills</p>
-                    </div>
-                    <div className="text-right text-xs text-muted-foreground">
-                      <p>{apLedgerEntries.length} entries</p>
-                      <p className="font-bold text-warning text-base mt-0.5">
-                        {formatCurrency(apLedgerEntries.at(-1)?.runningBalance ?? 0)}
-                      </p>
-                      <p>Ending Balance</p>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="border-border/50 bg-secondary/30">
-                          <TableHead className="w-[110px]">Date</TableHead>
-                          <TableHead className="w-[120px]">Reference</TableHead>
-                          <TableHead>Description</TableHead>
-                          <TableHead className="text-right w-[140px]">Debit (Dr)</TableHead>
-                          <TableHead className="text-right w-[140px]">Credit (Cr)</TableHead>
-                          <TableHead className="text-right w-[150px]">Running Balance</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {/* Opening balance */}
-                        <TableRow className="border-border/50 text-muted-foreground text-xs italic">
-                          <TableCell>—</TableCell>
-                          <TableCell>—</TableCell>
-                          <TableCell>Opening Balance</TableCell>
-                          <TableCell className="text-right tabular-nums">—</TableCell>
-                          <TableCell className="text-right tabular-nums">—</TableCell>
-                          <TableCell className="text-right tabular-nums font-medium">{formatCurrency(0)}</TableCell>
-                        </TableRow>
-
-                        {apLedgerEntries.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No transactions found</TableCell>
-                          </TableRow>
-                        ) : apLedgerEntries.map((e, idx) => (
-                          <TableRow
-                            key={idx}
-                            className={`border-border/50 text-sm ${e.credit > 0 ? "bg-warning/3" : "bg-secondary/10"}`}
-                          >
-                            <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                              {format(new Date(e.date), "dd MMM yyyy")}
-                            </TableCell>
-                            <TableCell className="font-mono text-xs">{e.ref}</TableCell>
-                            <TableCell className="text-sm">{e.description}</TableCell>
-                            <TableCell className="text-right tabular-nums">
-                              {e.debit > 0
-                                ? <span className="font-semibold text-success">{formatCurrency(e.debit)}</span>
-                                : <span className="text-muted-foreground text-xs">—</span>}
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums">
-                              {e.credit > 0
-                                ? <span className="font-semibold text-warning">{formatCurrency(e.credit)}</span>
-                                : <span className="text-muted-foreground text-xs">—</span>}
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums font-medium">
-                              {formatCurrency(e.runningBalance)}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-
-                        {/* Totals footer */}
-                        {apLedgerEntries.length > 0 && (
-                          <TableRow className="border-t-2 border-border bg-secondary/30 font-bold text-sm">
-                            <TableCell colSpan={3}>Totals</TableCell>
-                            <TableCell className="text-right tabular-nums text-success">
-                              {formatCurrency(apLedgerEntries.reduce((s, e) => s + e.debit, 0))}
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums text-warning">
-                              {formatCurrency(apLedgerEntries.reduce((s, e) => s + e.credit, 0))}
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums text-warning text-base">
-                              {formatCurrency(apLedgerEntries.at(-1)?.runningBalance ?? 0)}
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </div>
+              {glEntries.length > 0 && Math.abs(glDifference) >= 0.01 && (
+                <div className="m-4 p-3 rounded bg-destructive/5 border border-destructive/20 text-xs text-destructive">
+                  This ledger does not currently balance to zero. A small number of posted entries have a missing or
+                  mismatched leg in the source data — investigate the affected entry numbers before relying on this
+                  period's totals for a statutory filing.
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
       </Tabs>
