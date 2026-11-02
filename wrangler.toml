@@ -7,6 +7,9 @@ preview_urls = false
 directory = "./dist"
 not_found_handling = "single-page-application"
 
-# Environment variables are passed at build time via GitHub Actions.
-# Do NOT put secret keys here — set them in the Cloudflare Pages dashboard
-# under Settings → Environment Variables, or pass via wrangler secret.
+# This is a Cloudflare Worker (Workers Static Assets), not a Pages project.
+# Deploys happen via Cloudflare's native Git integration (Workers Builds),
+# which auto-builds and deploys on every push to master/develop — not via
+# GitHub Actions. Environment variables are set in the Cloudflare dashboard
+# under this Worker's Settings → Variables and Secrets. Do NOT put secret
+# keys here.

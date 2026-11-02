@@ -140,47 +140,40 @@ The service worker file itself is `public/sw.js`. Web push uses VAPID keys fetch
 
 ---
 
-## Deployment — Cloudflare Pages
+## Deployment — Cloudflare Workers (Static Assets)
 
-**Active host:** Cloudflare Pages (`routeace-platform` project).  
-Netlify has been removed. `netlify.toml` is deleted; `wrangler.toml` is the deploy config.
+**Active host:** Cloudflare Workers, using the Workers Static Assets feature (`routeace-platform` Worker — NOT a Cloudflare Pages project, despite the name and despite `wrangler.toml`'s Pages-style `[assets]` block).  
+Netlify has been removed. `netlify.toml` is deleted; `wrangler.toml` is the Worker config.
 
-CI/CD deploys automatically on push:
-- `master` → production (`routeace.app`) via `.github/workflows/deploy-production.yml`
-- `develop` → staging preview via `.github/workflows/deploy-develop.yml`
+**Frontend deploy is handled entirely by Cloudflare's own native Git integration** ("Workers Builds"), which watches this repo directly and auto-builds + auto-deploys on every push to `master` (production) and other connected branches — independent of GitHub Actions. There is deliberately no `wrangler deploy`/`wrangler pages deploy` step in our GitHub Actions workflows; an earlier attempt to deploy via `cloudflare/wrangler-action@v3` with `command: pages deploy ...` failed for ~9 consecutive runs with "Project not found [code: 8000007]" because `routeace-platform` is a Worker, not a Pages project — the Pages API legitimately has no project by that name to find. Do not reintroduce a Pages-style deploy step; if CI-driven deploys are ever wanted, use `wrangler deploy` (Workers) against this Worker, not `wrangler pages deploy`.
 
-### GitHub Actions secrets required
+GitHub Actions' only job here is DB migrations:
+- `master` → pushes migrations to the production Supabase project via `.github/workflows/deploy-production.yml`
+- `develop` → pushes migrations to the dev/staging Supabase project via `.github/workflows/deploy-develop.yml`
+
+### GitHub Actions secrets required (migrations only)
 
 Add these in your GitHub repo → Settings → Secrets and variables → Actions:
 
 | Secret | Value |
 |---|---|
-| `CLOUDFLARE_API_TOKEN` | Cloudflare API token with **Cloudflare Pages: Edit** permission |
-| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account ID (Cloudflare dashboard → right sidebar) |
-| `VITE_SUPABASE_PUBLISHABLE_KEY_PROD` | Supabase anon/publishable key for production project |
-| `VITE_SUPABASE_PUBLISHABLE_KEY_DEV` | Supabase anon/publishable key for dev/staging project |
-| `VITE_GOOGLE_MAPS_API_KEY` | Google Maps + Places API key |
 | `SUPABASE_ACCESS_TOKEN` | Supabase CLI access token (for migration pushes) |
 | `SUPABASE_DB_PASSWORD_PROD` | DB password for production Supabase project |
 | `SUPABASE_DB_PASSWORD_DEV` | DB password for dev/staging Supabase project |
 
-### First-time Cloudflare Pages setup (one-off)
+`CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` are **not** used by GitHub Actions anymore — they're not needed since Cloudflare's native Git integration handles the deploy itself. `VITE_*` build-time vars are likewise irrelevant to GitHub Actions; they're set directly in the Worker's own dashboard settings (see below), since Cloudflare does the build.
 
-1. Go to [dash.cloudflare.com](https://dash.cloudflare.com) → Workers & Pages → Create → Pages
-2. Connect this GitHub repo, select branch `master`
-3. Set build command: `npm run build`, output directory: `dist`
-4. Project name: `routeace-platform` (must match `wrangler.toml` and the workflow `--project-name` flag)
-5. Add environment variables (Production environment):
-   - `VITE_SUPABASE_URL` = `https://mbybrzggrpyhvcnxhlua.supabase.co`
-   - `VITE_SUPABASE_PROJECT_ID` = `mbybrzggrpyhvcnxhlua`
-   - `VITE_SUPABASE_PUBLISHABLE_KEY` = your anon key
-6. Go to the project → Custom domains → Add → `routeace.app`
-   - If `routeace.app` nameservers are already on Cloudflare, it connects automatically
-   - Otherwise point your registrar's NS records to Cloudflare
+### Cloudflare dashboard setup (where the real config lives)
+
+1. [dash.cloudflare.com](https://dash.cloudflare.com) → Workers & Pages → `routeace-platform` (a Worker, listed under Workers, not Pages)
+2. Settings → Build → confirm it's connected to this GitHub repo, branch `master` for production
+3. Settings → Variables and Secrets → set `VITE_SUPABASE_URL`, `VITE_SUPABASE_PROJECT_ID`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_GOOGLE_MAPS_API_KEY`, etc. here (build-time vars for Cloudflare's own build, not GitHub Actions)
+4. Domains tab → `routeace.app` should already be attached
+5. If you see "Error fetching GitHub User or Organization details" on this project's Settings page, Cloudflare's GitHub App connection needs reauthorizing — this does not necessarily block deploys (Workers Builds can still succeed even with that banner showing)
 
 ### SPA routing
 
-`wrangler.toml` sets `not_found_handling = "single-page-application"` — all 404s serve `index.html`. No `_redirects` file needed.
+`wrangler.toml`'s `[assets]` block sets `not_found_handling = "single-page-application"` — all 404s serve `index.html`. No `_redirects` file needed.
 
 ### Update Supabase CORS + Auth (after DNS change)
 
@@ -236,4 +229,5 @@ The platform has 10+ industry-specific vertical OS modules. Each vertical has:
 
 | Date | Change |
 |---|---|
+| 2026-11-02 | Removed the broken `wrangler pages deploy` job from both GitHub Actions workflows. Root-caused ~9 consecutive "Project not found [code: 8000007]" deploy failures to `routeace-platform` being a Cloudflare **Worker** (Workers Static Assets), not a Pages project — `wrangler pages deploy` was calling the Pages API for a project that structurally cannot exist under that name. Frontend deploy is actually handled by Cloudflare's native Git integration (Workers Builds), which has been auto-deploying on every push the whole time. GitHub Actions now only pushes DB migrations. |
 | 2026-05-18 | Migrated from Lovable to Claude Code development. Removed lovable-tagger, @lovable.dev/email-js, @lovable.dev/webhooks-js. Replaced with native Deno crypto. Updated CORS headers, env var names, and OG metadata. |
