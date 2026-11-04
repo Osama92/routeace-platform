@@ -111,44 +111,6 @@ const AccountsLedger = () => {
     outstanding: bills.filter(b => b.payment_status !== "paid").reduce((s, b) => s + (b.total_amount || b.amount || 0), 0),
   };
 
-  // General Ledger — control account summaries derived from subledgers
-  // AR Control Account: Debit when invoice raised (revenue earned), Credit when payment collected
-  const arControlDebit = arTotals.total;          // total invoiced (increases AR balance)
-  const arControlCredit = arTotals.collected;     // total collected (decreases AR balance)
-  const arControlBalance = arControlDebit - arControlCredit; // what customers still owe
-
-  // AP Control Account: Credit when bill received (liability incurred), Debit when payment made
-  const apControlCredit = apTotals.total;         // total billed (increases AP liability)
-  const apControlDebit = apTotals.paid;           // total paid (decreases AP liability)
-  const apControlBalance = apControlCredit - apControlDebit; // what we still owe vendors
-
-  const glAccounts = [
-    {
-      account: "Accounts Receivable",
-      type: "Asset (Control Account)",
-      description: "Subledger: Customer Invoices",
-      openingBalance: 0,
-      totalDebits: arControlDebit,
-      totalCredits: arControlCredit,
-      endingBalance: arControlBalance,
-      debitLabel: "Invoices Raised",
-      creditLabel: "Payments Collected",
-      normal: "debit",
-    },
-    {
-      account: "Accounts Payable",
-      type: "Liability (Control Account)",
-      description: "Subledger: Vendor Bills",
-      openingBalance: 0,
-      totalDebits: apControlDebit,
-      totalCredits: apControlCredit,
-      endingBalance: apControlBalance,
-      debitLabel: "Payments Made",
-      creditLabel: "Bills Received",
-      normal: "credit",
-    },
-  ];
-
   // ── General Ledger — real double-entry journal from accounting_ledger ──
   // Replaces the old AR/AP-only synthesized-from-invoices/bills view with
   // the actual posting-engine data, paired into journal entries (JE-00N),
@@ -176,6 +138,39 @@ const AccountsLedger = () => {
   const glTotalDebit = glEntries.reduce((s, r) => s + Number(r.debit || 0), 0);
   const glTotalCredit = glEntries.reduce((s, r) => s + Number(r.credit || 0), 0);
   const glDifference = glTotalDebit - glTotalCredit;
+
+  // ── Trial Balance — SUMIFS-style rollup of the General Ledger by account ──
+  // Every code get_general_ledger can ever emit (see that migration's account
+  // code CASE) is classified debit-normal or credit-normal here so Net can be
+  // signed per the mockup. Only accounts with real activity are shown — no
+  // zero-filled rows for chart-of-accounts codes nothing has posted to yet
+  // (e.g. Petty Cash, Payroll liabilities, Depreciation), so the total always
+  // ties to the real Debit/Credit sums above rather than implying coverage
+  // the ledger doesn't have.
+  const DEBIT_NORMAL_CODES = new Set([
+    "1000", "1300", "5100", "5200", "5300", "5800", "5900", "6200",
+  ]);
+  const trialBalance = (() => {
+    const byCode = new Map<string, { code: string; account: string; debit: number; credit: number }>();
+    for (const row of glEntries) {
+      const code = row.account_code;
+      if (!byCode.has(code)) {
+        byCode.set(code, { code, account: row.account_name, debit: 0, credit: 0 });
+      }
+      const acct = byCode.get(code)!;
+      acct.debit += Number(row.debit || 0);
+      acct.credit += Number(row.credit || 0);
+    }
+    return Array.from(byCode.values())
+      .map((acct) => ({
+        ...acct,
+        net: DEBIT_NORMAL_CODES.has(acct.code) ? acct.debit - acct.credit : acct.credit - acct.debit,
+      }))
+      .sort((a, b) => a.code.localeCompare(b.code));
+  })();
+  const tbTotalDebit = trialBalance.reduce((s, a) => s + a.debit, 0);
+  const tbTotalCredit = trialBalance.reduce((s, a) => s + a.credit, 0);
+  const tbDifference = tbTotalDebit - tbTotalCredit;
 
   const arFiltered = invoices.filter(i =>
     !searchQuery ||
@@ -378,118 +373,78 @@ const AccountsLedger = () => {
 
         {/* GL Summary Tab (renamed) */}
         <TabsContent value="ledger">
-          <div className="space-y-6">
-            <p className="text-xs text-muted-foreground">
-              Control account summaries derived from subledgers. Debits and credits are calculated from live invoice and bill data.
-            </p>
-
-            {glAccounts.map((acct) => (
-              <Card key={acct.account} className="glass-card border-border/50">
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <CardTitle className="text-base font-heading">{acct.account}</CardTitle>
-                      <p className="text-xs text-muted-foreground mt-0.5">{acct.type} — {acct.description}</p>
-                    </div>
-                    <Badge variant="outline" className={acct.normal === "debit" ? "text-primary border-primary/40" : "text-warning border-warning/40"}>
-                      {acct.normal === "debit" ? "Normal Debit Balance" : "Normal Credit Balance"}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  {/* T-Account style summary table */}
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="border-border/50">
-                        <TableHead className="w-[40%]">Line Item</TableHead>
-                        <TableHead className="text-right w-[20%]">Debit (Dr)</TableHead>
-                        <TableHead className="text-right w-[20%]">Credit (Cr)</TableHead>
-                        <TableHead className="text-right w-[20%]">Running Balance</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {/* Opening balance row */}
-                      <TableRow className="border-border/50 text-muted-foreground text-sm">
-                        <TableCell className="italic">Opening Balance</TableCell>
-                        <TableCell className="text-right tabular-nums">—</TableCell>
-                        <TableCell className="text-right tabular-nums">—</TableCell>
-                        <TableCell className="text-right tabular-nums font-medium">{formatCurrency(0)}</TableCell>
-                      </TableRow>
-
-                      {/* Debit activity */}
-                      <TableRow className="border-border/50 text-sm">
-                        <TableCell className="text-muted-foreground">{acct.debitLabel}</TableCell>
-                        <TableCell className="text-right tabular-nums text-foreground font-semibold">{formatCurrency(acct.totalDebits)}</TableCell>
-                        <TableCell className="text-right tabular-nums text-muted-foreground">—</TableCell>
+          <Card className="glass-card border-border/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-heading flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-primary" />
+                GL Summary — Trial Balance
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Every account's net position, pulled from the GL with SUMIFS. Debits and credits must equal.
+                This proves the ledger is sound before any statement is trusted.
+              </p>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-border/50 bg-secondary/30">
+                      <TableHead className="w-[70px]">Code</TableHead>
+                      <TableHead>Account</TableHead>
+                      <TableHead className="text-right w-[140px]">Debit (₦)</TableHead>
+                      <TableHead className="text-right w-[140px]">Credit (₦)</TableHead>
+                      <TableHead className="text-right w-[140px]">Net (₦)</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {glLoading ? (
+                      <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Loading trial balance…</TableCell></TableRow>
+                    ) : trialBalance.length === 0 ? (
+                      <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No ledger activity found</TableCell></TableRow>
+                    ) : trialBalance.map((acct) => (
+                      <TableRow key={acct.code} className="border-border/50 text-sm">
+                        <TableCell className="font-mono text-xs">{acct.code}</TableCell>
+                        <TableCell className="text-sm">{acct.account}</TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {acct.normal === "debit"
-                            ? formatCurrency(acct.totalDebits)
-                            : formatCurrency(acct.totalCredits - acct.totalDebits)}
-                        </TableCell>
-                      </TableRow>
-
-                      {/* Credit activity */}
-                      <TableRow className="border-border/50 text-sm">
-                        <TableCell className="text-muted-foreground">{acct.creditLabel}</TableCell>
-                        <TableCell className="text-right tabular-nums text-muted-foreground">—</TableCell>
-                        <TableCell className="text-right tabular-nums text-foreground font-semibold">{formatCurrency(acct.totalCredits)}</TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {acct.normal === "debit"
-                            ? formatCurrency(acct.totalDebits - acct.totalCredits)
-                            : formatCurrency(acct.totalCredits - acct.totalDebits)}
-                        </TableCell>
-                      </TableRow>
-
-                      {/* Totals row */}
-                      <TableRow className="border-t-2 border-border bg-secondary/20 font-semibold text-sm">
-                        <TableCell>Totals</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatCurrency(acct.totalDebits)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatCurrency(acct.totalCredits)}</TableCell>
-                        <TableCell className="text-right tabular-nums" />
-                      </TableRow>
-
-                      {/* Ending balance row */}
-                      <TableRow className="border-border/50 bg-primary/5">
-                        <TableCell className="font-bold text-sm">Ending Balance</TableCell>
-                        <TableCell className="text-right tabular-nums text-muted-foreground text-xs">
-                          {acct.normal === "debit" ? formatCurrency(acct.endingBalance) : "—"}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums text-muted-foreground text-xs">
-                          {acct.normal === "credit" ? formatCurrency(acct.endingBalance) : "—"}
+                          {acct.debit > 0 ? formatCurrency(acct.debit) : <span className="text-muted-foreground">-</span>}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          <span className={`text-base font-bold ${acct.endingBalance > 0 ? "text-primary" : "text-muted-foreground"}`}>
-                            {formatCurrency(acct.endingBalance)}
-                          </span>
+                          {acct.credit > 0 ? formatCurrency(acct.credit) : <span className="text-muted-foreground">-</span>}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums font-medium">
+                          {acct.net === 0 ? (
+                            <span className="text-muted-foreground">-</span>
+                          ) : acct.net < 0 ? (
+                            `(${formatCurrency(Math.abs(acct.net))})`
+                          ) : (
+                            formatCurrency(acct.net)
+                          )}
                         </TableCell>
                       </TableRow>
-                    </TableBody>
-                  </Table>
-
-                  {/* Plain-language interpretation */}
-                  <div className="mt-4 p-3 rounded-lg bg-secondary/30 text-xs text-muted-foreground">
-                    {acct.account === "Accounts Receivable" ? (
-                      <>
-                        <span className="font-semibold text-foreground">Interpretation: </span>
-                        You have raised {formatCurrency(acct.totalDebits)} in invoices.
-                        Customers have paid {formatCurrency(acct.totalCredits)}.
-                        The ending balance of <span className="font-semibold text-primary">{formatCurrency(acct.endingBalance)}</span> is
-                        the total still owed to you by customers.
-                      </>
-                    ) : (
-                      <>
-                        <span className="font-semibold text-foreground">Interpretation: </span>
-                        You have received bills totalling {formatCurrency(acct.totalCredits)} from vendors.
-                        You have paid {formatCurrency(acct.totalDebits)} of that.
-                        The ending balance of <span className="font-semibold text-warning">{formatCurrency(acct.endingBalance)}</span> is
-                        the total you still owe to vendors.
-                      </>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                    ))}
+                  </TableBody>
+                  {trialBalance.length > 0 && (
+                    <TableRow className="border-t-2 border-border bg-secondary/30 font-bold text-sm">
+                      <TableCell colSpan={2}>TOTAL</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatCurrency(tbTotalDebit)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatCurrency(tbTotalCredit)}</TableCell>
+                      <TableCell />
+                    </TableRow>
+                  )}
+                </Table>
+              </div>
+              {trialBalance.length > 0 && (
+                <div className={`px-4 py-3 text-xs ${Math.abs(tbDifference) >= 0.01 ? "text-destructive font-semibold" : "text-muted-foreground"}`}>
+                  Difference (must be 0): {formatCurrency(tbDifference)}
+                  {Math.abs(tbDifference) >= 0.01 && (
+                    <span className="block mt-1 font-normal">
+                      The ledger has unbalanced entries — see the General Ledger tab for the underlying detail.
+                    </span>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
         {/* Full General Ledger Tab — real double-entry journal from accounting_ledger */}
         <TabsContent value="gl">
