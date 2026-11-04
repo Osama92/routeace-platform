@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -424,12 +424,14 @@ const AccountsLedger = () => {
                     ))}
                   </TableBody>
                   {trialBalance.length > 0 && (
-                    <TableRow className="border-t-2 border-border bg-secondary/30 font-bold text-sm">
-                      <TableCell colSpan={2}>TOTAL</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCurrency(tbTotalDebit)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCurrency(tbTotalCredit)}</TableCell>
-                      <TableCell />
-                    </TableRow>
+                    <TableFooter>
+                      <TableRow className="border-t-2 border-border bg-secondary/30 font-bold text-sm hover:bg-secondary/30">
+                        <TableCell colSpan={2}>TOTAL</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatCurrency(tbTotalDebit)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatCurrency(tbTotalCredit)}</TableCell>
+                        <TableCell />
+                      </TableRow>
+                    </TableFooter>
                   )}
                 </Table>
               </div>
@@ -460,21 +462,21 @@ const AccountsLedger = () => {
               </p>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
+              <div className="overflow-auto max-h-[70vh]">
                 <Table>
-                  <TableHeader>
-                    <TableRow className="border-border/50 bg-secondary/30">
-                      <TableHead className="w-[100px]">Date</TableHead>
-                      <TableHead className="w-[80px]">Entry #</TableHead>
-                      <TableHead className="w-[130px]">Entry Type</TableHead>
-                      <TableHead className="w-[70px]">Code</TableHead>
-                      <TableHead>Account Name</TableHead>
-                      <TableHead className="text-right w-[130px]">Debit (₦)</TableHead>
-                      <TableHead className="text-right w-[130px]">Credit (₦)</TableHead>
-                      <TableHead className="w-[100px]">Vehicle</TableHead>
-                      <TableHead className="w-[150px]">Customer</TableHead>
-                      <TableHead className="w-[100px]">Dispatch</TableHead>
-                      <TableHead className="w-[90px]">Ownership</TableHead>
+                  <TableHeader className="sticky top-0 z-10">
+                    <TableRow className="border-border/50 bg-secondary shadow-sm">
+                      <TableHead className="w-[100px] bg-secondary">Date</TableHead>
+                      <TableHead className="w-[80px] bg-secondary">Entry #</TableHead>
+                      <TableHead className="w-[130px] bg-secondary">Entry Type</TableHead>
+                      <TableHead className="w-[70px] bg-secondary">Code</TableHead>
+                      <TableHead className="bg-secondary">Account Name</TableHead>
+                      <TableHead className="text-right w-[130px] bg-secondary">Debit (₦)</TableHead>
+                      <TableHead className="text-right w-[130px] bg-secondary">Credit (₦)</TableHead>
+                      <TableHead className="w-[100px] bg-secondary">Vehicle</TableHead>
+                      <TableHead className="w-[150px] bg-secondary">Customer</TableHead>
+                      <TableHead className="w-[100px] bg-secondary">Dispatch</TableHead>
+                      <TableHead className="w-[90px] bg-secondary">Ownership</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -505,21 +507,21 @@ const AccountsLedger = () => {
                     ))}
                   </TableBody>
                   {glEntries.length > 0 && (
-                    <TableRow className="border-t-2 border-border bg-secondary/30 font-bold text-sm">
-                      <TableCell colSpan={5}>TOTAL — must balance</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCurrency(glTotalDebit)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatCurrency(glTotalCredit)}</TableCell>
-                      <TableCell colSpan={4} />
-                    </TableRow>
-                  )}
-                  {glEntries.length > 0 && (
-                    <TableRow className="text-xs">
-                      <TableCell colSpan={5} className="text-muted-foreground italic">Difference (must be 0)</TableCell>
-                      <TableCell colSpan={2} className={`text-right tabular-nums font-semibold ${Math.abs(glDifference) < 0.01 ? "text-success" : "text-destructive"}`}>
-                        {formatCurrency(glDifference)}
-                      </TableCell>
-                      <TableCell colSpan={4} />
-                    </TableRow>
+                    <TableFooter className="sticky bottom-0 z-10 bg-secondary">
+                      <TableRow className="border-t-2 border-border bg-secondary font-bold text-sm hover:bg-secondary">
+                        <TableCell colSpan={5}>TOTAL — must balance</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatCurrency(glTotalDebit)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatCurrency(glTotalCredit)}</TableCell>
+                        <TableCell colSpan={4} />
+                      </TableRow>
+                      <TableRow className="text-xs bg-secondary hover:bg-secondary">
+                        <TableCell colSpan={5} className="text-muted-foreground italic">Difference (must be 0)</TableCell>
+                        <TableCell colSpan={2} className={`text-right tabular-nums font-semibold ${Math.abs(glDifference) < 0.01 ? "text-success" : "text-destructive"}`}>
+                          {formatCurrency(glDifference)}
+                        </TableCell>
+                        <TableCell colSpan={4} />
+                      </TableRow>
+                    </TableFooter>
                   )}
                 </Table>
               </div>
