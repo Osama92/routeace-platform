@@ -58,6 +58,13 @@ export default function FleetInspectionEngine() {
   const [checklistState, setChecklistState] = useState<Record<string, string>>({});
   const [inspNotes, setInspNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // The dispatch this post-trip is closing out. Without it, a post-trip filed
+  // here records a general inspection but never satisfies
+  // check_vehicle_trip_gate() for that trip (the gate requires a post_trip row
+  // whose dispatch_id matches the open dispatch) — the truck stays locked even
+  // though an inspection was just completed. Only relevant for post_trip.
+  const [openDispatch, setOpenDispatch] = useState<{ id: string; dispatch_number: string } | null>(null);
+  const [loadingOpenDispatch, setLoadingOpenDispatch] = useState(false);
 
   const fetchData = useCallback(async (orgId: string) => {
     setLoading(true);
@@ -120,6 +127,29 @@ export default function FleetInspectionEngine() {
     } catch { toast.error("Gate evaluation failed"); }
   };
 
+  // Looks up the open dispatch a post-trip here would need to close out, using
+  // the same check_vehicle_trip_gate() the dispatch-creation trigger itself
+  // uses — so "is there an open trip" is answered identically everywhere.
+  useEffect(() => {
+    if (inspType !== "post_trip" || !inspVehicle) {
+      setOpenDispatch(null);
+      return;
+    }
+    let cancelled = false;
+    setLoadingOpenDispatch(true);
+    (supabase.rpc as any)("check_vehicle_trip_gate", { p_vehicle_id: inspVehicle })
+      .then(({ data }: any) => {
+        if (cancelled) return;
+        if (data?.reason === "post_trip_outstanding" && data.dispatch_id) {
+          setOpenDispatch({ id: data.dispatch_id, dispatch_number: data.dispatch_number });
+        } else {
+          setOpenDispatch(null);
+        }
+      })
+      .finally(() => { if (!cancelled) setLoadingOpenDispatch(false); });
+    return () => { cancelled = true; };
+  }, [inspType, inspVehicle]);
+
   const submitInspection = async () => {
     if (!inspVehicle) { toast.error("Select a vehicle"); return; }
     setSubmitting(true);
@@ -148,6 +178,11 @@ export default function FleetInspectionEngine() {
         organization_id: organizationId,
         vehicle_id: inspVehicle,
         inspection_type: inspType,
+        // A post-trip only closes out the specific dispatch the trip gate is
+        // waiting on when dispatch_id is set here to match it — otherwise this
+        // inspection is recorded but the vehicle stays locked (see the
+        // openDispatch lookup above, which mirrors check_vehicle_trip_gate()).
+        dispatch_id: inspType === "post_trip" ? openDispatch?.id ?? null : null,
         status,
         overall_score: score,
         inspector_notes: inspNotes || null,
@@ -165,14 +200,17 @@ export default function FleetInspectionEngine() {
       // Insert items
       await supabase.from("vehicle_inspection_items").insert(items.map(i => ({ ...i, inspection_id: insp.id })));
 
+      const closedTrip = inspType === "post_trip" && allChecked && openDispatch;
       toast[status === "failed" ? "error" : status === "attention_needed" ? "warning" : "success"](
         status === "failed" ? "INSPECTION FAILED - Vehicle blocked from dispatch" :
-        status === "attention_needed" ? "Inspection passed with concerns" : "Inspection passed"
+        status === "attention_needed" ? "Inspection passed with concerns" :
+        closedTrip ? `Inspection passed — dispatch ${openDispatch!.dispatch_number} closed out` : "Inspection passed"
       );
 
       setInspectionDialog(false);
       setChecklistState({});
       setInspNotes("");
+      setOpenDispatch(null);
       if (organizationId) await fetchData(organizationId);
     } catch (e: any) { toast.error(e.message || "Failed to submit inspection"); }
     setSubmitting(false);
@@ -231,6 +269,19 @@ export default function FleetInspectionEngine() {
                     </SelectContent>
                   </Select>
                 </div>
+                {inspType === "post_trip" && inspVehicle && (
+                  loadingOpenDispatch ? (
+                    <p className="text-xs text-muted-foreground">Checking for an open trip…</p>
+                  ) : openDispatch ? (
+                    <p className="text-xs text-emerald-600">
+                      This will close out dispatch <span className="font-semibold">{openDispatch.dispatch_number}</span> — the vehicle unlocks for its next trip once submitted.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      No open dispatch found for this vehicle — this inspection will be recorded, but there's no trip for it to close out.
+                    </p>
+                  )
+                )}
                 {CHECKLIST_TEMPLATE.map(cat => (
                   <div key={cat.category}>
                     <h4 className="font-semibold text-sm mb-2">{cat.category}</h4>
