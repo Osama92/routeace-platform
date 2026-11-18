@@ -12,9 +12,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { format, differenceInDays, startOfMonth } from "date-fns";
-import { ClipboardCheck, Wrench, Fuel, AlertTriangle, FileText, Car, Trash2, Lock } from "lucide-react";
+import { ClipboardCheck, Wrench, Fuel, AlertTriangle, FileText, Car, Trash2, Lock, Unlock } from "lucide-react";
 
 const sb = supabase as any;
 
@@ -69,6 +69,10 @@ const useVehicles = (orgId: string) => useQuery({
 
 /* ---------- Tab 1 Dashboard ---------- */
 function Dashboard({ orgId }: { orgId: string }) {
+  const { hasAnyRole } = useAuth();
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const isSuperAdmin = hasAnyRole(["super_admin"]);
   const { data: vehicles = [] } = useVehicles(orgId);
   const today = new Date().toISOString().split("T")[0];
   const { data: todayChecks = [] } = useQuery({
@@ -110,6 +114,49 @@ function Dashboard({ orgId }: { orgId: string }) {
     },
   });
 
+  // The actual dispatch-creation gate (check_vehicle_trip_gate — same function
+  // the BEFORE INSERT trigger on dispatches uses). The "Blocked by safety" KPI
+  // above is a broader, read-only signal (failed checklist today OR a standing
+  // blocked_dispatch flag) that this page never offered an action for, which
+  // left a vehicle showing "Blocked" here with no way to actually clear it —
+  // the only release control lived on a different page (/fleet). This re-runs
+  // the real gate per owned vehicle so Release can be offered exactly where
+  // it will actually do something.
+  const { data: gateResults = {} } = useQuery({
+    queryKey: ["fch-trip-gate", orgId, vehicleIds.join(",")],
+    enabled: vehicleIds.length > 0,
+    queryFn: async () => {
+      const entries = await Promise.all(
+        vehicleIds.map(async (id: string) => {
+          const { data } = await (supabase.rpc as any)("check_vehicle_trip_gate", { p_vehicle_id: id });
+          return [id, data] as const;
+        })
+      );
+      return Object.fromEntries(entries) as Record<string, any>;
+    },
+  });
+
+  const [releaseTarget, setReleaseTarget] = useState<{ id: string; registration_number: string; message: string } | null>(null);
+  const [releaseReason, setReleaseReason] = useState("");
+  const release = useMutation({
+    mutationFn: async () => {
+      if (!releaseTarget) return;
+      const { error } = await (supabase.rpc as any)("release_vehicle_trip_block", {
+        p_vehicle_id: releaseTarget.id,
+        p_reason: releaseReason,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: "Vehicle released", description: "The override is recorded against your name." });
+      setReleaseTarget(null);
+      setReleaseReason("");
+      qc.invalidateQueries({ queryKey: ["fch-trip-gate", orgId] });
+      qc.invalidateQueries({ queryKey: ["fch-blocked-inspections", orgId] });
+    },
+    onError: (e: any) => toast({ title: "Could not release", description: e?.message ?? "Unknown error", variant: "destructive" }),
+  });
+
   const total = vehicles.length;
   // "Blocked by safety" = failed checklist results today + active dispatch-blocked inspections (deduplicated by vehicle)
   const blockedVehicleIds = new Set([
@@ -142,7 +189,9 @@ function Dashboard({ orgId }: { orgId: string }) {
         <table className="w-full text-sm">
           <thead className="bg-muted/40"><tr>
             <th className="text-left p-2">Vehicle</th><th className="text-left p-2">Type</th><th className="text-left p-2">Status</th>
-            <th className="text-left p-2">Pre-trip</th><th className="text-left p-2">Post-trip</th><th className="text-left p-2">Open WO</th><th className="text-left p-2">Dispatch</th>
+            <th className="text-left p-2">Pre-trip</th><th className="text-left p-2">Post-trip</th><th className="text-left p-2">Open WO</th>
+            <th className="text-left p-2">Dispatch</th><th className="text-left p-2">Trip gate</th>
+            {isSuperAdmin && <th className="text-right p-2">Action</th>}
           </tr></thead>
           <tbody>
             {vehicles.map((v: any) => {
@@ -150,6 +199,8 @@ function Dashboard({ orgId }: { orgId: string }) {
               const post = (todayChecks as any[]).find(c => c.vehicle_id === v.id && c.checklist_type === "post_trip");
               const wo = openWO.filter((w: any) => w.vehicle_id === v.id).length;
               const isBlocked = blockedVehicleIds.has(v.id);
+              const gate = gateResults[v.id];
+              const gateAllowed = gate ? gate.allowed === true : null;
               const cell = (c: any) => c ? <Badge variant="outline" className={c.overall_result === "pass" ? "bg-green-500/15 text-green-700" : c.overall_result === "pass_with_issues" ? "bg-amber-500/15 text-amber-700" : "bg-red-500/15 text-red-700"}>{c.overall_result.replace(/_/g," ")}</Badge> : <span className="text-muted-foreground text-xs">missing</span>;
               return (<tr key={v.id} className="border-t">
                 <td className="p-2 font-medium">{v.registration_number}</td>
@@ -159,12 +210,67 @@ function Dashboard({ orgId }: { orgId: string }) {
                 <td className="p-2">{cell(post)}</td>
                 <td className="p-2">{wo > 0 ? <Badge variant="destructive">{wo}</Badge> : <span className="text-muted-foreground">-</span>}</td>
                 <td className="p-2">{isBlocked ? <Badge variant="destructive">Blocked</Badge> : <Badge variant="outline" className="bg-green-500/15 text-green-700">Clear</Badge>}</td>
+                <td className="p-2">
+                  {gateAllowed === null ? (
+                    <span className="text-muted-foreground text-xs">checking…</span>
+                  ) : gateAllowed ? (
+                    <Badge variant="outline" className="bg-green-500/15 text-green-700">Clear</Badge>
+                  ) : (
+                    <div>
+                      <Badge variant="destructive" className="gap-1"><Lock className="w-3 h-3" />Locked</Badge>
+                      <p className="text-xs text-muted-foreground mt-1 max-w-[260px]">{gate?.message}</p>
+                    </div>
+                  )}
+                </td>
+                {isSuperAdmin && (
+                  <td className="p-2 text-right">
+                    {gateAllowed === false && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1"
+                        onClick={() => setReleaseTarget({ id: v.id, registration_number: v.registration_number, message: gate?.message ?? "" })}
+                      >
+                        <Unlock className="w-3.5 h-3.5" />
+                        Release
+                      </Button>
+                    )}
+                  </td>
+                )}
               </tr>);
             })}
-            {vehicles.length === 0 && <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">No vehicles in this organisation.</td></tr>}
+            {vehicles.length === 0 && <tr><td colSpan={isSuperAdmin ? 9 : 8} className="p-6 text-center text-muted-foreground">No vehicles in this organisation.</td></tr>}
           </tbody>
         </table>
       </CardContent></Card>
+
+      <Dialog open={!!releaseTarget} onOpenChange={(o) => !o && setReleaseTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Release {releaseTarget?.registration_number}?</DialogTitle>
+            <DialogDescription>
+              {releaseTarget?.message}
+              <br /><br />
+              Releasing lets this truck be dispatched without the outstanding check.
+              Your name and reason are recorded and shown in the Trip Compliance report.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Textarea
+              value={releaseReason}
+              onChange={(e) => setReleaseReason(e.target.value)}
+              placeholder="Why is this being released? e.g. post-trip done on paper, driver unavailable to log it"
+              rows={3}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReleaseTarget(null)}>Cancel</Button>
+            <Button onClick={() => release.mutate()} disabled={release.isPending || !releaseReason.trim()}>
+              {release.isPending ? "Releasing..." : "Release vehicle"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
